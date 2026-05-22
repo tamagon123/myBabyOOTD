@@ -1,0 +1,74 @@
+# 乳児服装共有SNSアプリ 基本設計書
+
+---
+
+## 1. データベース設計（データ構造）
+
+BaaS（Firebase Firestore等）を想定したデータ構造設計です。
+
+### ① Users（ユーザーコレクション）
+
+| フィールド名 | データ型 | 説明 / 制約 |
+|-------------|---------|------------|
+| user_id | String (PK) | ユーザー固有ID |
+| avatar_id | String | 選択されたイラストアイコンのID |
+| region_code | String | お住まいの都道府県コード（1〜47） |
+| child_birthday | Date | 子供の生年月日（月齢の自動計算用） |
+| child_gender | Integer | 子供の性別（1:男、2:女、3:その他、0:未選択） |
+| followers_count | Integer | フォロワーの総数（初期値:0） |
+
+### ② Posts（投稿コレクション）
+
+| フィールド名 | データ型 | 説明 / 制約 |
+|-------------|---------|------------|
+| post_id | String (PK) | 投稿固有ID |
+| user_id | String (FK) | 投稿者のユーザーID |
+| image_url_front | String | 前面写真のURL（未登録時はnullまたは空文字） |
+| image_url_back | String | 背面写真のURL（未登録時はnullまたは空文字） |
+| child_age_months | Integer | 投稿時点の子供の月齢 |
+| region_code | String | 着用地域の都道府県コード（1〜47） |
+| gender_id | Integer | 子供の性別（投稿時スナップショット） |
+| description | String | 服装のポイント（最大100文字） |
+| weather_type | String | 天気（sunny, cloudy, rainy, snowy） |
+| temp_max | Float | 最高気温（℃） |
+| temp_min | Float | 最低気温（℃） |
+| temp_category | String | 気温帯区分（例: "15-19"） |
+| likes_count | Integer | いいねの総数（初期値:0） |
+| reports_count | Integer | 通報された総数（初期値:0） |
+| is_hidden | Boolean | 非表示フラグ（通報5回でtrue化） |
+| created_at | Timestamp | 投稿日時 |
+
+### ③ PostItems（投稿アイテムサブコレクション：Posts配下）
+
+| フィールド名 | データ型 | 説明 / 制約 |
+|-------------|---------|------------|
+| item_id | String (PK) | アイテム固有ID |
+| brand_id | String | ブランドマスターID（自由入力時は"custom"） |
+| custom_name | String | 自由入力されたブランド名 |
+| size_value | Integer | サイズ固定値（50, 60, 70, 80, 90...） |
+
+### ④ Follows（フォロー関係コレクション：ルート配置）
+
+| フィールド名 | データ型 | 説明 / 制約 |
+|-------------|---------|------------|
+| follow_id | String (PK) | レコード固有ID |
+| follower_id | String (FK) | フォローした側のユーザーID（自分） |
+| following_id | String (FK) | フォローされた側のユーザーID（相手） |
+| created_at | Timestamp | フォローした日時 |
+
+---
+
+## 2. システムロジック・アルゴリズム設計
+
+### 画像必須バリデーション
+- 投稿時、image_url_front と image_url_back の両方が空（null）である場合はエラーとし、データベースへの書き込みを拒否する。
+
+### 通報および自動非表示処理
+- ユーザーが投稿へ通報を実行した際、対象ドキュメントの reports_count を1加算する。
+- 更新後の値が5以上になった場合、即座に is_hidden フィールドを true に更新する。
+- アプリ側は常に is_hidden == false の条件でデータを取得するため、即座に画面から消失する。
+
+### 天気API連携および手動上書きロジック
+- 投稿画面の「地域」を選択した際、アプリ内部で該当地域の座標を外部気象APIへ非同期リクエストする。
+- 取得した当日の予報データ（最高気温、最低気温、天気）を入力欄に自動代入する。
+- ユーザーが手動で数値を変更した場合は入力値を優先し、投稿ボタン押下時の値をデータベースへ書き込む。

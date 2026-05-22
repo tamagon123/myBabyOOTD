@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>子供服アプリ - カード風デザインUI</title>
+<style>
+    body {
+        font-family: "Rounded Mplus 1c", "Hiragino Maru Gothic ProN", sans-serif;
+        background-color: #e8eaed;
+        margin: 0;
+        padding: 40px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        box-sizing: border-box;
+    }
+
+    /* スマートフォン枠 */
+    .phone {
+        width: 320px;
+        height: 680px;
+        border-radius: 40px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1), inset 0 0 0 8px #333;
+        overflow: hidden;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        background-color: #f4f7f6; /* 淡いミントグレーの背景 */
+    }
+
+    /* ノッチ（カメラ部分） */
+    .phone::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 120px;
+        height: 24px;
+        background-color: #333;
+        border-radius: 0 0 12px 12px;
+        z-index: 100;
+    }
+
+    /* アプリヘッダー */
+    .header {
+        padding: 45px 20px 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #ffffff;
+        border-radius: 0 0 24px 24px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        margin-bottom: 20px;
+        font-weight: bold;
+        color: #5c6bc0;
+        z-index: 10;
+    }
+
+    /* スクロール領域 */
+    .content {
+        flex: 1;
+        overflow-y: auto;
+        padding-bottom: 20px;
+    }
+    .content::-webkit-scrollbar { display: none; }
+
+    /* 投稿カード全体 */
+    .card {
+        background: #ffffff;
+        border-radius: 24px;
+        margin: 0 16px 20px;
+        padding: 16px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+    }
+
+    /* 投稿者情報エリア */
+    .card-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .avatar {
+        width: 40px; 
+        height: 40px;
+        background: #ffe082;
+        border-radius: 20px;
+        display: flex; 
+        align-items: center; 
+        justify-content: center;
+        font-size: 20px;
+        margin-right: 12px;
+    }
+    .user-info {
+        display: flex;
+        flex-direction: column;
+    }
+    .user-title {
+        font-size: 14px; 
+        font-weight: bold;
+        color: #333;
+    }
+    .user-meta {
+        font-size: 11px; 
+        color: #888;
+        margin-top: 2px;
+    }
+
+    /* 写真エリア（フロント・バック切り替えイメージ） */
+    .photo-container {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1/1;
+        background: #e8eaf6;
+        border-radius: 16px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9fa8da;
+        font-weight: bold;
+        overflow: hidden;
+    }
+    .carousel-dots {
+        position: absolute;
+        bottom: 12px;
+        display: flex;
+        gap: 6px;
+    }
+    .dot {
+        width: 6px;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.5);
+        border-radius: 50%;
+    }
+    .dot.active {
+        background: #ffffff;
+    }
+
+    /* メタデータ・タグ */
+    .tags {
+        display: flex; 
+        flex-wrap: wrap; 
+        gap: 8px; 
+        margin-bottom: 12px;
+    }
+    .tag {
+        background: #f0f4c3;
+        color: #827717;
+        padding: 6px 12px;
+        border-radius: 16px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+    .weather-badge {
+        background: #e3f2fd;
+        color: #1565c0;
+        padding: 6px 12px;
+        border-radius: 16px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+
+    /* 服装のポイント */
+    .description {
+        font-size: 13px; 
+        color: #555; 
+        line-height: 1.5;
+    }
+
+    /* アクションバー（いいね・通報） */
+    .card-footer {
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center;
+        margin-top: 16px; 
+        border-top: 1px dashed #eee; 
+        padding-top: 12px;
+    }
+    .like-btn {
+        color: #e91e63; 
+        font-weight: bold;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .report-btn {
+        color: #aaa; 
+        font-size: 11px;
+        background: #f9f9f9;
+        padding: 4px 8px;
+        border-radius: 8px;
+    }
+
+    /* ボトムナビゲーション */
+    .bottom-nav {
+        height: 50px;
+        background-color: #ffffff;
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        padding-bottom: 15px;
+        border-radius: 24px 24px 0 0;
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.03);
+    }
+    .nav-icon {
+        font-size: 24px;
+        color: #c5cae9;
+    }
+    .nav-icon.active {
+        color: #5c6bc0;
+    }
+</style>
+</head>
+<body>
+
+    <div class="phone">
+        <!-- ヘッダー -->
+        <div class="header">
+            <span style="font-size:24px;">🐶</span>
+            <span>今日のコーデ</span>
+            <span style="font-size:20px;">🔍</span>
+        </div>
+
+        <!-- コンテンツ -->
+        <div class="content">
+            <!-- 投稿カード 1 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="avatar">👦</div>
+                    <div class="user-info">
+                        <span class="user-title">生後5ヶ月 男の子</span>
+                        <span class="user-meta">愛知県 名古屋市 • 2時間前</span>
+                    </div>
+                </div>
+                
+                <div class="photo-container">
+                    [ Front Photo ]
+                    <div class="carousel-dots">
+                        <div class="dot active"></div>
+                        <div class="dot"></div>
+                    </div>
+                </div>
+
+                <div class="tags">
+                    <span class="weather-badge">☀️ 25℃ / 18℃</span>
+                    <span class="tag">petit main</span>
+                    <span class="tag">UNIQLO</span>
+                    <span class="tag">サイズ70</span>
+                </div>
+                
+                <div class="description">
+                    気温が上がったので半袖デビュー！背面はメッシュ素材で動きやすさ重視です。
+                </div>
+                
+                <div class="card-footer">
+                    <div class="like-btn">❤️ 12</div>
+                    <div class="report-btn">🚨 通報</div>
+                </div>
+            </div>
+
+            <!-- 投稿カード 2 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="avatar">👧</div>
+                    <div class="user-info">
+                        <span class="user-title">1歳2ヶ月 女の子</span>
+                        <span class="user-meta">東京都 • 5時間前</span>
+                    </div>
+                </div>
+                
+                <div class="photo-container" style="background: #fce4ec; color: #f48fb1;">
+                    [ Front Photo ]
+                    <!-- ※背面写真がない場合はドットを表示しない設計 -->
+                </div>
+
+                <div class="tags">
+                    <span class="weather-badge">☁️ 20℃ / 15℃</span>
+                    <span class="tag">西松屋</span>
+                    <span class="tag">ZARA mini</span>
+                    <span class="tag">サイズ80</span>
+                </div>
+                
+                <div class="description">
+                    少し肌寒いので薄手のカーディガンを羽織らせました。
+                </div>
+                
+                <div class="card-footer">
+                    <div class="like-btn" style="color: #ccc;">🤍 8</div>
+                    <div class="report-btn">🚨 通報</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ボトムナビゲーション -->
+        <div class="bottom-nav">
+            <div class="nav-icon active">🏠</div>
+            <div class="nav-icon">➕</div>
+            <div class="nav-icon">👤</div>
+        </div>
+    </div>
+
+</body>
+</html>

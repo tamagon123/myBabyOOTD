@@ -1,0 +1,32 @@
+# Xcode
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+!default.pbxuser
+!default.mode1v3
+!default.mode2v3
+!default.perspectivev3
+
+# SwiftPM
+.build/
+.swiftpm/xcode/
+
+# Firebase - センシティブな設定ファイル
+GoogleService-Info.plist
+
+# macOS
+.DS_Store
+*.DS_Store
+
+# CocoaPods (使用している場合)
+Pods/
+Podfile.lock
+
+# Archives
+*.xcarchive
