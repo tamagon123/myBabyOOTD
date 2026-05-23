@@ -11,6 +11,7 @@ struct ProfileView: View {
     @State private var isLoading = false
     @State private var isFollowing = false
     @State private var showEditProfile = false
+    @State private var showSignOutAlert = false
 
     private let db = Firestore.firestore()
     private var isOwnProfile: Bool { userId == Auth.auth().currentUser?.uid }
@@ -83,6 +84,26 @@ struct ProfileView: View {
                         .padding(.vertical, 10)
                         .background(Color(.systemGray6))
                         .cornerRadius(12)
+                }
+
+                Button {
+                    showSignOutAlert = true
+                } label: {
+                    Text("ログアウト")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                }
+                .alert("ログアウト", isPresented: $showSignOutAlert) {
+                    Button("キャンセル", role: .cancel) {}
+                    Button("ログアウト", role: .destructive) {
+                        authViewModel.signOut()
+                    }
+                } message: {
+                    Text("ログアウトしますか？")
                 }
             } else {
                 Button {

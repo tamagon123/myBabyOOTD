@@ -11,7 +11,9 @@ struct myBabyCodeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if authViewModel.isSignedIn {
+            if authViewModel.isInitializing {
+                SplashView()
+            } else if authViewModel.isSignedIn {
                 MainTabView()
                     .environmentObject(authViewModel)
             } else {

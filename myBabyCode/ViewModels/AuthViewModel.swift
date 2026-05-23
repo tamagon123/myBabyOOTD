@@ -10,15 +10,30 @@ class AuthViewModel: ObservableObject {
     @Published var currentUser: AppUser?
     @Published var errorMessage: String?
     @Published var isLoading: Bool = false
+    @Published var isInitializing: Bool = true
+
+    @AppStorage("autoLogin") var autoLogin: Bool = true
 
     private var currentNonce: String?
     private let db = Firestore.firestore()
 
     init() {
-        isSignedIn = Auth.auth().currentUser != nil
-        if isSignedIn {
-            Task { await loadCurrentUser() }
+        Task { await initialize() }
+    }
+
+    private func initialize() async {
+        let hasSession = Auth.auth().currentUser != nil
+        if hasSession && autoLogin {
+            await loadCurrentUser()
+            isSignedIn = true
+        } else {
+            if hasSession {
+                try? Auth.auth().signOut()
+            }
+            isSignedIn = false
         }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        isInitializing = false
     }
 
     // MARK: - Apple Sign In

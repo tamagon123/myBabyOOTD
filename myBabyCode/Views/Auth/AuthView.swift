@@ -61,6 +61,14 @@ struct AuthView: View {
                     .frame(height: 54)
                     .cornerRadius(14)
 
+                    Toggle(isOn: $authViewModel.autoLogin) {
+                        Text("次回から自動ログイン")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                    .tint(.indigo)
+                    .padding(.horizontal, 4)
+
                     if authViewModel.isLoading {
                         ProgressView()
                     }
