@@ -55,6 +55,12 @@ struct ProfileView: View {
                 .background(Color(.systemYellow).opacity(0.3))
                 .clipShape(Circle())
 
+            // Display name
+            if let name = profileUser?.display_name, !name.isEmpty {
+                Text(name)
+                    .font(.system(size: 16, weight: .semibold))
+            }
+
             // Stats
             HStack(spacing: 32) {
                 statView(count: userPosts.count, label: "投稿")
@@ -136,23 +142,31 @@ struct ProfileView: View {
 
     private var postsGrid: some View {
         let columns = [GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2)]
-        return LazyVGrid(columns: columns, spacing: 2) {
-            ForEach(userPosts) { post in
-                let url = post.image_url_front ?? post.image_url_back
-                AsyncImage(url: URL(string: url ?? "")) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        Color(.systemIndigo).opacity(0.1)
-                            .overlay(Text("📷").font(.title))
+        return GeometryReader { geo in
+            let cellSize = (geo.size.width - 4) / 3
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(userPosts) { post in
+                    let url = post.image_url_front ?? post.image_url_back
+                    AsyncImage(url: URL(string: url ?? "")) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: cellSize, height: cellSize)
+                                .clipped()
+                        default:
+                            Color(.systemIndigo).opacity(0.1)
+                                .frame(width: cellSize, height: cellSize)
+                                .overlay(Text("📷").font(.title))
+                        }
                     }
+                    .frame(width: cellSize, height: cellSize)
+                    .clipped()
                 }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(1, contentMode: .fill)
-                .clipped()
             }
         }
+        .frame(minHeight: ceil(Double(userPosts.count) / 3.0) * ((UIScreen.main.bounds.width - 4) / 3 + 2))
     }
 
     // MARK: - Data

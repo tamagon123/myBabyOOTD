@@ -1,16 +1,27 @@
 import Foundation
 import FirebaseFirestore
 
+// MARK: - ChildProfile
+
+struct ChildProfile: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var name: String          // ニックネーム（本名非推奨）
+    var birthday: Date
+    var gender: Int           // 0:未選択 1:男 2:女 3:その他
+}
+
 // MARK: - User
 
 struct AppUser: Identifiable, Codable {
     @DocumentID var id: String?
     var user_id: String
+    var display_name: String?  // 表示名（任意）
     var avatar_id: String
     var region_code: String
     var child_birthday: Date
     var child_gender: Int       // 0:未選択 1:男 2:女 3:その他
     var followers_count: Int
+    var children: [ChildProfile]?  // 複数子供プロファイル
 }
 
 // MARK: - Post
@@ -41,12 +52,23 @@ struct Post: Identifiable, Codable {
 
 // MARK: - PostItem
 
+enum ItemCategory: String, CaseIterable, Identifiable, Codable {
+    case tops        = "トップス"
+    case bottoms     = "ボトムス"
+    case accessory   = "アクセサリー"
+    case outerwear   = "アウター"
+    case shoes       = "シューズ"
+    case other       = "その他"
+    var id: String { rawValue }
+}
+
 struct PostItem: Identifiable, Codable {
     @DocumentID var id: String?
     var item_id: String
     var brand_id: String
     var custom_name: String
     var size_value: Int
+    var category: String      // ItemCategory.rawValue
 }
 
 // MARK: - Follow

@@ -48,6 +48,10 @@ struct HomeView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 16)
                     }
+                    .refreshable {
+                        await postsViewModel.fetchPosts(user: authViewModel.currentUser)
+                        await postsViewModel.fetchLikedPosts()
+                    }
                 }
             }
             .navigationBarHidden(true)

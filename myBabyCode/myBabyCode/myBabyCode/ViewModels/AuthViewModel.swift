@@ -53,11 +53,13 @@ class AuthViewModel: ObservableObject {
                 if !snapshot.exists {
                     let newUser = AppUser(
                         user_id: uid,
+                        display_name: nil,
                         avatar_id: "🐶",
                         region_code: "13",
                         child_birthday: Date(),
                         child_gender: 0,
-                        followers_count: 0
+                        followers_count: 0,
+                        children: nil
                     )
                     try docRef.setData(from: newUser)
                     currentUser = newUser
@@ -80,11 +82,13 @@ class AuthViewModel: ObservableObject {
                 let uid = result.user.uid
                 let newUser = AppUser(
                     user_id: uid,
+                    display_name: nil,
                     avatar_id: "🐶",
                     region_code: "13",
                     child_birthday: Date(),
                     child_gender: 0,
-                    followers_count: 0
+                    followers_count: 0,
+                    children: nil
                 )
                 try db.collection("users").document(uid).setData(from: newUser)
                 currentUser = newUser
@@ -139,11 +143,13 @@ class AuthViewModel: ObservableObject {
                     if !snapshot.exists {
                         let newUser = AppUser(
                             user_id: uid,
+                            display_name: nil,
                             avatar_id: "🐶",
                             region_code: "13",
                             child_birthday: Date(),
                             child_gender: 0,
-                            followers_count: 0
+                            followers_count: 0,
+                            children: nil
                         )
                         try docRef.setData(from: newUser)
                         currentUser = newUser
@@ -191,6 +197,12 @@ class AuthViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func saveChildren(_ children: [ChildProfile]) async {
+        guard var user = currentUser else { return }
+        user.children = children
+        await saveUserProfile(user)
     }
 
     // MARK: - Nonce helpers

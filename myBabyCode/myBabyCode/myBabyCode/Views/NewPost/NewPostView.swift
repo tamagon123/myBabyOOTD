@@ -1,51 +1,62 @@
 import SwiftUI
 import PhotosUI
+import UIKit
+
+// MARK: - NewPostView
 
 struct NewPostView: View {
     @EnvironmentObject var postsViewModel: PostsViewModel
     @EnvironmentObject var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var frontItem: PhotosPickerItem?
-    @State private var backItem: PhotosPickerItem?
+    // Photo
     @State private var frontImage: UIImage?
     @State private var backImage: UIImage?
+    @State private var photoSourceTarget: PhotoTarget = .front
+    @State private var showPhotoSourceSheet = false
+    @State private var showImagePicker = false
+    @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
+    @State private var editingImage: UIImage?
+    @State private var showImageEditor = false
 
+    // Post info
     @State private var description: String = ""
-    @State private var selectedRegionIndex: Int = 12   // 東京都
+    @State private var selectedRegionIndex: Int = 12
     @State private var selectedGender: ChildGender = .unselected
     @State private var weatherType: WeatherType = .sunny
     @State private var tempMax: String = ""
     @State private var tempMin: String = ""
     @State private var isFetchingWeather: Bool = false
 
-    @State private var items: [NewItemEntry] = [NewItemEntry()]
+    // Child selection
+    @State private var selectedChildIndex: Int = 0
+
+    // Items — default: tops, bottoms, accessory
+    @State private var items: [NewItemEntry] = [
+        NewItemEntry(category: .tops),
+        NewItemEntry(category: .bottoms),
+        NewItemEntry(category: .accessory)
+    ]
+
     @State private var showSuccess = false
     @State private var showError = false
+
+    private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // Photos
                     photoSection
-
                     Divider().padding(.horizontal)
-
-                    // Basic info
+                    if !children.isEmpty { childSection }
+                    if !children.isEmpty { Divider().padding(.horizontal) }
                     infoSection
-
                     Divider().padding(.horizontal)
-
-                    // Weather
                     weatherSection
-
                     Divider().padding(.horizontal)
-
-                    // Items
                     itemsSection
 
-                    // Description
                     VStack(alignment: .leading, spacing: 8) {
                         sectionLabel("服装のポイント")
                         TextField("例：気温が上がったので半袖デビュー！", text: $description, axis: .vertical)
@@ -60,7 +71,6 @@ struct NewPostView: View {
                     }
                     .padding(.horizontal)
 
-                    // Post button
                     Button {
                         Task { await submitPost() }
                     } label: {
@@ -85,6 +95,36 @@ struct NewPostView: View {
                     Button("閉じる") { dismiss() }
                 }
             }
+            .onAppear { applyProfileDefaults() }
+            // カメラ or ライブラリ選択
+            .confirmationDialog("写真を選択", isPresented: $showPhotoSourceSheet, titleVisibility: .visible) {
+                Button("カメラで撮影") {
+                    imagePickerSourceType = .camera
+                    showImagePicker = true
+                }
+                Button("ライブラリから選択") {
+                    imagePickerSourceType = .photoLibrary
+                    showImagePicker = true
+                }
+                Button("キャンセル", role: .cancel) {}
+            }
+            .sheet(isPresented: $showImagePicker) {
+                ImagePickerView(sourceType: imagePickerSourceType) { img in
+                    editingImage = img
+                    showImageEditor = true
+                }
+            }
+            .sheet(isPresented: $showImageEditor) {
+                if let img = editingImage {
+                    PhotoEditorView(image: img) { edited in
+                        if photoSourceTarget == .front {
+                            frontImage = edited
+                        } else {
+                            backImage = edited
+                        }
+                    }
+                }
+            }
             .alert("投稿完了！", isPresented: $showSuccess) {
                 Button("OK") { dismiss() }
             } message: {
@@ -104,15 +144,11 @@ struct NewPostView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel("写真（前面・背面）")
             HStack(spacing: 16) {
-                photoPickerTile(title: "フロント", image: frontImage, item: $frontItem) { img in
-                    frontImage = img
-                }
-                photoPickerTile(title: "バック", image: backImage, item: $backItem) { img in
-                    backImage = img
-                }
+                photoTile(title: "フロント", image: frontImage, target: .front)
+                photoTile(title: "バック", image: backImage, target: .back)
             }
             .padding(.horizontal)
-            Text("どちらか1枚以上必須")
+            Text("どちらか1枚以上必須 • タップしてカメラまたはライブラリから選択")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
@@ -120,13 +156,11 @@ struct NewPostView: View {
     }
 
     @ViewBuilder
-    private func photoPickerTile(
-        title: String,
-        image: UIImage?,
-        item: Binding<PhotosPickerItem?>,
-        onLoad: @escaping (UIImage) -> Void
-    ) -> some View {
-        PhotosPicker(selection: item, matching: .images) {
+    private func photoTile(title: String, image: UIImage?, target: PhotoTarget) -> some View {
+        Button {
+            photoSourceTarget = target
+            showPhotoSourceSheet = true
+        } label: {
             ZStack {
                 if let img = image {
                     Image(uiImage: img)
@@ -148,15 +182,42 @@ struct NewPostView: View {
             .frame(height: 140)
             .background(Color(.systemIndigo).opacity(0.06))
             .cornerRadius(16)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.indigo.opacity(0.15), lineWidth: 1))
         }
-        .onChange(of: item.wrappedValue) { newItem in
-            Task {
-                if let data = try? await newItem?.loadTransferable(type: Data.self),
-                   let img = UIImage(data: data) {
-                    onLoad(img)
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Child Section
+
+    private var childSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("投稿するお子様")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(children.indices, id: \.self) { idx in
+                        let child = children[idx]
+                        Button {
+                            selectedChildIndex = idx
+                        } label: {
+                            VStack(spacing: 4) {
+                                Text(ChildGender(rawValue: child.gender)?.emoji ?? "🧒")
+                                    .font(.title2)
+                                Text(child.name.isEmpty ? "子供\(idx+1)" : child.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(selectedChildIndex == idx ? .white : .primary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(selectedChildIndex == idx ? Color.indigo : Color(.systemGray6))
+                            .cornerRadius(20)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal)
             }
         }
+        .padding(.horizontal)
     }
 
     // MARK: - Info Section
@@ -165,7 +226,6 @@ struct NewPostView: View {
         VStack(alignment: .leading, spacing: 16) {
             sectionLabel("基本情報")
 
-            // Gender
             VStack(alignment: .leading, spacing: 6) {
                 Text("性別").font(.subheadline).foregroundColor(.secondary)
                 HStack(spacing: 8) {
@@ -185,9 +245,14 @@ struct NewPostView: View {
                 }
             }
 
-            // Region
             VStack(alignment: .leading, spacing: 6) {
-                Text("地域").font(.subheadline).foregroundColor(.secondary)
+                HStack {
+                    Text("地域").font(.subheadline).foregroundColor(.secondary)
+                    Spacer()
+                    Text("プロフィールから反映")
+                        .font(.caption2)
+                        .foregroundColor(.indigo)
+                }
                 Picker("地域", selection: $selectedRegionIndex) {
                     ForEach(prefectures.indices, id: \.self) { i in
                         Text(prefectures[i]).tag(i)
@@ -223,8 +288,6 @@ struct NewPostView: View {
                     }
                 }
             }
-
-            // Weather type
             HStack(spacing: 8) {
                 ForEach(WeatherType.allCases) { w in
                     Button {
@@ -246,8 +309,6 @@ struct NewPostView: View {
                     .foregroundColor(.primary)
                 }
             }
-
-            // Temps
             HStack(spacing: 16) {
                 tempField(label: "最高気温(℃)", text: $tempMax)
                 tempField(label: "最低気温(℃)", text: $tempMin)
@@ -274,11 +335,16 @@ struct NewPostView: View {
             HStack {
                 sectionLabel("アイテム")
                 Spacer()
-                Button {
-                    items.append(NewItemEntry())
+                Menu {
+                    ForEach(ItemCategory.allCases) { cat in
+                        Button(cat.rawValue) {
+                            items.append(NewItemEntry(category: cat))
+                        }
+                    }
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.indigo)
+                        .font(.system(size: 22))
                 }
             }
 
@@ -293,14 +359,19 @@ struct NewPostView: View {
 
     // MARK: - Helpers
 
-    private var canPost: Bool {
-        frontImage != nil || backImage != nil
-    }
+    private var canPost: Bool { frontImage != nil || backImage != nil }
 
     private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 15, weight: .bold))
-            .foregroundColor(.primary)
+        Text(text).font(.system(size: 15, weight: .bold)).foregroundColor(.primary)
+    }
+
+    private func applyProfileDefaults() {
+        guard let user = authViewModel.currentUser else { return }
+        if let idx = Int(user.region_code), idx >= 1, idx <= 47 {
+            selectedRegionIndex = idx - 1
+        }
+        selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
+        fetchWeather()
     }
 
     private func fetchWeather() {
@@ -320,6 +391,12 @@ struct NewPostView: View {
 
     private func submitPost() async {
         guard let user = authViewModel.currentUser else { return }
+
+        // 子供が登録されている場合、選択中の子供情報を使う
+        let selectedChild: ChildProfile? = children.indices.contains(selectedChildIndex) ? children[selectedChildIndex] : nil
+        let effectiveBirthday = selectedChild?.birthday ?? user.child_birthday
+        let effectiveGender = selectedChild.map { ChildGender(rawValue: $0.gender)?.rawValue ?? selectedGender.rawValue } ?? selectedGender.rawValue
+
         let regionCode = String(format: "%02d", selectedRegionIndex + 1)
         let tMax = Double(tempMax) ?? 20
         let tMin = Double(tempMin) ?? 15
@@ -331,35 +408,42 @@ struct NewPostView: View {
                 item_id: UUID().uuidString,
                 brand_id: "custom",
                 custom_name: name,
-                size_value: entry.selectedSize
+                size_value: entry.selectedSize,
+                category: entry.category.rawValue
             )
         }
+
+        // ageMonths を選択した子供の誕生日から計算
+        var modUser = user
+        modUser.child_birthday = effectiveBirthday
+        modUser.child_gender = effectiveGender
 
         let success = await postsViewModel.uploadPost(
             frontImage: frontImage,
             backImage: backImage,
             description: description,
             regionCode: regionCode,
-            genderId: selectedGender.rawValue,
+            genderId: effectiveGender,
             weatherType: weatherType.rawValue,
             tempMax: tMax,
             tempMin: tMin,
             items: postItems,
-            user: user
+            user: modUser
         )
 
-        if success {
-            showSuccess = true
-        } else {
-            showError = true
-        }
+        if success { showSuccess = true } else { showError = true }
     }
 }
+
+// MARK: - Supporting types
+
+enum PhotoTarget { case front, back }
 
 // MARK: - Item Entry
 
 struct NewItemEntry: Identifiable {
     let id = UUID()
+    var category: ItemCategory = .tops
     var brandName: String = ""
     var selectedSize: Int = 70
 }
@@ -369,26 +453,251 @@ struct ItemEntryRow: View {
     var onRemove: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            TextField("ブランド名（例: UNIQLO）", text: $entry.brandName)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity)
-
-            Picker("サイズ", selection: $entry.selectedSize) {
-                ForEach(clothingSizes, id: \.self) { s in
-                    Text("\(s)").tag(s)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                // Category badge
+                Text(entry.category.rawValue)
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.indigo.opacity(0.1))
+                    .foregroundColor(.indigo)
+                    .cornerRadius(10)
+                Spacer()
+                Button(action: onRemove) {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundColor(.red.opacity(0.7))
                 }
             }
-            .pickerStyle(.menu)
-            .frame(width: 80)
-            .padding(8)
-            .background(Color(.systemGray6))
-            .cornerRadius(8)
+            HStack(spacing: 12) {
+                TextField("ブランド名（例: UNIQLO）", text: $entry.brandName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
+                Picker("サイズ", selection: $entry.selectedSize) {
+                    ForEach(clothingSizes, id: \.self) { s in
+                        Text("\(s)").tag(s)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 80)
+                .padding(8)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+            }
+        }
+        .padding(10)
+        .background(Color(.systemGray6).opacity(0.6))
+        .cornerRadius(12)
+    }
+}
 
-            Button(action: onRemove) {
-                Image(systemName: "minus.circle.fill")
-                    .foregroundColor(.red.opacity(0.7))
+// MARK: - ImagePickerView (UIImagePickerController wrapper)
+
+struct ImagePickerView: UIViewControllerRepresentable {
+    var sourceType: UIImagePickerController.SourceType
+    var onImagePicked: (UIImage) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onImagePicked: onImagePicked) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = sourceType
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let onImagePicked: (UIImage) -> Void
+        init(onImagePicked: @escaping (UIImage) -> Void) { self.onImagePicked = onImagePicked }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let img = info[.originalImage] as? UIImage {
+                onImagePicked(img)
+            }
+            picker.dismiss(animated: true)
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
+        }
+    }
+}
+
+// MARK: - PhotoEditorView (トリミング + スタンプ)
+
+struct PhotoEditorView: View {
+    let image: UIImage
+    var onDone: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var stampItems: [PlacedStamp] = []
+    @State private var cropRect: CGRect = .zero
+    @State private var imageSize: CGSize = .zero
+    @State private var selectedStamp: String = "⭐️"
+    @State private var isCropMode: Bool = false
+    @State private var cropStart: CGPoint = .zero
+    @State private var cropEnd: CGPoint = .zero
+    @State private var hasCrop: Bool = false
+
+    private let stamps = ["⭐️","❤️","🌟","🙈","🙉","🙊","🌈","🎀","🎵","🔵","⬜️","🟡","😊","🐾","🍀"]
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Stamp palette
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(stamps, id: \.self) { s in
+                            Button(s) { selectedStamp = s }
+                                .font(.system(size: 28))
+                                .padding(6)
+                                .background(selectedStamp == s ? Color.indigo.opacity(0.15) : Color.clear)
+                                .cornerRadius(10)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .background(Color(.systemGray6))
+
+                // Mode toggle
+                HStack {
+                    Button {
+                        isCropMode = false
+                    } label: {
+                        Label("スタンプ", systemImage: "face.smiling")
+                            .font(.system(size: 13, weight: isCropMode ? .regular : .bold))
+                            .foregroundColor(isCropMode ? .secondary : .indigo)
+                    }
+                    Spacer()
+                    Button {
+                        isCropMode = true
+                    } label: {
+                        Label("トリミング", systemImage: "crop")
+                            .font(.system(size: 13, weight: isCropMode ? .bold : .regular))
+                            .foregroundColor(isCropMode ? .indigo : .secondary)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+
+                // Canvas
+                GeometryReader { geo in
+                    ZStack(alignment: .topLeading) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                            .onAppear {
+                                let scale = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
+                                imageSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+                            }
+                            .gesture(
+                                isCropMode
+                                ? nil
+                                : DragGesture(minimumDistance: 0)
+                                    .onEnded { val in
+                                        let pos = val.location
+                                        stampItems.append(PlacedStamp(emoji: selectedStamp, position: pos))
+                                    }
+                            )
+
+                        // Crop overlay
+                        if isCropMode && hasCrop {
+                            let rect = normalizedCropRect(in: geo.size)
+                            Rectangle()
+                                .stroke(Color.white, lineWidth: 2)
+                                .background(Color.clear)
+                                .frame(width: rect.width, height: rect.height)
+                                .offset(x: rect.minX, y: rect.minY)
+                        }
+
+                        // Crop gesture overlay
+                        if isCropMode {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .gesture(
+                                    DragGesture()
+                                        .onChanged { val in
+                                            if !hasCrop { cropStart = val.startLocation }
+                                            cropEnd = val.location
+                                            hasCrop = true
+                                        }
+                                )
+                        }
+
+                        // Stamps
+                        ForEach(stampItems) { stamp in
+                            Text(stamp.emoji)
+                                .font(.system(size: 48))
+                                .position(stamp.position)
+                                .gesture(
+                                    TapGesture(count: 2).onEnded {
+                                        stampItems.removeAll { $0.id == stamp.id }
+                                    }
+                                )
+                        }
+                    }
+                }
+
+                Text(isCropMode ? "ドラッグでトリミング範囲を選択" : "タップでスタンプを配置 • スタンプをダブルタップで削除")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 8)
+            }
+            .navigationTitle("写真を編集")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("キャンセル") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完了") {
+                        let result = renderImage()
+                        onDone(result)
+                        dismiss()
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.indigo)
+                }
             }
         }
     }
+
+    private func normalizedCropRect(in size: CGSize) -> CGRect {
+        let minX = min(cropStart.x, cropEnd.x)
+        let minY = min(cropStart.y, cropEnd.y)
+        let w = abs(cropEnd.x - cropStart.x)
+        let h = abs(cropEnd.y - cropStart.y)
+        return CGRect(x: minX, y: minY, width: max(w, 4), height: max(h, 4))
+    }
+
+    private func renderImage() -> UIImage {
+        let renderer = ImageRenderer(content:
+            ZStack(alignment: .topLeading) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: image.size.width, height: image.size.height)
+                ForEach(stampItems) { stamp in
+                    Text(stamp.emoji)
+                        .font(.system(size: image.size.width * 0.12))
+                        .position(x: stamp.position.x * (image.size.width / UIScreen.main.bounds.width),
+                                  y: stamp.position.y * (image.size.height / UIScreen.main.bounds.height))
+                }
+            }
+            .frame(width: image.size.width, height: image.size.height)
+        )
+        renderer.scale = 1.0
+        return renderer.uiImage ?? image
+    }
+}
+
+struct PlacedStamp: Identifiable {
+    let id = UUID()
+    var emoji: String
+    var position: CGPoint
 }
