@@ -11,10 +11,10 @@ struct ProfileView: View {
     @State private var isLoading = false
     @State private var isFollowing = false
     @State private var showEditProfile = false
-    @State private var loadError: String?
+    @State private var showSignOutAlert = false
 
     private let db = Firestore.firestore()
-    private var isOwnProfile: Bool { userId == Auth.auth().currentUser?.uid }
+    private var isOwnProfile: Bool { userId == FirebaseAuth.Auth.auth().currentUser?.uid }
 
     var body: some View {
         ScrollView {
@@ -28,11 +28,6 @@ struct ProfileView: View {
                 // Posts grid
                 if isLoading {
                     ProgressView().padding()
-                } else if let err = loadError {
-                    Text("読み込みエラー: \(err)")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .padding()
                 } else {
                     postsGrid
                 }
@@ -90,6 +85,26 @@ struct ProfileView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(12)
                 }
+
+                Button {
+                    showSignOutAlert = true
+                } label: {
+                    Text("ログアウト")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                }
+                .alert("ログアウト", isPresented: $showSignOutAlert) {
+                    Button("キャンセル", role: .cancel) {}
+                    Button("ログアウト", role: .destructive) {
+                        authViewModel.signOut()
+                    }
+                } message: {
+                    Text("ログアウトしますか？")
+                }
             } else {
                 Button {
                     Task { await toggleFollow() }
@@ -124,11 +139,14 @@ struct ProfileView: View {
         return LazyVGrid(columns: columns, spacing: 2) {
             ForEach(userPosts) { post in
                 let url = post.image_url_front ?? post.image_url_back
-                CachedAsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color(.systemIndigo).opacity(0.1)
-                        .overlay(Text("📷").font(.title))
+                AsyncImage(url: URL(string: url ?? "")) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        Color(.systemIndigo).opacity(0.1)
+                            .overlay(Text("📷").font(.title))
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .aspectRatio(1, contentMode: .fill)
@@ -152,17 +170,15 @@ struct ProfileView: View {
         do {
             let snap = try await db.collection("posts")
                 .whereField("user_id", isEqualTo: userId)
+                .whereField("is_hidden", isEqualTo: false)
                 .order(by: "created_at", descending: true)
                 .getDocuments()
             userPosts = try snap.documents.map { try $0.data(as: Post.self) }
-                .filter { !$0.is_hidden }
-        } catch {
-            loadError = error.localizedDescription
-        }
+        } catch {}
     }
 
     private func checkFollowing() async {
-        guard let myId = Auth.auth().currentUser?.uid else { return }
+        guard let myId = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
         let snap = try? await db.collection("follows")
             .whereField("follower_id", isEqualTo: myId)
             .whereField("following_id", isEqualTo: userId)
@@ -171,7 +187,7 @@ struct ProfileView: View {
     }
 
     private func toggleFollow() async {
-        guard let myId = Auth.auth().currentUser?.uid else { return }
+        guard let myId = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
         let followId = "\(myId)_\(userId)"
         let ref = db.collection("follows").document(followId)
         let userRef = db.collection("users").document(userId)
@@ -187,7 +203,7 @@ struct ProfileView: View {
                 following_id: userId,
                 created_at: Timestamp(date: Date())
             )
-            try? await ref.setData(from: follow)
+            try? ref.setData(from: follow)
             try? await userRef.updateData(["followers_count": FieldValue.increment(Int64(1))])
             profileUser?.followers_count = (profileUser?.followers_count ?? 0) + 1
         }

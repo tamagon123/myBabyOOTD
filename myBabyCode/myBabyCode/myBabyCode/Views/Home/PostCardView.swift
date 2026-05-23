@@ -44,10 +44,15 @@ struct PostCardView: View {
             } else {
                 TabView(selection: $currentImageIndex) {
                     ForEach(imageURLs.indices, id: \.self) { idx in
-                        CachedAsyncImage(url: imageURLs[idx]) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Color(.systemGray5).overlay(ProgressView())
+                        AsyncImage(url: URL(string: imageURLs[idx])) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().scaledToFill()
+                            case .failure:
+                                photoPlaceholder
+                            default:
+                                Color(.systemGray5).overlay(ProgressView())
+                            }
                         }
                         .clipped()
                         .tag(idx)

@@ -6,23 +6,11 @@ import FirebaseFirestore
 struct AppUser: Identifiable, Codable {
     @DocumentID var id: String?
     var user_id: String
-    var display_name: String = ""
     var avatar_id: String
     var region_code: String
-    var child_birthday: Date        // 後方互換のため残す（最初の子供のデフォルト）
-    var child_gender: Int
+    var child_birthday: Date
+    var child_gender: Int       // 0:未選択 1:男 2:女 3:その他
     var followers_count: Int
-}
-
-// MARK: - Child（users/{uid}/children サブコレクション）
-
-struct Child: Identifiable, Codable {
-    @DocumentID var id: String?
-    var child_id: String
-    var name: String                // 例: "はな"
-    var birthday: Date
-    var gender: Int                 // 0:未選択 1:男 2:女 3:その他
-    var sort_order: Int
 }
 
 // MARK: - Post
@@ -45,22 +33,10 @@ struct Post: Identifiable, Codable {
     var reports_count: Int
     var is_hidden: Bool
     var created_at: Timestamp
-    var child_id: String?           // どの子供の投稿か
 
-    // Local only（Firestoreには保存しない）
-    var posterAvatarId: String? = nil
-    var posterChildAgeName: String? = nil
-
-    enum CodingKeys: String, CodingKey {
-        case id, post_id, user_id
-        case image_url_front, image_url_back
-        case child_age_months, region_code, gender_id
-        case description, weather_type
-        case temp_max, temp_min, temp_category
-        case likes_count, reports_count, is_hidden
-        case created_at, child_id
-        // posterAvatarId / posterChildAgeName は除外
-    }
+    // Local helper: poster's avatar_id loaded separately
+    var posterAvatarId: String?
+    var posterChildAgeName: String?
 }
 
 // MARK: - PostItem

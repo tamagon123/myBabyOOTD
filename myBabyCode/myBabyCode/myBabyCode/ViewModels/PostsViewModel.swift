@@ -1,8 +1,8 @@
 import SwiftUI
-import Combine
 import FirebaseFirestore
 import FirebaseAuth
 import FirebaseStorage
+import Combine
 
 enum TimelineTab: String, CaseIterable, Identifiable {
     case latest   = "新着"
@@ -26,8 +26,6 @@ class PostsViewModel: ObservableObject {
 
     func fetchPosts(user: AppUser?) async {
         isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
         do {
             var query: Query = db.collection("posts")
                 .whereField("is_hidden", isEqualTo: false)
@@ -52,16 +50,14 @@ class PostsViewModel: ObservableObject {
                         .limit(to: 30)
                 }
             case .following:
-                guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else {
-                    posts = []
-                    return
-                }
+                guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { break }
                 let followSnaps = try await db.collection("follows")
                     .whereField("follower_id", isEqualTo: uid)
                     .getDocuments()
                 let followingIds = followSnaps.documents.compactMap { $0.data()["following_id"] as? String }
                 guard !followingIds.isEmpty else {
                     posts = []
+                    isLoading = false
                     return
                 }
                 query = db.collection("posts")
@@ -75,8 +71,8 @@ class PostsViewModel: ObservableObject {
             posts = try snapshot.documents.map { try $0.data(as: Post.self) }
         } catch {
             errorMessage = error.localizedDescription
-            posts = []
         }
+        isLoading = false
     }
 
     func fetchLikedPosts() async {
@@ -148,7 +144,6 @@ class PostsViewModel: ObservableObject {
         tempMax: Double,
         tempMin: Double,
         items: [PostItem],
-        childId: String?,
         user: AppUser
     ) async -> Bool {
         guard frontImage != nil || backImage != nil else {
@@ -162,7 +157,6 @@ class PostsViewModel: ObservableObject {
         do {
             let postId = UUID().uuidString
             let ageMonths = Calendar.current.dateComponents([.month], from: user.child_birthday, to: Date()).month ?? 0
-            // childId は Post に格納（表示名取得等に活用）
             let tempCat = tempCategoryKey(max: tempMax, min: tempMin)
             let uid = FirebaseAuth.Auth.auth().currentUser?.uid ?? user.user_id
 
@@ -197,29 +191,20 @@ class PostsViewModel: ObservableObject {
                 likes_count: 0,
                 reports_count: 0,
                 is_hidden: false,
-                created_at: Timestamp(date: Date()),
-                child_id: childId
+                created_at: Timestamp(date: Date())
             )
 
             let postRef = db.collection("posts").document(postId)
-            try await postRef.setData(from: post)
+            try postRef.setData(from: post)
 
             for item in items {
                 let itemRef = postRef.collection("items").document(item.item_id)
-                try await itemRef.setData(from: item)
+                try itemRef.setData(from: item)
             }
 
-            posts.insert(post, at: 0)
             return true
         } catch {
-            let nsErr = error as NSError
-            if nsErr.domain == "FIRStorageErrorDomain" {
-                errorMessage = "画像のアップロードに失敗しました。ネットワーク接続を確認してください。\n(\(nsErr.code))"
-            } else if nsErr.domain == "FIRFirestoreErrorDomain" {
-                errorMessage = "投稿データの保存に失敗しました。しばらくしてから再試行してください。\n(\(nsErr.code))"
-            } else {
-                errorMessage = "投稿に失敗しました: \(error.localizedDescription)"
-            }
+            errorMessage = error.localizedDescription
             return false
         }
     }
@@ -243,11 +228,8 @@ class PostsViewModel: ObservableObject {
               let type = CGImageSourceGetType(source) else { return data }
         let mutableData = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(mutableData, type, 1, nil) else { return data }
-        let options: [String: Any] = [
-            kCGImageMetadataShouldExcludeGPS as String: true,
-            kCGImageDestinationMergeMetadata as String: false
-        ]
-        CGImageDestinationAddImageFromSource(dest, source, 0, options as CFDictionary)
+        let removeMetadata: [String: Any] = [kCGImageDestinationMetadata as String: [:]]
+        CGImageDestinationAddImageFromSource(dest, source, 0, removeMetadata as CFDictionary)
         CGImageDestinationFinalize(dest)
         return mutableData as Data
     }

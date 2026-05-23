@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseAuth
+import Combine
 
 struct MainTabView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -20,7 +21,7 @@ struct MainTabView: View {
                     SearchView()
                         .environmentObject(authViewModel)
                 case 2:
-                    ProfileView(userId: FirebaseAuth.Auth.auth().currentUser?.uid ?? "")
+                    ProfileView(userId: Auth.currentUID)
                         .environmentObject(authViewModel)
                 default:
                     EmptyView()
@@ -113,6 +114,14 @@ struct AdBannerView: View {
             Rectangle()
                 .stroke(Color(.systemGray4), lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - Auth helper shim
+
+enum Auth {
+    static var currentUID: String {
+        FirebaseAuth.Auth.auth().currentUser?.uid ?? ""
     }
 }
 

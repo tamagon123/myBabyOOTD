@@ -3,13 +3,12 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var postsViewModel: PostsViewModel
     @EnvironmentObject var authViewModel: AuthViewModel
-    @State private var showSearch = false
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             VStack(spacing: 0) {
                 // Header
-                AppHeaderView(showSearch: $showSearch)
+                AppHeaderView()
 
                 // Tab selector
                 TimelineTabBar(selected: $postsViewModel.currentTab)
@@ -17,20 +16,22 @@ struct HomeView: View {
                     .padding(.vertical, 8)
 
                 // Feed
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if postsViewModel.isLoading {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 60)
-                        } else if postsViewModel.posts.isEmpty {
-                            VStack(spacing: 12) {
-                                Text("👶").font(.system(size: 48))
-                                Text("投稿がありません").foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 80)
-                        } else {
+                if postsViewModel.isLoading {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                } else if postsViewModel.posts.isEmpty {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        Text("👶")
+                            .font(.system(size: 48))
+                        Text("投稿がありません")
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
                             ForEach(postsViewModel.posts) { post in
                                 PostCardView(
                                     post: post,
@@ -44,13 +45,9 @@ struct HomeView: View {
                                 )
                             }
                         }
+                        .padding(.top, 8)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-                }
-                .refreshable {
-                    await postsViewModel.fetchPosts(user: authViewModel.currentUser)
-                    await postsViewModel.fetchLikedPosts()
                 }
             }
             .navigationBarHidden(true)
@@ -58,14 +55,10 @@ struct HomeView: View {
                 await postsViewModel.fetchPosts(user: authViewModel.currentUser)
                 await postsViewModel.fetchLikedPosts()
             }
-            .onChange(of: postsViewModel.currentTab) { _, _ in
+            .onChange(of: postsViewModel.currentTab) { _ in
                 Task {
                     await postsViewModel.fetchPosts(user: authViewModel.currentUser)
                 }
-            }
-            .sheet(isPresented: $showSearch) {
-                SearchView()
-                    .environmentObject(authViewModel)
             }
         }
     }
@@ -74,8 +67,6 @@ struct HomeView: View {
 // MARK: - App Header
 
 struct AppHeaderView: View {
-    @Binding var showSearch: Bool
-
     var body: some View {
         HStack {
             Text("👶")
@@ -85,9 +76,7 @@ struct AppHeaderView: View {
                 .font(.system(size: 18, weight: .bold))
                 .foregroundColor(.indigo)
             Spacer()
-            Button {
-                showSearch = true
-            } label: {
+            NavigationLink(destination: SearchView()) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 20))
                     .foregroundColor(.indigo)

@@ -3,7 +3,6 @@ import FirebaseFirestore
 
 struct SearchView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
-    @State private var showSearch = false
 
     @State private var selectedRegionIndex: Int = -1    // -1 = 全国
     @State private var selectedGender: ChildGender = .unselected
@@ -20,7 +19,7 @@ struct SearchView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                AppHeaderView(showSearch: $showSearch)
+                AppHeaderView()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
@@ -204,4 +203,3 @@ struct SearchView: View {
         isLoading = false
     }
 }
-

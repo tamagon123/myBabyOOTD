@@ -26,11 +26,10 @@ private let prefectureCoordinates: [String: (lat: Double, lon: Double)] = [
     "46": (31.560, 130.558), "47": (26.212, 127.681)
 ]
 
-final class WeatherService: Sendable {
+actor WeatherService {
     static let shared = WeatherService()
-    private init() {}
 
-    nonisolated func fetch(regionCode: String) async -> WeatherResult? {
+    func fetch(regionCode: String) async -> WeatherResult? {
         guard let coord = prefectureCoordinates[regionCode] else { return nil }
         let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=Asia%2FTokyo&forecast_days=1"
         guard let url = URL(string: urlString) else { return nil }
@@ -47,13 +46,13 @@ final class WeatherService: Sendable {
         }
     }
 
-    private nonisolated func mapWeatherCode(_ code: Int) -> String {
+    private func mapWeatherCode(_ code: Int) -> String {
         switch code {
-        case 0, 1:            return "sunny"
-        case 2, 3:            return "cloudy"
+        case 0, 1:       return "sunny"
+        case 2, 3:       return "cloudy"
         case 51...67, 80...82: return "rainy"
-        case 71...77, 85, 86: return "snowy"
-        default:              return "cloudy"
+        case 71...77, 85, 86:  return "snowy"
+        default:         return "cloudy"
         }
     }
 }
