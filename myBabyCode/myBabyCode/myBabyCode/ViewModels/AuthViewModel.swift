@@ -40,6 +40,75 @@ class AuthViewModel: ObservableObject {
         isInitializing = false
     }
 
+    // MARK: - Email Sign In
+
+    func signInWithEmail(email: String, password: String) {
+        Task {
+            isLoading = true
+            do {
+                let result = try await FirebaseAuth.Auth.auth().signIn(withEmail: email, password: password)
+                let uid = result.user.uid
+                let docRef = db.collection("users").document(uid)
+                let snapshot = try await docRef.getDocument()
+                if !snapshot.exists {
+                    let newUser = AppUser(
+                        user_id: uid,
+                        avatar_id: "🐶",
+                        region_code: "13",
+                        child_birthday: Date(),
+                        child_gender: 0,
+                        followers_count: 0
+                    )
+                    try docRef.setData(from: newUser)
+                    currentUser = newUser
+                } else {
+                    currentUser = try snapshot.data(as: AppUser.self)
+                }
+                isSignedIn = true
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+
+    func signUpWithEmail(email: String, password: String) {
+        Task {
+            isLoading = true
+            do {
+                let result = try await FirebaseAuth.Auth.auth().createUser(withEmail: email, password: password)
+                let uid = result.user.uid
+                let newUser = AppUser(
+                    user_id: uid,
+                    avatar_id: "🐶",
+                    region_code: "13",
+                    child_birthday: Date(),
+                    child_gender: 0,
+                    followers_count: 0
+                )
+                try db.collection("users").document(uid).setData(from: newUser)
+                currentUser = newUser
+                isSignedIn = true
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+
+    func resetPassword(email: String) {
+        Task {
+            isLoading = true
+            do {
+                try await FirebaseAuth.Auth.auth().sendPasswordReset(withEmail: email)
+                errorMessage = "パスワードリセットメールを送信しました"
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+
     // MARK: - Apple Sign In
 
     func handleSignInWithApple(result: Result<ASAuthorization, Error>) {
