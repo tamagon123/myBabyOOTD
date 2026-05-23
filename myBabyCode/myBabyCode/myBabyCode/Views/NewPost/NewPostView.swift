@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 import UIKit
 
 // MARK: - NewPostView
@@ -18,6 +17,8 @@ struct NewPostView: View {
     @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
     @State private var editingImage: UIImage?
     @State private var showImageEditor = false
+    @State private var editorReadyImage: UIImage?
+    @State private var showEditConfirm = false
 
     // Post info
     @State private var description: String = ""
@@ -108,14 +109,37 @@ struct NewPostView: View {
                 }
                 Button("キャンセル", role: .cancel) {}
             }
-            .sheet(isPresented: $showImagePicker) {
+            .sheet(isPresented: $showImagePicker, onDismiss: {
+                if editingImage != nil {
+                    showEditConfirm = true
+                }
+            }) {
                 ImagePickerView(sourceType: imagePickerSourceType) { img in
                     editingImage = img
-                    showImageEditor = true
                 }
             }
-            .sheet(isPresented: $showImageEditor) {
-                if let img = editingImage {
+            .confirmationDialog("この写真を編集しますか？", isPresented: $showEditConfirm, titleVisibility: .visible) {
+                Button("編集する（スタンプ・トリミング）") {
+                    editorReadyImage = editingImage
+                    editingImage = nil
+                    showImageEditor = true
+                }
+                Button("そのまま使う") {
+                    if photoSourceTarget == .front {
+                        frontImage = editingImage
+                    } else {
+                        backImage = editingImage
+                    }
+                    editingImage = nil
+                }
+                Button("キャンセル", role: .cancel) {
+                    editingImage = nil
+                }
+            }
+            .sheet(isPresented: $showImageEditor, onDismiss: {
+                editorReadyImage = nil
+            }) {
+                if let img = editorReadyImage {
                     PhotoEditorView(image: img) { edited in
                         if photoSourceTarget == .front {
                             frontImage = edited
@@ -126,7 +150,13 @@ struct NewPostView: View {
                 }
             }
             .alert("投稿完了！", isPresented: $showSuccess) {
-                Button("OK") { dismiss() }
+                Button("OK") {
+                    Task {
+                        await postsViewModel.fetchPosts(user: authViewModel.currentUser)
+                        await postsViewModel.fetchLikedPosts()
+                    }
+                    dismiss()
+                }
             } message: {
                 Text("コーディネートを共有しました🎉")
             }
@@ -525,128 +555,91 @@ struct ImagePickerView: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - PhotoEditorView (トリミング + スタンプ)
+// MARK: - PhotoEditorView (スタンプ＋トリミング)
+
+enum EditorMode { case stamp, crop }
+
+struct PlacedStamp: Identifiable {
+    let id = UUID()
+    var symbol: StampSymbol
+    var position: CGPoint
+    var scale: CGFloat = 1.0
+    var rotation: Angle = .zero
+}
+
+enum StampSymbol: String, CaseIterable, Identifiable {
+    case circle       = "circle.fill"
+    case square       = "square.fill"
+    case triangle     = "triangle.fill"
+    case star         = "star.fill"
+    case heart        = "heart.fill"
+    case diamond      = "diamond.fill"
+    case pentagon     = "pentagon.fill"
+    case hexagon      = "hexagon.fill"
+    case cloud        = "cloud.fill"
+    case moon         = "moon.fill"
+    case sun          = "sun.max.fill"
+    case bolt         = "bolt.fill"
+    var id: String { rawValue }
+    var color: Color {
+        switch self {
+        case .circle:   return .indigo
+        case .square:   return .orange
+        case .triangle: return .green
+        case .star:     return .yellow
+        case .heart:    return .pink
+        case .diamond:  return .cyan
+        case .pentagon: return .purple
+        case .hexagon:  return .mint
+        case .cloud:    return .blue
+        case .moon:     return Color(.systemGray)
+        case .sun:      return .orange
+        case .bolt:     return .yellow
+        }
+    }
+}
+
+// Undo操作タイプ
+enum EditorAction {
+    case addStamp(PlacedStamp)
+    case moveStamp(id: UUID, from: CGPoint, to: CGPoint)
+    case scaleStamp(id: UUID, from: CGFloat, to: CGFloat)
+    case removeStamp(PlacedStamp)
+    case crop(from: UIImage, to: UIImage)
+}
 
 struct PhotoEditorView: View {
-    let image: UIImage
-    var onDone: (UIImage) -> Void
+    @State private var currentImage: UIImage
+    let onDone: (UIImage) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var stampItems: [PlacedStamp] = []
-    @State private var cropRect: CGRect = .zero
-    @State private var imageSize: CGSize = .zero
-    @State private var selectedStamp: String = "⭐️"
-    @State private var isCropMode: Bool = false
-    @State private var cropStart: CGPoint = .zero
-    @State private var cropEnd: CGPoint = .zero
-    @State private var hasCrop: Bool = false
+    @State private var selectedSymbol: StampSymbol = .star
+    @State private var mode: EditorMode = .stamp
+    @State private var history: [EditorAction] = []
 
-    private let stamps = ["⭐️","❤️","🌟","🙈","🙉","🙊","🌈","🎀","🎵","🔵","⬜️","🟡","😊","🐾","🍀"]
+    // Crop state
+    @State private var canvasSize: CGSize = .zero
+    @State private var cropTL: CGPoint = .zero  // top-left handle
+    @State private var cropBR: CGPoint = .zero  // bottom-right handle
+    @State private var cropInitialized = false
+
+    // Stamp interaction
+    @State private var activeStampId: UUID? = nil
+    @State private var stampScaleBase: CGFloat = 1.0
+
+    init(image: UIImage, onDone: @escaping (UIImage) -> Void) {
+        _currentImage = State(initialValue: image)
+        self.onDone = onDone
+    }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Stamp palette
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(stamps, id: \.self) { s in
-                            Button(s) { selectedStamp = s }
-                                .font(.system(size: 28))
-                                .padding(6)
-                                .background(selectedStamp == s ? Color.indigo.opacity(0.15) : Color.clear)
-                                .cornerRadius(10)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                }
-                .background(Color(.systemGray6))
-
-                // Mode toggle
-                HStack {
-                    Button {
-                        isCropMode = false
-                    } label: {
-                        Label("スタンプ", systemImage: "face.smiling")
-                            .font(.system(size: 13, weight: isCropMode ? .regular : .bold))
-                            .foregroundColor(isCropMode ? .secondary : .indigo)
-                    }
-                    Spacer()
-                    Button {
-                        isCropMode = true
-                    } label: {
-                        Label("トリミング", systemImage: "crop")
-                            .font(.system(size: 13, weight: isCropMode ? .bold : .regular))
-                            .foregroundColor(isCropMode ? .indigo : .secondary)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
-
-                // Canvas
-                GeometryReader { geo in
-                    ZStack(alignment: .topLeading) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .clipped()
-                            .onAppear {
-                                let scale = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
-                                imageSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-                            }
-                            .gesture(
-                                isCropMode
-                                ? nil
-                                : DragGesture(minimumDistance: 0)
-                                    .onEnded { val in
-                                        let pos = val.location
-                                        stampItems.append(PlacedStamp(emoji: selectedStamp, position: pos))
-                                    }
-                            )
-
-                        // Crop overlay
-                        if isCropMode && hasCrop {
-                            let rect = normalizedCropRect(in: geo.size)
-                            Rectangle()
-                                .stroke(Color.white, lineWidth: 2)
-                                .background(Color.clear)
-                                .frame(width: rect.width, height: rect.height)
-                                .offset(x: rect.minX, y: rect.minY)
-                        }
-
-                        // Crop gesture overlay
-                        if isCropMode {
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .gesture(
-                                    DragGesture()
-                                        .onChanged { val in
-                                            if !hasCrop { cropStart = val.startLocation }
-                                            cropEnd = val.location
-                                            hasCrop = true
-                                        }
-                                )
-                        }
-
-                        // Stamps
-                        ForEach(stampItems) { stamp in
-                            Text(stamp.emoji)
-                                .font(.system(size: 48))
-                                .position(stamp.position)
-                                .gesture(
-                                    TapGesture(count: 2).onEnded {
-                                        stampItems.removeAll { $0.id == stamp.id }
-                                    }
-                                )
-                        }
-                    }
-                }
-
-                Text(isCropMode ? "ドラッグでトリミング範囲を選択" : "タップでスタンプを配置 • スタンプをダブルタップで削除")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.bottom, 8)
+                modeBar
+                if mode == .stamp { stampPalette }
+                canvas
+                hintText
             }
             .navigationTitle("写真を編集")
             .navigationBarTitleDisplayMode(.inline)
@@ -654,50 +647,398 @@ struct PhotoEditorView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("キャンセル") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完了") {
-                        let result = renderImage()
-                        onDone(result)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        onDone(renderFinalImage())
                         dismiss()
+                    } label: {
+                        Text("完了").font(.system(size: 15, weight: .bold))
                     }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.indigo)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        applyCrop()
+                    } label: {
+                        Text("切り取り").font(.system(size: 14, weight: .bold))
+                    }
+                    .opacity(mode == .crop ? 1 : 0)
+                    .disabled(mode != .crop)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        performUndo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .disabled(history.isEmpty)
                 }
             }
         }
     }
 
-    private func normalizedCropRect(in size: CGSize) -> CGRect {
-        let minX = min(cropStart.x, cropEnd.x)
-        let minY = min(cropStart.y, cropEnd.y)
-        let w = abs(cropEnd.x - cropStart.x)
-        let h = abs(cropEnd.y - cropStart.y)
-        return CGRect(x: minX, y: minY, width: max(w, 4), height: max(h, 4))
+    // MARK: - Mode Bar
+
+    private var modeBar: some View {
+        HStack(spacing: 0) {
+            modeTab(title: "スタンプ", icon: "star.fill", target: .stamp)
+            modeTab(title: "トリミング", icon: "crop", target: .crop)
+        }
+        .background(Color(.systemGray6))
     }
 
-    private func renderImage() -> UIImage {
-        let renderer = ImageRenderer(content:
-            ZStack(alignment: .topLeading) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: image.size.width, height: image.size.height)
-                ForEach(stampItems) { stamp in
-                    Text(stamp.emoji)
-                        .font(.system(size: image.size.width * 0.12))
-                        .position(x: stamp.position.x * (image.size.width / UIScreen.main.bounds.width),
-                                  y: stamp.position.y * (image.size.height / UIScreen.main.bounds.height))
+    private func modeTab(title: String, icon: String, target: EditorMode) -> some View {
+        Button {
+            mode = target
+            if target == .crop && !cropInitialized { initCropHandles() }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 16))
+                Text(title).font(.system(size: 11))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .foregroundColor(mode == target ? .indigo : .secondary)
+            .background(mode == target ? Color.white : Color(.systemGray6))
+        }
+    }
+
+    // MARK: - Stamp Palette
+
+    private var stampPalette: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(StampSymbol.allCases) { sym in
+                    Button {
+                        selectedSymbol = sym
+                    } label: {
+                        Image(systemName: sym.rawValue)
+                            .font(.system(size: 24))
+                            .foregroundColor(sym.color)
+                            .frame(width: 44, height: 44)
+                            .background(selectedSymbol == sym ? Color.indigo.opacity(0.12) : Color(.systemGray6))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(selectedSymbol == sym ? Color.indigo : Color.clear, lineWidth: 1.5)
+                            )
+                    }
                 }
             }
-            .frame(width: image.size.width, height: image.size.height)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.systemGray5))
+    }
+
+    // MARK: - Canvas
+
+    private var canvas: some View {
+        GeometryReader { geo in
+            ZStack {
+                // Base image
+                Image(uiImage: currentImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .onAppear {
+                        canvasSize = geo.size
+                        initCropHandles()
+                    }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 0)
+                            .onEnded { val in
+                                guard mode == .stamp else { return }
+                                let stamp = PlacedStamp(symbol: selectedSymbol, position: val.location)
+                                stampItems.append(stamp)
+                                history.append(.addStamp(stamp))
+                            }
+                    )
+
+                // Stamps
+                ForEach($stampItems) { $stamp in
+                    StampView(stamp: $stamp, isActive: activeStampId == stamp.id) {
+                        activeStampId = stamp.id
+                    } onRemove: {
+                        history.append(.removeStamp(stamp))
+                        stampItems.removeAll { $0.id == stamp.id }
+                    } onScaleChange: { base in
+                        stampScaleBase = base
+                    }
+                }
+
+                // Crop overlay
+                if mode == .crop {
+                    cropOverlay(in: geo.size)
+                }
+            }
+        }
+    }
+
+    // MARK: - Crop Overlay
+
+    @ViewBuilder
+    private func cropOverlay(in size: CGSize) -> some View {
+        let rect = CGRect(
+            x: cropTL.x, y: cropTL.y,
+            width: cropBR.x - cropTL.x,
+            height: cropBR.y - cropTL.y
         )
-        renderer.scale = 1.0
-        return renderer.uiImage ?? image
+        // Dim outside
+        ZStack {
+            Color.black.opacity(0.4)
+            Rectangle()
+                .frame(width: max(rect.width, 0), height: max(rect.height, 0))
+                .offset(x: rect.minX - size.width / 2 + rect.width / 2,
+                        y: rect.minY - size.height / 2 + rect.height / 2)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .allowsHitTesting(false)
+
+        // Crop border
+        Rectangle()
+            .stroke(Color.white, lineWidth: 1.5)
+            .frame(width: max(rect.width, 0), height: max(rect.height, 0))
+            .position(x: rect.midX, y: rect.midY)
+            .allowsHitTesting(false)
+
+        // Grid lines
+        Path { p in
+            let dx = rect.width / 3
+            let dy = rect.height / 3
+            for i in 1..<3 {
+                p.move(to: CGPoint(x: rect.minX + dx * CGFloat(i), y: rect.minY))
+                p.addLine(to: CGPoint(x: rect.minX + dx * CGFloat(i), y: rect.maxY))
+                p.move(to: CGPoint(x: rect.minX, y: rect.minY + dy * CGFloat(i)))
+                p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + dy * CGFloat(i)))
+            }
+        }
+        .stroke(Color.white.opacity(0.4), lineWidth: 0.5)
+        .allowsHitTesting(false)
+
+        // Handles
+        cropHandle(at: cropTL, corner: .topLeft)
+        cropHandle(at: CGPoint(x: cropBR.x, y: cropTL.y), corner: .topRight)
+        cropHandle(at: CGPoint(x: cropTL.x, y: cropBR.y), corner: .bottomLeft)
+        cropHandle(at: cropBR, corner: .bottomRight)
+    }
+
+    private enum CropCorner { case topLeft, topRight, bottomLeft, bottomRight }
+
+    private func cropHandle(at point: CGPoint, corner: CropCorner) -> some View {
+        let handleSize: CGFloat = 24
+        return Circle()
+            .fill(Color.white)
+            .frame(width: handleSize, height: handleSize)
+            .shadow(radius: 2)
+            .position(point)
+            .gesture(
+                DragGesture()
+                    .onChanged { val in
+                        let minSize: CGFloat = 40
+                        switch corner {
+                        case .topLeft:
+                            cropTL = CGPoint(
+                                x: min(val.location.x, cropBR.x - minSize),
+                                y: min(val.location.y, cropBR.y - minSize)
+                            )
+                        case .topRight:
+                            cropBR.x = max(val.location.x, cropTL.x + minSize)
+                            cropTL.y = min(val.location.y, cropBR.y - minSize)
+                        case .bottomLeft:
+                            cropTL.x = min(val.location.x, cropBR.x - minSize)
+                            cropBR.y = max(val.location.y, cropTL.y + minSize)
+                        case .bottomRight:
+                            cropBR = CGPoint(
+                                x: max(val.location.x, cropTL.x + minSize),
+                                y: max(val.location.y, cropTL.y + minSize)
+                            )
+                        }
+                    }
+            )
+    }
+
+    // MARK: - Hint
+
+    private var hintText: some View {
+        Group {
+            if mode == .stamp {
+                Text("タップでスタンプを配置 • ピンチで拡縮・回転 • ダブルタップで削除")
+            } else {
+                Text("四隅のハンドルをドラッグして範囲を調整し「切り取り」をタップ")
+            }
+        }
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Crop Helpers
+
+    private func initCropHandles() {
+        guard canvasSize != .zero else { return }
+        let inset: CGFloat = 20
+        cropTL = CGPoint(x: inset, y: inset)
+        cropBR = CGPoint(x: canvasSize.width - inset, y: canvasSize.height - inset)
+        cropInitialized = true
+    }
+
+    private func applyCrop() {
+        let imgW = currentImage.size.width
+        let imgH = currentImage.size.height
+        let dispW = canvasSize.width
+        let dispH = canvasSize.height
+
+        // scaledToFit で表示される実際の描画サイズを計算
+        let scale = min(dispW / imgW, dispH / imgH)
+        let drawW = imgW * scale
+        let drawH = imgH * scale
+        let offsetX = (dispW - drawW) / 2
+        let offsetY = (dispH - drawH) / 2
+
+        // クロップ座標を画像座標に変換
+        let imgScale = 1.0 / scale
+        let cx = max(0, (cropTL.x - offsetX)) * imgScale
+        let cy = max(0, (cropTL.y - offsetY)) * imgScale
+        let cw = min(imgW - cx, (cropBR.x - cropTL.x) * imgScale)
+        let ch = min(imgH - cy, (cropBR.y - cropTL.y) * imgScale)
+
+        guard cw > 0, ch > 0 else { return }
+
+        let cropRect = CGRect(x: cx, y: cy, width: cw, height: ch)
+        if let cgImg = currentImage.cgImage?.cropping(to: cropRect) {
+            let before = currentImage
+            let cropped = UIImage(cgImage: cgImg, scale: currentImage.scale, orientation: currentImage.imageOrientation)
+            history.append(.crop(from: before, to: cropped))
+            currentImage = cropped
+            // リセット
+            cropInitialized = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                initCropHandles()
+            }
+        }
+    }
+
+    // MARK: - Undo
+
+    private func performUndo() {
+        guard let last = history.popLast() else { return }
+        switch last {
+        case .addStamp(let s):
+            stampItems.removeAll { $0.id == s.id }
+        case .removeStamp(let s):
+            stampItems.append(s)
+        case .moveStamp(let id, let from, _):
+            if let idx = stampItems.firstIndex(where: { $0.id == id }) {
+                stampItems[idx].position = from
+            }
+        case .scaleStamp(let id, let from, _):
+            if let idx = stampItems.firstIndex(where: { $0.id == id }) {
+                stampItems[idx].scale = from
+            }
+        case .crop(let before, _):
+            currentImage = before
+            cropInitialized = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                initCropHandles()
+            }
+        }
+    }
+
+    // MARK: - Render
+
+    private func renderFinalImage() -> UIImage {
+        let imgW = currentImage.size.width
+        let imgH = currentImage.size.height
+        let dispW = canvasSize.width == 0 ? UIScreen.main.bounds.width : canvasSize.width
+        let dispH = canvasSize.height == 0 ? UIScreen.main.bounds.height : canvasSize.height
+
+        let scale = min(dispW / imgW, dispH / imgH)
+        let offsetX = (dispW - imgW * scale) / 2
+        let offsetY = (dispH - imgH * scale) / 2
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = currentImage.scale
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: imgW, height: imgH), format: format)
+        return renderer.image { ctx in
+            currentImage.draw(in: CGRect(origin: .zero, size: CGSize(width: imgW, height: imgH)))
+            for stamp in stampItems {
+                let imgX = (stamp.position.x - offsetX) / scale
+                let imgY = (stamp.position.y - offsetY) / scale
+                let baseSize: CGFloat = imgW * 0.1
+                let stampSize = baseSize * stamp.scale
+                let uiColor = UIColor(stamp.symbol.color)
+                let config = UIImage.SymbolConfiguration(pointSize: stampSize, weight: .bold)
+                if let sym = UIImage(systemName: stamp.symbol.rawValue, withConfiguration: config)?
+                    .withTintColor(uiColor, renderingMode: .alwaysOriginal) {
+                    ctx.cgContext.saveGState()
+                    ctx.cgContext.translateBy(x: imgX, y: imgY)
+                    ctx.cgContext.rotate(by: CGFloat(stamp.rotation.radians))
+                    sym.draw(at: CGPoint(x: -stampSize / 2, y: -stampSize / 2))
+                    ctx.cgContext.restoreGState()
+                }
+            }
+        }
     }
 }
 
-struct PlacedStamp: Identifiable {
-    let id = UUID()
-    var emoji: String
-    var position: CGPoint
+// MARK: - StampView (個別スタンプ操作)
+
+struct StampView: View {
+    @Binding var stamp: PlacedStamp
+    let isActive: Bool
+    let onTap: () -> Void
+    let onRemove: () -> Void
+    let onScaleChange: (CGFloat) -> Void
+
+    @GestureState private var dragOffset: CGSize = .zero
+    @GestureState private var pinchScale: CGFloat = 1.0
+    @GestureState private var rotationAngle: Angle = .zero
+
+    var body: some View {
+        Image(systemName: stamp.symbol.rawValue)
+            .font(.system(size: 44 * stamp.scale))
+            .foregroundColor(stamp.symbol.color)
+            .shadow(color: .black.opacity(0.2), radius: 2)
+            .scaleEffect(pinchScale)
+            .rotationEffect(stamp.rotation + rotationAngle)
+            .overlay {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.white.opacity(0.8), lineWidth: 1)
+                        .padding(-6)
+                }
+            }
+            .position(
+                x: stamp.position.x + dragOffset.width,
+                y: stamp.position.y + dragOffset.height
+            )
+            .gesture(
+                SimultaneousGesture(
+                    SimultaneousGesture(
+                        DragGesture()
+                            .updating($dragOffset) { val, state, _ in state = val.translation }
+                            .onEnded { val in
+                                stamp.position.x += val.translation.width
+                                stamp.position.y += val.translation.height
+                            },
+                        MagnificationGesture()
+                            .updating($pinchScale) { val, state, _ in state = val }
+                            .onEnded { val in
+                                stamp.scale *= val
+                            }
+                    ),
+                    RotationGesture()
+                        .updating($rotationAngle) { val, state, _ in state = val }
+                        .onEnded { val in
+                            stamp.rotation += val
+                        }
+                )
+            )
+            .highPriorityGesture(
+                TapGesture(count: 2).onEnded { onRemove() }
+            )
+            .onTapGesture { onTap() }
+    }
 }

@@ -141,32 +141,33 @@ struct ProfileView: View {
     // MARK: - Posts Grid
 
     private var postsGrid: some View {
-        let columns = [GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2)]
-        return GeometryReader { geo in
-            let cellSize = (geo.size.width - 4) / 3
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(userPosts) { post in
-                    let url = post.image_url_front ?? post.image_url_back
-                    AsyncImage(url: URL(string: url ?? "")) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: cellSize, height: cellSize)
-                                .clipped()
-                        default:
-                            Color(.systemIndigo).opacity(0.1)
-                                .frame(width: cellSize, height: cellSize)
-                                .overlay(Text("📷").font(.title))
-                        }
+        let cellSize = (UIScreen.main.bounds.width - 4) / 3
+        let columns = [
+            GridItem(.fixed(cellSize), spacing: 2),
+            GridItem(.fixed(cellSize), spacing: 2),
+            GridItem(.fixed(cellSize), spacing: 2)
+        ]
+        return LazyVGrid(columns: columns, spacing: 2) {
+            ForEach(userPosts) { post in
+                let url = post.image_url_front ?? post.image_url_back
+                AsyncImage(url: URL(string: url ?? "")) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: cellSize, height: cellSize)
+                            .clipped()
+                    default:
+                        Color(.systemIndigo).opacity(0.1)
+                            .frame(width: cellSize, height: cellSize)
+                            .overlay(Text("📷").font(.title))
                     }
-                    .frame(width: cellSize, height: cellSize)
-                    .clipped()
                 }
+                .frame(width: cellSize, height: cellSize)
+                .clipped()
             }
         }
-        .frame(minHeight: ceil(Double(userPosts.count) / 3.0) * ((UIScreen.main.bounds.width - 4) / 3 + 2))
     }
 
     // MARK: - Data
