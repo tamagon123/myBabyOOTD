@@ -49,11 +49,20 @@ struct ProfileView: View {
     private var profileHeader: some View {
         VStack(spacing: 16) {
             // Avatar
-            Text(profileUser?.avatar_id ?? "🐶")
-                .font(.system(size: 56))
-                .frame(width: 80, height: 80)
-                .background(Color(.systemYellow).opacity(0.3))
-                .clipShape(Circle())
+            let avatarId = profileUser?.avatar_id ?? "🐶"
+            Group {
+                if avatarImageNames.contains(avatarId) {
+                    Image(avatarId)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Text(avatarId)
+                        .font(.system(size: 56))
+                }
+            }
+            .frame(width: 80, height: 80)
+            .background(Color(.systemYellow).opacity(0.3))
+            .clipShape(Circle())
 
             // Display name
             if let name = profileUser?.display_name, !name.isEmpty {

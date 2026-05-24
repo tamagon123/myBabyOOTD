@@ -148,3 +148,19 @@ let avatarEmojis: [String] = [
     "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯",
     "🦁","🐮","🐷","🐸","🐙","🦋","🐝","🦄","🐧","🦩"
 ]
+
+// MARK: - Avatar Image Names
+// Assets.xcassets/AvatarIcons/ に画像を追加したら、ここに名前を1行追記してください
+let avatarImageNames: [String] = [
+    // 例: "avatar_bear",
+    // 例: "avatar_cat",
+    "avatar_zou"
+]
+
+// MARK: - Stamp Image Names
+// Assets.xcassets/StampImages/ に画像を追加したら、ここに名前を1行追記してください
+let stampImageNames: [String] = [
+    // 例: "stamp_star",
+    // 例: "stamp_heart",
+    "stamp_zou"
+]

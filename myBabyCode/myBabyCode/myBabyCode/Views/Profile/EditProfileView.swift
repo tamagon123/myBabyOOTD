@@ -33,19 +33,40 @@ struct EditProfileView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionLabel("アバターアイコン")
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
-                            ForEach(avatarEmojis, id: \.self) { emoji in
-                                Button {
-                                    selectedAvatarId = emoji
-                                } label: {
-                                    Text(emoji)
-                                        .font(.system(size: 28))
-                                        .frame(width: 52, height: 52)
-                                        .background(selectedAvatarId == emoji ? Color.indigo.opacity(0.15) : Color(.systemGray6))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 14)
-                                                .stroke(selectedAvatarId == emoji ? Color.indigo : Color.clear, lineWidth: 2)
-                                        )
-                                        .cornerRadius(14)
+                            if avatarImageNames.isEmpty {
+                                // 画像未追加時は絵文字で表示
+                                ForEach(avatarEmojis, id: \.self) { emoji in
+                                    Button {
+                                        selectedAvatarId = emoji
+                                    } label: {
+                                        Text(emoji)
+                                            .font(.system(size: 28))
+                                            .frame(width: 52, height: 52)
+                                            .background(selectedAvatarId == emoji ? Color.indigo.opacity(0.15) : Color(.systemGray6))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 14)
+                                                    .stroke(selectedAvatarId == emoji ? Color.indigo : Color.clear, lineWidth: 2)
+                                            )
+                                            .cornerRadius(14)
+                                    }
+                                }
+                            } else {
+                                // AvatarIcons/ に画像が追加されたら自動で画像グリッドに切り替わる
+                                ForEach(avatarImageNames, id: \.self) { name in
+                                    Button {
+                                        selectedAvatarId = name
+                                    } label: {
+                                        Image(name)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 52, height: 52)
+                                            .background(selectedAvatarId == name ? Color.indigo.opacity(0.15) : Color(.systemGray6))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 14)
+                                                    .stroke(selectedAvatarId == name ? Color.indigo : Color.clear, lineWidth: 2)
+                                            )
+                                            .cornerRadius(14)
+                                    }
                                 }
                             }
                         }
