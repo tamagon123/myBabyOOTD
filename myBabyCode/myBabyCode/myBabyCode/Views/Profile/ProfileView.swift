@@ -110,27 +110,23 @@ struct ProfileView: View {
 
             // Action button
             if isOwnProfile {
-                HStack(spacing: 12) {
-                    Button {
-                        showEditProfile = true
-                    } label: {
-                        Text("プロフィールを編集")
-                            .font(.system(size: 14, weight: .medium))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                    }
+                HStack {
+                    Spacer()
                     Button {
                         showSettings = true
                     } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.secondary)
-                            .frame(width: 40, height: 40)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
+                        HStack(spacing: 6) {
+                            Image(systemName: "gearshape.fill")
+                            Text("設定")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
                     }
+                    Spacer()
                 }
             } else {
                 Button {

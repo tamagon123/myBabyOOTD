@@ -1,6 +1,14 @@
 import SwiftUI
 import UIKit
 
+extension View {
+    func dismissKeyboard() {
+        #if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
+    }
+}
+
 // MARK: - NewPostView
 
 struct NewPostView: View {
@@ -20,6 +28,10 @@ struct NewPostView: View {
     @State private var editorReadyImage: UIImage?
     @State private var showEditConfirm = false
     @State private var showPhotoActionSheet = false
+
+    // Item tagging
+    @State private var taggingItemIndex: Int? = nil
+    @State private var taggingSide: String = "front"
 
     // Post info
     @State private var description: String = ""
@@ -172,41 +184,65 @@ struct NewPostView: View {
         VStack(alignment: .leading, spacing: 28) {
             if !children.isEmpty {
                 childSection
-                Divider().padding(.horizontal)
+                    .padding(.horizontal, 20)
+                Divider().padding(.horizontal, 20)
             }
             photoSection
-            Divider().padding(.horizontal)
-            weatherSection
-            Divider().padding(.horizontal)
+            if taggingItemIndex != nil {
+                tagPlacementView
+            }
+            Divider().padding(.horizontal, 20)
             itemsSection
+                .padding(.horizontal, 20)
+            Divider().padding(.horizontal, 20)
             descriptionSection
+                .padding(.horizontal, 20)
+            Divider().padding(.horizontal, 20)
+            weatherSection
+                .padding(.horizontal, 20)
             draftSaveButton
+                .padding(.horizontal, 20)
             postButton
+                .padding(.horizontal, 20)
         }
         .padding(.top, 20)
+        .padding(.bottom, 8)
     }
 
     private var descriptionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("服装　のポイント")
+            sectionLabel("服装のポイント")
             if #available(iOS 16.0, *) {
                 TextField("例：気温が上がったので半袖デビュー！", text: $description, axis: .vertical)
                     .lineLimit(3...5)
                     .textFieldStyle(.roundedBorder)
-                    .onChange(of: description) { v in
+                    .onChange(of: description, perform: { v in
                         if v.count > 100 { description = String(v.prefix(100)) }
+                    })
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("完了") { dismissKeyboard() }
+                        }
                     }
             } else {
-                // Fallback for iOS 15: single-line TextField with increased height
-                TextField("例：気温が上がったので半袖デビュー！", text: $description)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(minHeight: 44, maxHeight: 100)
+                TextEditor(text: $description)
+                    .frame(minHeight: 80, maxHeight: 120)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.systemGray4), lineWidth: 1))
+                    .onChange(of: description, perform: { v in
+                        if v.count > 100 { description = String(v.prefix(100)) }
+                    })
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("完了") { dismissKeyboard() }
+                        }
+                    }
             }
             Text("\(description.count)/100")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal)
     }
 
     private var draftSaveButton: some View {
@@ -221,7 +257,6 @@ struct NewPostView: View {
                 .background(Color.indigo.opacity(0.08))
                 .cornerRadius(14)
         }
-        .padding(.horizontal)
     }
 
     private var postButton: some View {
@@ -237,7 +272,6 @@ struct NewPostView: View {
                 .cornerRadius(16)
         }
         .disabled(!canPost || postsViewModel.isLoading)
-        .padding(.horizontal)
         .padding(.bottom, 40)
     }
 
@@ -246,15 +280,16 @@ struct NewPostView: View {
     private var photoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel("写真（前面・背面）")
+                .padding(.horizontal, 20)
             HStack(spacing: 16) {
                 photoTile(title: "フロント", image: frontImage, target: .front)
                 photoTile(title: "バック", image: backImage, target: .back)
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
             Text("どちらか1枚以上必須 • タップしてカメラまたはライブラリから選択")
                 .font(.caption)
                 .foregroundColor(.secondary)
-                .padding(.horizontal)
+                .padding(.horizontal, 20)
         }
     }
 
@@ -347,10 +382,8 @@ struct NewPostView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal)
             }
         }
-        .padding(.horizontal)
     }
 
     // MARK: - Info Section (region only, gender comes from child)
@@ -424,7 +457,6 @@ struct NewPostView: View {
                 tempField(label: "最低気温(℃)", text: $tempMin)
             }
         }
-        .padding(.horizontal)
     }
 
     @ViewBuilder
@@ -434,6 +466,12 @@ struct NewPostView: View {
             TextField("例: 25", text: text)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("完了") { dismissKeyboard() }
+                    }
+                }
         }
         .frame(maxWidth: .infinity)
     }
@@ -458,16 +496,114 @@ struct NewPostView: View {
                 }
             }
 
-            ForEach($items) { $entry in
-                ItemEntryRow(entry: $entry) {
-                    items.removeAll { $0.id == entry.id }
-                }
+            ForEach(items.indices, id: \.self) { idx in
+                ItemEntryRow(entry: $items[idx], onRemove: {
+                    items.remove(at: idx)
+                }, onTag: {
+                    taggingSide = frontImage != nil ? "front" : "back"
+                    taggingItemIndex = idx
+                })
             }
         }
-        .padding(.horizontal)
+    }
+
+    // MARK: - Tag Placement View
+
+    private var tagPlacementView: some View {
+        let idx = taggingItemIndex!
+        let entry = items.indices.contains(idx) ? items[idx] : nil
+        let img = taggingSide == "front" ? frontImage : backImage
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("「\(entry?.brandName.isEmpty == false ? entry!.brandName : entry?.category.rawValue ?? "アイテム")」の位置をタップ")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button {
+                    taggingItemIndex = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(Color.indigo)
+
+            HStack(spacing: 12) {
+                ForEach(["front", "back"], id: \.self) { side in
+                    let hasImg = side == "front" ? frontImage != nil : backImage != nil
+                    if hasImg {
+                        Button {
+                            taggingSide = side
+                        } label: {
+                            Text(side == "front" ? "フロント" : "バック")
+                                .font(.system(size: 12, weight: .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(taggingSide == side ? Color.indigo : Color(.systemGray5))
+                                .foregroundColor(taggingSide == side ? .white : .primary)
+                                .cornerRadius(10)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+
+            if let uiImg = img {
+                GeometryReader { geo in
+                    let imgH = uiImg.size.height / uiImg.size.width * geo.size.width
+                    ZStack {
+                        Image(uiImage: uiImg)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: geo.size.width)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onEnded { val in
+                                        guard items.indices.contains(idx) else { return }
+                                        let ratioX = val.location.x / geo.size.width
+                                        let ratioY = val.location.y / imgH
+                                        items[idx].tagPosition = CGPoint(x: ratioX, y: ratioY)
+                                        items[idx].tagSide = taggingSide
+                                        taggingItemIndex = nil
+                                    }
+                            )
+                        ForEach(items.indices, id: \.self) { i in
+                            tagDotOverlay(items: items, i: i, side: taggingSide,
+                                          geoWidth: geo.size.width, imgH: imgH)
+                        }
+                    }
+                }
+                .frame(height: UIScreen.main.bounds.width * CGFloat(uiImg.size.height / uiImg.size.width))
+            } else {
+                Text("写真を先に追加してください")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 20)
+            }
+        }
     }
 
     // MARK: - Helpers
+
+    @ViewBuilder
+    private func tagDotOverlay(items: [NewItemEntry], i: Int, side: String,
+                                geoWidth: CGFloat, imgH: CGFloat) -> some View {
+        if let pos = items[i].tagPosition, items[i].tagSide == side {
+            ZStack {
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 20, height: 20)
+                    .shadow(color: .black.opacity(0.4), radius: 3)
+                Circle()
+                    .stroke(Color.indigo, lineWidth: 2)
+                    .frame(width: 20, height: 20)
+            }
+            .position(x: pos.x * geoWidth, y: pos.y * imgH)
+        }
+    }
 
     private var canPost: Bool { frontImage != nil || backImage != nil }
 
@@ -580,6 +716,18 @@ struct NewPostView: View {
             )
         }
 
+        let tags: [PostItemTag] = items.indices.compactMap { idx -> PostItemTag? in
+            guard let pos = items[idx].tagPosition else { return nil }
+            return PostItemTag(
+                item_index: idx,
+                x_ratio: Double(pos.x),
+                y_ratio: Double(pos.y),
+                image_side: items[idx].tagSide
+            )
+        }
+        var collectedTags: [PostItemTag] = tags
+        postsViewModel.setPendingItemTags(collectedTags)
+
         // ageMonths を選択した子供の誕生日から計算
         var modUser = user
         modUser.child_birthday = effectiveBirthday
@@ -605,6 +753,14 @@ struct NewPostView: View {
     }
 }
 
+// MARK: - Extension for PostsViewModel setter
+
+extension PostsViewModel {
+    func setPendingItemTags(_ tags: [PostItemTag]) {
+        self.pendingItemTags = tags
+    }
+}
+
 // MARK: - Supporting types
 
 enum PhotoTarget { case front, back }
@@ -616,16 +772,18 @@ struct NewItemEntry: Identifiable {
     var category: ItemCategory = .tops
     var brandName: String = ""
     var selectedSize: Int = 70
+    var tagPosition: CGPoint? = nil  // 写真上のタグ位置（比率座標 0.0–1.0）
+    var tagSide: String = "front"     // "front" or "back"
 }
 
 struct ItemEntryRow: View {
     @Binding var entry: NewItemEntry
     var onRemove: () -> Void
+    var onTag: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                // Category badge
                 Text(entry.category.rawValue)
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 10)
@@ -634,6 +792,19 @@ struct ItemEntryRow: View {
                     .foregroundColor(.indigo)
                     .cornerRadius(10)
                 Spacer()
+                // Tag button
+                Button(action: onTag) {
+                    HStack(spacing: 4) {
+                        Image(systemName: entry.tagPosition != nil ? "mappin.circle.fill" : "mappin.circle")
+                            .font(.system(size: 16))
+                            .foregroundColor(entry.tagPosition != nil ? .indigo : .secondary)
+                        if entry.tagPosition != nil {
+                            Text(entry.tagSide == "front" ? "F" : "B")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.indigo)
+                        }
+                    }
+                }
                 Button(action: onRemove) {
                     Image(systemName: "minus.circle.fill")
                         .foregroundColor(.red.opacity(0.7))
@@ -760,6 +931,7 @@ struct PhotoEditorView: View {
     @State private var selectedKind: StampKind = .symbol(.star)
     @State private var history: [EditorAction] = []
     @State private var canvasSize: CGSize = .zero
+    @State private var canvasOffset: CGPoint = .zero
     @State private var activeStampId: UUID? = nil
 
     var body: some View {
@@ -850,27 +1022,40 @@ struct PhotoEditorView: View {
 
     private var canvas: some View {
         GeometryReader { geo in
+            let imgW = image.size.width
+            let imgH = image.size.height
+            let fitScale = min(geo.size.width / imgW, geo.size.height / imgH)
+            let dispW = imgW * fitScale
+            let dispH = imgH * fitScale
+            let offsetX = (geo.size.width - dispW) / 2
+            let offsetY = (geo.size.height - dispH) / 2
+
             ZStack {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .frame(width: geo.size.width, height: geo.size.height)
-                    .onAppear { canvasSize = geo.size }
+                    .onAppear {
+                        canvasSize = CGSize(width: dispW, height: dispH)
+                        canvasOffset = CGPoint(x: offsetX, y: offsetY)
+                    }
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 0)
                             .onEnded { val in
                                 let stamp = PlacedStamp(kind: selectedKind, position: val.location)
                                 stampItems.append(stamp)
                                 history.append(.addStamp(stamp))
+                                activeStampId = stamp.id
                             }
                     )
                 ForEach($stampItems) { $stamp in
-                    StampView(stamp: $stamp, isActive: activeStampId == stamp.id) {
-                        activeStampId = stamp.id
-                    } onRemove: {
-                        history.append(.removeStamp(stamp))
-                        stampItems.removeAll { $0.id == stamp.id }
-                    }
+                    StampView(stamp: $stamp,
+                              isActive: activeStampId == stamp.id,
+                              onTap: { activeStampId = stamp.id },
+                              onRemove: {
+                                history.append(.removeStamp(stamp))
+                                stampItems.removeAll { $0.id == stamp.id }
+                              })
                 }
             }
         }
@@ -911,12 +1096,13 @@ struct PhotoEditorView: View {
     private func renderFinalImage() -> UIImage {
         let imgW = image.size.width
         let imgH = image.size.height
+        // canvasSize はaspectFit後の実際の表示サイズ
         let dispW = canvasSize.width == 0 ? UIScreen.main.bounds.width : canvasSize.width
         let dispH = canvasSize.height == 0 ? UIScreen.main.bounds.height : canvasSize.height
-
-        let scale = min(dispW / imgW, dispH / imgH)
-        let offsetX = (dispW - imgW * scale) / 2
-        let offsetY = (dispH - imgH * scale) / 2
+        let fitScale = min(dispW / imgW, dispH / imgH)
+        // キャンバス上での画像左上座標 (= canvasOffset)
+        let offsetX = canvasOffset.x
+        let offsetY = canvasOffset.y
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = image.scale
@@ -924,16 +1110,19 @@ struct PhotoEditorView: View {
         return renderer.image { ctx in
             image.draw(in: CGRect(origin: .zero, size: CGSize(width: imgW, height: imgH)))
             for stamp in stampItems {
-                let imgX = (stamp.position.x - offsetX) / scale
-                let imgY = (stamp.position.y - offsetY) / scale
-                let baseSize: CGFloat = imgW * 0.18
-                let stampSize = baseSize * stamp.scale
+                // stamp.position はジオメトリ全体上の座標 → 画像左上からの相対座標に変換
+                let imgX = (stamp.position.x - offsetX) / fitScale
+                let imgY = (stamp.position.y - offsetY) / fitScale
+                // ビュー上のスタンプ描画サイズは StampView と同じ baseSize=44
+                let baseViewPt: CGFloat = 44
+                let stampViewPt = baseViewPt * stamp.scale
+                let stampImgPt = stampViewPt / fitScale
                 let drawImage: UIImage?
                 switch stamp.kind {
                 case .symbol(let sym):
-                    let config = UIImage.SymbolConfiguration(pointSize: stampSize, weight: .bold)
-                    drawImage = UIImage(systemName: sym.rawValue, withConfiguration: config)?
-                        .withTintColor(UIColor(sym.color), renderingMode: .alwaysOriginal)
+                    let config = UIImage.SymbolConfiguration(pointSize: stampImgPt, weight: .bold)
+                    let baseImg = UIImage(systemName: sym.rawValue, withConfiguration: config)
+                    drawImage = baseImg?.withTintColor(UIColor(sym.color), renderingMode: .alwaysOriginal)
                 case .image(let name):
                     drawImage = UIImage(named: name)
                 }
@@ -941,7 +1130,7 @@ struct PhotoEditorView: View {
                     ctx.cgContext.saveGState()
                     ctx.cgContext.translateBy(x: imgX, y: imgY)
                     ctx.cgContext.rotate(by: CGFloat(stamp.rotation.radians))
-                    img.draw(in: CGRect(x: -stampSize / 2, y: -stampSize / 2, width: stampSize, height: stampSize))
+                    img.draw(in: CGRect(x: -stampImgPt / 2, y: -stampImgPt / 2, width: stampImgPt, height: stampImgPt))
                     ctx.cgContext.restoreGState()
                 }
             }
@@ -957,6 +1146,8 @@ struct StampView: View {
     let onTap: () -> Void
     let onRemove: () -> Void
 
+    private let baseSize: CGFloat = 44
+
     @GestureState private var dragOffset: CGSize = .zero
     @GestureState private var pinchScale: CGFloat = 1.0
     @GestureState private var rotationAngle: Angle = .zero
@@ -966,55 +1157,71 @@ struct StampView: View {
             switch stamp.kind {
             case .symbol(let sym):
                 Image(systemName: sym.rawValue)
-                    .font(.system(size: 100 * stamp.scale))
+                    .font(.system(size: baseSize))
                     .foregroundColor(sym.color)
             case .image(let name):
                 Image(name)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 100 * stamp.scale, height: 100 * stamp.scale)
+                    .frame(width: baseSize, height: baseSize)
             }
         }
-            .shadow(color: .black.opacity(0.2), radius: 2)
-            .scaleEffect(pinchScale)
-            .rotationEffect(stamp.rotation + rotationAngle)
-            .overlay {
-                if isActive {
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.white.opacity(0.8), lineWidth: 1)
-                        .padding(-6)
+        .frame(width: baseSize, height: baseSize)
+        .scaleEffect(stamp.scale * pinchScale)
+        .rotationEffect(stamp.rotation + rotationAngle)
+        .shadow(color: .black.opacity(0.2), radius: 2)
+        .overlay {
+            if isActive {
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
+                    .frame(width: baseSize * stamp.scale + 12, height: baseSize * stamp.scale + 12)
+                // 1本指スケールハンドル
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(4)
+                            .background(Color.indigo.opacity(0.8))
+                            .clipShape(Circle())
+                            .offset(x: 4, y: -4)
+                    }
+                    Spacer()
                 }
+                .frame(width: baseSize * stamp.scale + 12, height: baseSize * stamp.scale + 12)
             }
-            .position(
-                x: stamp.position.x + dragOffset.width,
-                y: stamp.position.y + dragOffset.height
-            )
-            .gesture(
+        }
+        .position(
+            x: stamp.position.x + dragOffset.width,
+            y: stamp.position.y + dragOffset.height
+        )
+        .gesture(
+            SimultaneousGesture(
                 SimultaneousGesture(
-                    SimultaneousGesture(
-                        DragGesture()
-                            .updating($dragOffset) { val, state, _ in state = val.translation }
-                            .onEnded { val in
-                                stamp.position.x += val.translation.width
-                                stamp.position.y += val.translation.height
-                            },
-                        MagnificationGesture()
-                            .updating($pinchScale) { val, state, _ in state = val }
-                            .onEnded { val in
-                                stamp.scale *= val
-                            }
-                    ),
-                    RotationGesture()
-                        .updating($rotationAngle) { val, state, _ in state = val }
+                    DragGesture()
+                        .updating($dragOffset) { val, state, _ in state = val.translation }
                         .onEnded { val in
-                            stamp.rotation += val
+                            stamp.position.x += val.translation.width
+                            stamp.position.y += val.translation.height
+                        },
+                    MagnificationGesture()
+                        .updating($pinchScale) { val, state, _ in state = val }
+                        .onEnded { val in
+                            stamp.scale *= val
                         }
-                )
+                ),
+                RotationGesture()
+                    .updating($rotationAngle) { val, state, _ in state = val }
+                    .onEnded { val in
+                        stamp.rotation += val
+                    }
             )
-            .highPriorityGesture(
-                TapGesture(count: 2).onEnded { onRemove() }
-            )
-            .onTapGesture { onTap() }
+        )
+        .highPriorityGesture(
+            TapGesture(count: 2).onEnded { onRemove() }
+        )
+        .onTapGesture { onTap() }
     }
 }
 

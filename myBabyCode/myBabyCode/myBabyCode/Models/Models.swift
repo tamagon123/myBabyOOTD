@@ -46,10 +46,22 @@ struct Post: Identifiable, Codable {
     var is_hidden: Bool
     var created_at: Timestamp
 
-    // Local helper: poster info loaded separately
+    var item_tags: [PostItemTag]?  // アイテムタグ位置
+
+    // Local helper: poster info loaded separately (not stored in Firestore)
     var posterAvatarId: String?
     var posterDisplayName: String?
     var posterChildAgeName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case post_id, user_id
+        case image_url_front, image_url_back
+        case child_age_months, region_code, gender_id
+        case description, weather_type
+        case temp_max, temp_min, temp_category
+        case likes_count, reports_count, is_hidden
+        case created_at, item_tags
+    }
 }
 
 // MARK: - PostItem
@@ -71,6 +83,16 @@ struct PostItem: Identifiable, Codable {
     var custom_name: String
     var size_value: Int
     var category: String      // ItemCategory.rawValue
+}
+
+// MARK: - PostItemTag
+
+struct PostItemTag: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var item_index: Int      // items配列のインデックス
+    var x_ratio: Double      // 写真幅に対する横方向比率 (0.0–1.0)
+    var y_ratio: Double      // 写真高さに対する縦方向比率 (0.0–1.0)
+    var image_side: String   // "front" or "back"
 }
 
 // MARK: - Follow

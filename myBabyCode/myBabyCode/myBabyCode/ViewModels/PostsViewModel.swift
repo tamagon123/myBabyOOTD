@@ -18,6 +18,7 @@ class PostsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var currentTab: TimelineTab = .latest
     @Published var likedPostIds: Set<String> = []
+    var pendingItemTags: [PostItemTag] = []
 
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
@@ -177,6 +178,8 @@ class PostsViewModel: ObservableObject {
         items: [PostItem],
         user: AppUser
     ) async -> Bool {
+        let itemTags = pendingItemTags
+        pendingItemTags = []
         guard frontImage != nil || backImage != nil else {
             errorMessage = "フロントまたはバックの写真を1枚以上選択してください。"
             return false
@@ -222,7 +225,11 @@ class PostsViewModel: ObservableObject {
                 likes_count: 0,
                 reports_count: 0,
                 is_hidden: false,
-                created_at: Timestamp(date: Date())
+                created_at: Timestamp(date: Date()),
+                item_tags: nil,
+                posterAvatarId: nil,
+                posterDisplayName: nil,
+                posterChildAgeName: nil
             )
 
             let postRef = db.collection("posts").document(postId)
@@ -231,6 +238,19 @@ class PostsViewModel: ObservableObject {
             for item in items {
                 let itemRef = postRef.collection("items").document(item.item_id)
                 try itemRef.setData(from: item)
+            }
+
+            if !itemTags.isEmpty { // save tags via updateData
+                let tagData = itemTags.map { tag -> [String: Any] in
+                    return [
+                        "id": tag.id,
+                        "item_index": tag.item_index,
+                        "x_ratio": tag.x_ratio,
+                        "y_ratio": tag.y_ratio,
+                        "image_side": tag.image_side
+                    ]
+                }
+                try? await postRef.updateData(["item_tags": tagData])
             }
 
             return true
@@ -263,5 +283,38 @@ class PostsViewModel: ObservableObject {
         CGImageDestinationAddImageFromSource(dest, source, 0, removeMetadata as CFDictionary)
         CGImageDestinationFinalize(dest)
         return mutableData as Data
+    }
+
+    // MARK: - Delete Post
+
+    func deletePost(_ post: Post) async {
+        guard let postId = post.id else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            // Delete images from Storage if exist
+            let storageRef = storage.reference()
+            let frontRef = storageRef.child("posts/\(postId)/front.jpg")
+            let backRef = storageRef.child("posts/\(postId)/back.jpg")
+            try? await frontRef.delete()
+            try? await backRef.delete()
+
+            // Delete subcollection items
+            let postRef = db.collection("posts").document(postId)
+            let itemsSnap = try? await postRef.collection("items").getDocuments()
+            if let docs = itemsSnap?.documents {
+                for doc in docs { try? await doc.reference.delete() }
+            }
+
+            // Delete the post document
+            try await postRef.delete()
+
+            // Update local state
+            posts.removeAll { $0.id == postId }
+            likedPostIds.remove(postId)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

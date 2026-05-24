@@ -145,9 +145,15 @@ struct AuthView: View {
                     // Google Sign In
                     Button(action: { authViewModel.signInWithGoogle() }) {
                         HStack(spacing: 10) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+                            if authViewModel.isLoading {
+                                ProgressView()
+                                    .scaleEffect(0.85)
+                                    .tint(Color(red: 0.26, green: 0.52, blue: 0.96))
+                            } else {
+                                Image(systemName: "globe")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+                            }
                             Text("Googleでサインイン")
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.primary)
@@ -161,6 +167,7 @@ struct AuthView: View {
                                 .stroke(Color(.systemGray4), lineWidth: 1)
                         )
                     }
+                    .disabled(authViewModel.isLoading)
 
                     Toggle(isOn: $authViewModel.autoLogin) {
                         Text("次回から自動ログイン")

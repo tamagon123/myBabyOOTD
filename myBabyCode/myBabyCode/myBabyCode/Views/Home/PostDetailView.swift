@@ -1,12 +1,16 @@
 import SwiftUI
 import FirebaseFirestore
+import FirebaseAuth
 
 struct PostDetailView: View {
     let post: Post
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var postsViewModel: PostsViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentImageIndex: Int = 0
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
 
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
@@ -111,6 +115,29 @@ struct PostDetailView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("閉じる") { dismiss() }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if let uid = FirebaseAuth.Auth.auth().currentUser?.uid, uid == post.user_id {
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(isDeleting)
+                    }
+                }
+            }
+            .alert("投稿を削除", isPresented: $showDeleteConfirm) {
+                Button("削除", role: .destructive) {
+                    Task {
+                        isDeleting = true
+                        await postsViewModel.deletePost(post)
+                        isDeleting = false
+                        dismiss()
+                    }
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("この投稿を削除しますか？この操作は取り消せません。")
             }
         }
     }
@@ -122,3 +149,4 @@ struct PostDetailView: View {
         return m == 0 ? "\(y)歳" : "\(y)歳\(m)ヶ月"
     }
 }
+
