@@ -817,7 +817,7 @@ struct PhotoEditorView: View {
             for stamp in stampItems {
                 let imgX = (stamp.position.x - offsetX) / scale
                 let imgY = (stamp.position.y - offsetY) / scale
-                let baseSize: CGFloat = imgW * 0.1
+                let baseSize: CGFloat = imgW * 0.18
                 let stampSize = baseSize * stamp.scale
                 let drawImage: UIImage?
                 switch stamp.kind {
@@ -857,13 +857,13 @@ struct StampView: View {
             switch stamp.kind {
             case .symbol(let sym):
                 Image(systemName: sym.rawValue)
-                    .font(.system(size: 44 * stamp.scale))
+                    .font(.system(size: 100 * stamp.scale))
                     .foregroundColor(sym.color)
             case .image(let name):
                 Image(name)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 44 * stamp.scale, height: 44 * stamp.scale)
+                    .frame(width: 100 * stamp.scale, height: 100 * stamp.scale)
             }
         }
             .shadow(color: .black.opacity(0.2), radius: 2)
@@ -908,3 +908,4 @@ struct StampView: View {
             .onTapGesture { onTap() }
     }
 }
+
