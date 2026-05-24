@@ -9,6 +9,7 @@ struct PostCardView: View {
 
     @State private var currentImageIndex: Int = 0
     @State private var showReportAlert = false
+    @State private var navigateToProfile = false
 
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
@@ -17,26 +18,46 @@ struct PostCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Card header
+            NavigationLink(destination: ProfileView(userId: post.user_id), isActive: $navigateToProfile) {
+                EmptyView()
+            }
             HStack(spacing: 12) {
-                Text(ChildGender(rawValue: post.gender_id)?.emoji ?? "🧒")
-                    .font(.system(size: 22))
-                    .frame(width: 44, height: 44)
-                    .background(Color(.systemYellow).opacity(0.4))
-                    .clipShape(Circle())
+                Button {
+                    navigateToProfile = true
+                } label: {
+                    HStack(spacing: 10) {
+                        // Avatar
+                        let avatarId = post.posterAvatarId ?? "🐶"
+                        Group {
+                            if avatarImageNames.contains(avatarId) {
+                                Image(avatarId)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else {
+                                Text(avatarId)
+                                    .font(.system(size: 20))
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .background(Color(.systemYellow).opacity(0.3))
+                        .clipShape(Circle())
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ageLabel(months: post.child_age_months) + " " + (ChildGender(rawValue: post.gender_id)?.label ?? ""))
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.primary)
-                    Text(regionLabel(code: post.region_code) + " • " + timeAgo(ts: post.created_at))
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(post.posterDisplayName ?? "名前未設定")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.primary)
+                            Text(ageLabel(months: post.child_age_months) + " • " + regionLabel(code: post.region_code) + " • " + timeAgo(ts: post.created_at))
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 14)
 
             // Photo carousel
             if imageURLs.isEmpty {

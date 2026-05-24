@@ -15,6 +15,7 @@ struct ChildProfile: Identifiable, Codable {
 struct AppUser: Identifiable, Codable {
     @DocumentID var id: String?
     var user_id: String
+    var unique_user_id: String?  // ユニークなユーザーID（任意・他ユーザーから識別用）
     var display_name: String?  // 表示名（任意）
     var avatar_id: String
     var region_code: String
@@ -45,8 +46,9 @@ struct Post: Identifiable, Codable {
     var is_hidden: Bool
     var created_at: Timestamp
 
-    // Local helper: poster's avatar_id loaded separately
+    // Local helper: poster info loaded separately
     var posterAvatarId: String?
+    var posterDisplayName: String?
     var posterChildAgeName: String?
 }
 
@@ -133,6 +135,25 @@ let tempCategories: [(label: String, key: String)] = [
     ("20〜24℃", "20-24"),
     ("25℃〜", "25-")
 ]
+
+// MARK: - Draft
+
+struct PostDraft: Codable {
+    var description: String = ""
+    var regionIndex: Int = 12
+    var weatherType: String = WeatherType.sunny.rawValue
+    var tempMax: String = ""
+    var tempMin: String = ""
+    var items: [DraftItem] = []
+    var savedAt: Date = Date()
+}
+
+struct DraftItem: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var category: String = ItemCategory.tops.rawValue
+    var brandName: String = ""
+    var selectedSize: Int = 70
+}
 
 let prefectures: [String] = [
     "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",

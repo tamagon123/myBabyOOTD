@@ -4,6 +4,8 @@ import FirebaseAuth
 import AuthenticationServices
 import CryptoKit
 import FirebaseFirestore
+import GoogleSignIn
+import FirebaseCore
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -53,6 +55,7 @@ class AuthViewModel: ObservableObject {
                 if !snapshot.exists {
                     let newUser = AppUser(
                         user_id: uid,
+                        unique_user_id: nil,
                         display_name: nil,
                         avatar_id: "🐶",
                         region_code: "13",
@@ -74,14 +77,16 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    func signUpWithEmail(email: String, password: String) {
+    func signUpWithEmail(email: String, password: String, uniqueUserId: String = "") {
         Task {
             isLoading = true
             do {
                 let result = try await FirebaseAuth.Auth.auth().createUser(withEmail: email, password: password)
                 let uid = result.user.uid
+                let resolvedUniqueId = uniqueUserId.isEmpty ? nil : uniqueUserId
                 let newUser = AppUser(
                     user_id: uid,
+                    unique_user_id: resolvedUniqueId,
                     display_name: nil,
                     avatar_id: "🐶",
                     region_code: "13",
@@ -92,6 +97,56 @@ class AuthViewModel: ObservableObject {
                 )
                 try db.collection("users").document(uid).setData(from: newUser)
                 currentUser = newUser
+                isSignedIn = true
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
+    }
+
+    // MARK: - Google Sign In
+
+    func signInWithGoogle() {
+        guard let clientID = FirebaseApp.app()?.options.clientID else { return }
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = windowScene.windows.first?.rootViewController else { return }
+
+        Task {
+            isLoading = true
+            do {
+                let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootVC)
+                guard let idToken = result.user.idToken?.tokenString else {
+                    errorMessage = "Googleログインに失敗しました"
+                    isLoading = false
+                    return
+                }
+                let accessToken = result.user.accessToken.tokenString
+                let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
+                let authResult = try await FirebaseAuth.Auth.auth().signIn(with: credential)
+                let uid = authResult.user.uid
+                let docRef = db.collection("users").document(uid)
+                let snapshot = try await docRef.getDocument()
+                if !snapshot.exists {
+                    let newUser = AppUser(
+                        user_id: uid,
+                        unique_user_id: nil,
+                        display_name: authResult.user.displayName,
+                        avatar_id: "🐶",
+                        region_code: "13",
+                        child_birthday: Date(),
+                        child_gender: 0,
+                        followers_count: 0,
+                        children: nil
+                    )
+                    try docRef.setData(from: newUser)
+                    currentUser = newUser
+                } else {
+                    currentUser = try snapshot.data(as: AppUser.self)
+                }
                 isSignedIn = true
             } catch {
                 errorMessage = error.localizedDescription
@@ -143,6 +198,7 @@ class AuthViewModel: ObservableObject {
                     if !snapshot.exists {
                         let newUser = AppUser(
                             user_id: uid,
+                            unique_user_id: nil,
                             display_name: nil,
                             avatar_id: "🐶",
                             region_code: "13",

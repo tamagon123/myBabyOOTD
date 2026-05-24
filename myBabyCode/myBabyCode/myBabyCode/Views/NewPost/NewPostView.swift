@@ -43,62 +43,61 @@ struct NewPostView: View {
     @State private var showSuccess = false
     @State private var showError = false
 
+    // Draft
+    @State private var showDiscardAlert = false
+    @State private var showDraftSavedBanner = false
+
+    private var hasDraftContent: Bool {
+        !description.isEmpty || frontImage != nil || backImage != nil || !tempMax.isEmpty || !tempMin.isEmpty
+    }
+
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
 
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    photoSection
-                    Divider().padding(.horizontal)
-                    if !children.isEmpty { childSection }
-                    if !children.isEmpty { Divider().padding(.horizontal) }
-                    infoSection
-                    Divider().padding(.horizontal)
-                    weatherSection
-                    Divider().padding(.horizontal)
-                    itemsSection
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionLabel("服装のポイント")
-                        TextField("例：気温が上がったので半袖デビュー！", text: $description, axis: .vertical)
-                            .lineLimit(3...5)
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: description) { v in
-                                if v.count > 100 { description = String(v.prefix(100)) }
-                            }
-                        Text("\(description.count)/100")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal)
-
-                    Button {
-                        Task { await submitPost() }
-                    } label: {
-                        Text(postsViewModel.isLoading ? "投稿中..." : "投稿する")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(canPost ? Color.indigo : Color.gray)
-                            .cornerRadius(16)
-                    }
-                    .disabled(!canPost || postsViewModel.isLoading)
-                    .padding(.horizontal)
-                    .padding(.bottom, 32)
-                }
-                .padding(.top, 16)
+                mainForm
             }
+            .overlay(alignment: .top) {
+                if showDraftSavedBanner {
+                    Text("下書きを保存しました")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.indigo.opacity(0.9))
+                        .cornerRadius(20)
+                        .padding(.top, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(), value: showDraftSavedBanner)
             .navigationTitle("新しい投稿")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
+                    Button("閉じる") {
+                        if hasDraftContent {
+                            showDiscardAlert = true
+                        } else {
+                            dismiss()
+                        }
+                    }
                 }
             }
+            .alert("下書き保存", isPresented: $showDiscardAlert) {
+                Button("保存する") {
+                    saveDraft()
+                    dismiss()
+                }
+                Button("保存せずに閉じる", role: .destructive) {
+                    dismiss()
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("入力内容を下書きとして保存しますか？")
+            }
             .onAppear { applyProfileDefaults() }
-            // カメラ or ライブラリ選択
             .confirmationDialog("写真を選択", isPresented: $showPhotoSourceSheet, titleVisibility: .visible) {
                 Button("カメラで撮影") {
                     imagePickerSourceType = .camera
@@ -167,6 +166,79 @@ struct NewPostView: View {
                 Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。")
             }
         }
+    }
+
+    private var mainForm: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            if !children.isEmpty {
+                childSection
+                Divider().padding(.horizontal)
+            }
+            photoSection
+            Divider().padding(.horizontal)
+            weatherSection
+            Divider().padding(.horizontal)
+            itemsSection
+            descriptionSection
+            draftSaveButton
+            postButton
+        }
+        .padding(.top, 20)
+    }
+
+    private var descriptionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("服装　のポイント")
+            if #available(iOS 16.0, *) {
+                TextField("例：気温が上がったので半袖デビュー！", text: $description, axis: .vertical)
+                    .lineLimit(3...5)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: description) { v in
+                        if v.count > 100 { description = String(v.prefix(100)) }
+                    }
+            } else {
+                // Fallback for iOS 15: single-line TextField with increased height
+                TextField("例：気温が上がったので半袖デビュー！", text: $description)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minHeight: 44, maxHeight: 100)
+            }
+            Text("\(description.count)/100")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+    }
+
+    private var draftSaveButton: some View {
+        Button {
+            saveDraft()
+        } label: {
+            Label("下書きとして保存", systemImage: "square.and.arrow.down")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.indigo)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.indigo.opacity(0.08))
+                .cornerRadius(14)
+        }
+        .padding(.horizontal)
+    }
+
+    private var postButton: some View {
+        Button {
+            Task { await submitPost() }
+        } label: {
+            Text(postsViewModel.isLoading ? "投稿中..." : "投稿する")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(canPost ? Color.indigo : Color.gray)
+                .cornerRadius(16)
+        }
+        .disabled(!canPost || postsViewModel.isLoading)
+        .padding(.horizontal)
+        .padding(.bottom, 40)
     }
 
     // MARK: - Photo Section
@@ -281,52 +353,29 @@ struct NewPostView: View {
         .padding(.horizontal)
     }
 
-    // MARK: - Info Section
+    // MARK: - Info Section (region only, gender comes from child)
 
     private var infoSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sectionLabel("基本情報")
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("性別").font(.subheadline).foregroundColor(.secondary)
-                HStack(spacing: 8) {
-                    ForEach(ChildGender.allCases) { g in
-                        Button {
-                            selectedGender = g
-                        } label: {
-                            Text(g.label)
-                                .font(.system(size: 13, weight: .medium))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(selectedGender == g ? Color.indigo : Color(.systemGray6))
-                                .foregroundColor(selectedGender == g ? .white : .primary)
-                                .cornerRadius(20)
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                sectionLabel("地域")
+                Spacer()
+                Text("プロフィールから反映")
+                    .font(.caption2)
+                    .foregroundColor(.indigo)
+            }
+            Picker("地域", selection: $selectedRegionIndex) {
+                ForEach(prefectures.indices, id: \.self) { i in
+                    Text(prefectures[i]).tag(i)
                 }
             }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("地域").font(.subheadline).foregroundColor(.secondary)
-                    Spacer()
-                    Text("プロフィールから反映")
-                        .font(.caption2)
-                        .foregroundColor(.indigo)
-                }
-                Picker("地域", selection: $selectedRegionIndex) {
-                    ForEach(prefectures.indices, id: \.self) { i in
-                        Text(prefectures[i]).tag(i)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
-                .onChange(of: selectedRegionIndex) { _ in
-                    fetchWeather()
-                }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(Color(.systemGray6))
+            .cornerRadius(10)
+            .onChange(of: selectedRegionIndex) { _ in
+                fetchWeather()
             }
         }
         .padding(.horizontal)
@@ -433,6 +482,63 @@ struct NewPostView: View {
         }
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
         fetchWeather()
+        loadDraftIfNeeded()
+    }
+
+    // MARK: - Draft
+
+    private struct DraftItem: Codable {
+        let id: String
+        let category: String
+        let brandName: String
+        let selectedSize: Int
+    }
+
+    private struct PostDraft: Codable {
+        let description: String
+        let regionIndex: Int
+        let weatherType: String
+        let tempMax: String
+        let tempMin: String
+        let items: [DraftItem]
+    }
+
+    private func saveDraft() {
+        let draftItems = items.map { entry in
+            DraftItem(id: entry.id.uuidString, category: entry.category.rawValue,
+                      brandName: entry.brandName, selectedSize: entry.selectedSize)
+        }
+        let draft = PostDraft(
+            description: description,
+            regionIndex: selectedRegionIndex,
+            weatherType: weatherType.rawValue,
+            tempMax: tempMax,
+            tempMin: tempMin,
+            items: draftItems
+        )
+        if let data = try? JSONEncoder().encode(draft) {
+            UserDefaults.standard.set(data, forKey: "postDraft")
+        }
+        withAnimation { showDraftSavedBanner = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { showDraftSavedBanner = false }
+        }
+    }
+
+    private func loadDraftIfNeeded() {
+        guard let data = UserDefaults.standard.data(forKey: "postDraft"),
+              let draft = try? JSONDecoder().decode(PostDraft.self, from: data) else { return }
+        description = draft.description
+        selectedRegionIndex = draft.regionIndex
+        weatherType = WeatherType(rawValue: draft.weatherType) ?? .sunny
+        tempMax = draft.tempMax
+        tempMin = draft.tempMin
+        items = draft.items.map { di -> NewItemEntry in
+            var entry = NewItemEntry(category: ItemCategory(rawValue: di.category) ?? .tops)
+            entry.brandName = di.brandName
+            entry.selectedSize = di.selectedSize
+            return entry
+        }
     }
 
     private func fetchWeather() {
@@ -492,7 +598,10 @@ struct NewPostView: View {
             user: modUser
         )
 
-        if success { showSuccess = true } else { showError = true }
+        if success {
+            UserDefaults.standard.removeObject(forKey: "postDraft")
+            showSuccess = true
+        } else { showError = true }
     }
 }
 

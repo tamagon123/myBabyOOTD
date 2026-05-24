@@ -14,18 +14,21 @@ struct SplashView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 20) {
-                Text("👶")
-                    .font(.system(size: 80))
-                    .padding(24)
-                    .background(Color.white)
+                Image("icon")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 110, height: 110)
                     .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                    .shadow(color: .black.opacity(0.1), radius: 24, y: 10)
+                    .shadow(color: .indigo.opacity(0.3), radius: 24, y: 10)
                     .scaleEffect(scale)
                     .opacity(opacity)
 
-                Text("今日のコーデ")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundColor(.indigo)
+                Text("Nanikiru")
+                    .font(.system(size: 30, weight: .heavy))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.indigo, Color(red: 0.6, green: 0.3, blue: 1.0)],
+                                       startPoint: .leading, endPoint: .trailing)
+                    )
                     .opacity(opacity)
 
                 ProgressView()

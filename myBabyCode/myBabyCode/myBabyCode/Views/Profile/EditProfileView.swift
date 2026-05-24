@@ -5,6 +5,7 @@ struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var displayName: String = ""
+    @State private var uniqueUserId: String = ""
     @State private var selectedAvatarId: String = "🐶"
     @State private var selectedRegionIndex: Int = 12
     @State private var childBirthday: Date = Date()
@@ -16,6 +17,20 @@ struct EditProfileView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
+
+                    // Unique User ID
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionLabel("ユーザーID")
+                        TextField("例: nanikiru_mama", text: $uniqueUserId)
+                            .textFieldStyle(.roundedBorder)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        Text("他のユーザーから識別できるIDです。表示名とは別です。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
 
                     // Display name
                     VStack(alignment: .leading, spacing: 8) {
@@ -164,6 +179,7 @@ struct EditProfileView: View {
     private func loadExistingData() {
         guard let user = authViewModel.currentUser else { return }
         displayName = user.display_name ?? ""
+        uniqueUserId = user.unique_user_id ?? ""
         selectedAvatarId = user.avatar_id
         childBirthday = user.child_birthday
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
@@ -176,6 +192,8 @@ struct EditProfileView: View {
     private func save() async {
         guard var user = authViewModel.currentUser else { return }
         isSaving = true
+        let trimmedUniqueId = uniqueUserId.trimmingCharacters(in: .whitespaces)
+        user.unique_user_id = trimmedUniqueId.isEmpty ? nil : trimmedUniqueId
         user.display_name = displayName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : displayName.trimmingCharacters(in: .whitespaces)
         user.avatar_id = selectedAvatarId
         user.child_birthday = childBirthday

@@ -11,7 +11,8 @@ struct ProfileView: View {
     @State private var isLoading = false
     @State private var isFollowing = false
     @State private var showEditProfile = false
-    @State private var showSignOutAlert = false
+    @State private var showSettings = false
+    @State private var selectedPost: Post? = nil
 
     private let db = Firestore.firestore()
     private var isOwnProfile: Bool { userId == FirebaseAuth.Auth.auth().currentUser?.uid }
@@ -21,9 +22,9 @@ struct ProfileView: View {
             VStack(spacing: 0) {
                 // Profile header
                 profileHeader
-                    .padding(.top, 16)
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
+                    .padding(.top, 20)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
 
                 // Posts grid
                 if isLoading {
@@ -33,6 +34,11 @@ struct ProfileView: View {
                 }
             }
         }
+        .refreshable {
+            await loadProfile()
+            await loadUserPosts()
+            if !isOwnProfile { await checkFollowing() }
+        }
         .task {
             await loadProfile()
             await loadUserPosts()
@@ -40,6 +46,14 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showEditProfile) {
             EditProfileView()
+                .environmentObject(authViewModel)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(authViewModel)
+        }
+        .sheet(item: $selectedPost) { post in
+            PostDetailView(post: post)
                 .environmentObject(authViewModel)
         }
     }
@@ -69,6 +83,12 @@ struct ProfileView: View {
                 Text(name)
                     .font(.system(size: 16, weight: .semibold))
             }
+            // Unique user ID
+            if let uid = profileUser?.unique_user_id, !uid.isEmpty {
+                Text("@\(uid)")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
 
             // Stats
             HStack(spacing: 32) {
@@ -90,35 +110,27 @@ struct ProfileView: View {
 
             // Action button
             if isOwnProfile {
-                Button {
-                    showEditProfile = true
-                } label: {
-                    Text("プロフィールを編集")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                }
-
-                Button {
-                    showSignOutAlert = true
-                } label: {
-                    Text("ログアウト")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                }
-                .alert("ログアウト", isPresented: $showSignOutAlert) {
-                    Button("キャンセル", role: .cancel) {}
-                    Button("ログアウト", role: .destructive) {
-                        authViewModel.signOut()
+                HStack(spacing: 12) {
+                    Button {
+                        showEditProfile = true
+                    } label: {
+                        Text("プロフィールを編集")
+                            .font(.system(size: 14, weight: .medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
                     }
-                } message: {
-                    Text("ログアウトしますか？")
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.secondary)
+                            .frame(width: 40, height: 40)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                    }
                 }
             } else {
                 Button {
@@ -159,22 +171,31 @@ struct ProfileView: View {
         return LazyVGrid(columns: columns, spacing: 2) {
             ForEach(userPosts) { post in
                 let url = post.image_url_front ?? post.image_url_back
-                AsyncImage(url: URL(string: url ?? "")) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: cellSize, height: cellSize)
-                            .clipped()
-                    default:
-                        Color(.systemIndigo).opacity(0.1)
-                            .frame(width: cellSize, height: cellSize)
-                            .overlay(Text("📷").font(.title))
+                Button {
+                    selectedPost = post
+                } label: {
+                    AsyncImage(url: URL(string: url ?? "")) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: cellSize, height: cellSize)
+                                .clipped()
+                        default:
+                            Color(.systemIndigo).opacity(0.1)
+                                .frame(width: cellSize, height: cellSize)
+                                .overlay(
+                                    Image(systemName: "photo")
+                                        .font(.title)
+                                        .foregroundColor(.secondary.opacity(0.4))
+                                )
+                        }
                     }
+                    .frame(width: cellSize, height: cellSize)
+                    .clipped()
                 }
-                .frame(width: cellSize, height: cellSize)
-                .clipped()
+                .buttonStyle(.plain)
             }
         }
     }

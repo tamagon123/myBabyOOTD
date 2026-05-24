@@ -7,6 +7,7 @@ struct MainTabView: View {
     @StateObject private var postsViewModel = PostsViewModel()
     @State private var selectedTab: Int = 0
     @State private var showNewPost = false
+    @State private var profileRefreshId = UUID()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,7 @@ struct MainTabView: View {
                 case 2:
                     ProfileView(userId: Auth.currentUID)
                         .environmentObject(authViewModel)
+                        .id(profileRefreshId)
                 default:
                     EmptyView()
                 }
@@ -39,7 +41,9 @@ struct MainTabView: View {
             )
         }
         .ignoresSafeArea(edges: .bottom)
-        .sheet(isPresented: $showNewPost) {
+        .sheet(isPresented: $showNewPost, onDismiss: {
+            profileRefreshId = UUID()
+        }) {
             NewPostView()
                 .environmentObject(postsViewModel)
                 .environmentObject(authViewModel)

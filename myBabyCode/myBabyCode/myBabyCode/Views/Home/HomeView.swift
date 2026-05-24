@@ -23,8 +23,9 @@ struct HomeView: View {
                 } else if postsViewModel.posts.isEmpty {
                     Spacer()
                     VStack(spacing: 12) {
-                        Text("👶")
+                        Image(systemName: "photo.on.rectangle.angled")
                             .font(.system(size: 48))
+                            .foregroundColor(.secondary.opacity(0.5))
                         Text("投稿がありません")
                             .foregroundColor(.secondary)
                     }
@@ -73,11 +74,8 @@ struct HomeView: View {
 struct AppHeaderView: View {
     var body: some View {
         HStack {
-            Text("👶")
-                .font(.system(size: 28))
-            Spacer()
-            Text("今日のコーデ")
-                .font(.system(size: 18, weight: .bold))
+            Text("Nanikiru")
+                .font(.system(size: 22, weight: .heavy))
                 .foregroundColor(.indigo)
             Spacer()
             NavigationLink(destination: SearchView()) {
@@ -87,7 +85,7 @@ struct AppHeaderView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
         .background(
             Color.white
                 .shadow(color: .black.opacity(0.04), radius: 8, y: 4)

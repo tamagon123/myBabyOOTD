@@ -68,11 +68,42 @@ class PostsViewModel: ObservableObject {
             }
 
             let snapshot = try await query.getDocuments()
-            posts = try snapshot.documents.map { try $0.data(as: Post.self) }
+            var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
+            fetched = await enrichWithPosterInfo(fetched)
+            posts = fetched
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func enrichWithPosterInfo(_ posts: [Post]) async -> [Post] {
+        let userIds = Array(Set(posts.map { $0.user_id }))
+        var userMap: [String: (avatarId: String, displayName: String?)] = [:]
+        await withTaskGroup(of: (String, String, String?)?.self) { group in
+            for uid in userIds {
+                group.addTask {
+                    guard let snap = try? await Firestore.firestore().collection("users").document(uid).getDocument(),
+                          let data = snap.data() else { return nil }
+                    let avatarId = data["avatar_id"] as? String ?? "🐶"
+                    let displayName = data["display_name"] as? String
+                    return (uid, avatarId, displayName)
+                }
+            }
+            for await result in group {
+                if let (uid, avatarId, displayName) = result {
+                    userMap[uid] = (avatarId, displayName)
+                }
+            }
+        }
+        return posts.map { post in
+            var p = post
+            if let info = userMap[post.user_id] {
+                p.posterAvatarId = info.avatarId
+                p.posterDisplayName = info.displayName
+            }
+            return p
+        }
     }
 
     func fetchLikedPosts() async {

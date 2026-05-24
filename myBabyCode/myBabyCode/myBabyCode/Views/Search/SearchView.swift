@@ -7,7 +7,8 @@ struct SearchView: View {
     @State private var selectedRegionIndex: Int = -1    // -1 = 全国
     @State private var selectedGender: ChildGender = .unselected
     @State private var selectedWeather: WeatherType? = nil
-    @State private var selectedTempCategory: String = ""
+    @State private var selectedMaxTempCategory: String = ""
+    @State private var selectedMinTempCategory: String = ""
     @State private var brandQuery: String = ""
     @State private var selectedSizeIndex: Int = -1      // -1 = 全サイズ
 
@@ -96,16 +97,32 @@ struct SearchView: View {
                 }
             }
 
-            // Temp Category
-            filterRow(label: "気温帯") {
+            // Max Temp Category
+            filterRow(label: "最高気温帯") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        chipButton(label: "すべて", active: selectedTempCategory.isEmpty) {
-                            selectedTempCategory = ""
+                        chipButton(label: "すべて", active: selectedMaxTempCategory.isEmpty) {
+                            selectedMaxTempCategory = ""
                         }
                         ForEach(tempCategories, id: \.key) { cat in
-                            chipButton(label: cat.label, active: selectedTempCategory == cat.key) {
-                                selectedTempCategory = (selectedTempCategory == cat.key) ? "" : cat.key
+                            chipButton(label: cat.label, active: selectedMaxTempCategory == cat.key) {
+                                selectedMaxTempCategory = (selectedMaxTempCategory == cat.key) ? "" : cat.key
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Min Temp Category
+            filterRow(label: "最低気温帯") {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        chipButton(label: "すべて", active: selectedMinTempCategory.isEmpty) {
+                            selectedMinTempCategory = ""
+                        }
+                        ForEach(tempCategories, id: \.key) { cat in
+                            chipButton(label: cat.label, active: selectedMinTempCategory == cat.key) {
+                                selectedMinTempCategory = (selectedMinTempCategory == cat.key) ? "" : cat.key
                             }
                         }
                     }
@@ -191,8 +208,11 @@ struct SearchView: View {
             if let w = selectedWeather {
                 query = query.whereField("weather_type", isEqualTo: w.rawValue)
             }
-            if !selectedTempCategory.isEmpty {
-                query = query.whereField("temp_category", isEqualTo: selectedTempCategory)
+            if !selectedMaxTempCategory.isEmpty {
+                query = query.whereField("temp_max_category", isEqualTo: selectedMaxTempCategory)
+            }
+            if !selectedMinTempCategory.isEmpty {
+                query = query.whereField("temp_min_category", isEqualTo: selectedMinTempCategory)
             }
 
             let snapshot = try await query.getDocuments()
