@@ -33,7 +33,7 @@ struct HomeView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(postsViewModel.posts) { post in
+                            ForEach(postsViewModel.posts, id: \.post_id) { post in
                                 PostCardView(
                                     post: post,
                                     isLiked: postsViewModel.likedPostIds.contains(post.id ?? ""),
@@ -122,3 +122,4 @@ struct TimelineTabBar: View {
         .cornerRadius(12)
     }
 }
+

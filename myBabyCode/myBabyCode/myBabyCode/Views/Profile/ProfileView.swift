@@ -5,6 +5,7 @@ import FirebaseAuth
 struct ProfileView: View {
     let userId: String
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var postsViewModel: PostsViewModel
 
     @State private var profileUser: AppUser?
     @State private var userPosts: [Post] = []
@@ -53,8 +54,11 @@ struct ProfileView: View {
                 .environmentObject(authViewModel)
         }
         .sheet(item: $selectedPost) { post in
-            PostDetailView(post: post)
+            PostDetailView(post: post, onDeleted: { deletedPost in
+                userPosts.removeAll { $0.id == deletedPost.id }
+            })
                 .environmentObject(authViewModel)
+                .environmentObject(postsViewModel)
         }
     }
 
@@ -165,7 +169,7 @@ struct ProfileView: View {
             GridItem(.fixed(cellSize), spacing: 2)
         ]
         return LazyVGrid(columns: columns, spacing: 2) {
-            ForEach(userPosts) { post in
+            ForEach(userPosts, id: \.post_id) { post in
                 let url = post.image_url_front ?? post.image_url_back
                 Button {
                     selectedPost = post
@@ -251,3 +255,4 @@ struct ProfileView: View {
         isFollowing.toggle()
     }
 }
+

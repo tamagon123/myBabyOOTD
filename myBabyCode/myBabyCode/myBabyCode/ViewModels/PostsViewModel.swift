@@ -18,7 +18,7 @@ class PostsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var currentTab: TimelineTab = .latest
     @Published var likedPostIds: Set<String> = []
-    var pendingItemTags: [PostItemTag] = []
+    @Published var pendingItemTags: [PostItemTag] = []
 
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
@@ -240,7 +240,7 @@ class PostsViewModel: ObservableObject {
                 try itemRef.setData(from: item)
             }
 
-            if !itemTags.isEmpty { // save tags via updateData
+            if !itemTags.isEmpty {
                 let tagData = itemTags.map { tag -> [String: Any] in
                     return [
                         "id": tag.id,
@@ -287,8 +287,8 @@ class PostsViewModel: ObservableObject {
 
     // MARK: - Delete Post
 
-    func deletePost(_ post: Post) async {
-        guard let postId = post.id else { return }
+    func deletePost(_ post: Post) async -> Bool {
+        let postId = post.id ?? post.post_id
         isLoading = true
         defer { isLoading = false }
 
@@ -310,11 +310,15 @@ class PostsViewModel: ObservableObject {
             // Delete the post document
             try await postRef.delete()
 
-            // Update local state
-            posts.removeAll { $0.id == postId }
-            likedPostIds.remove(postId)
+            // Update local state on main actor
+            await MainActor.run {
+                posts.removeAll { $0.id == postId }
+                likedPostIds.remove(postId)
+            }
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 }

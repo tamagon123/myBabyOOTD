@@ -24,6 +24,7 @@ struct MainTabView: View {
                 case 2:
                     ProfileView(userId: Auth.currentUID)
                         .environmentObject(authViewModel)
+                        .environmentObject(postsViewModel)
                         .id(profileRefreshId)
                 default:
                     EmptyView()

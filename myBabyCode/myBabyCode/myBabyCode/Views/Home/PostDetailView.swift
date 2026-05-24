@@ -4,6 +4,7 @@ import FirebaseAuth
 
 struct PostDetailView: View {
     let post: Post
+    var onDeleted: ((Post) -> Void)? = nil
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
     @Environment(\.dismiss) private var dismiss
@@ -130,9 +131,12 @@ struct PostDetailView: View {
                 Button("削除", role: .destructive) {
                     Task {
                         isDeleting = true
-                        await postsViewModel.deletePost(post)
+                        let success = await postsViewModel.deletePost(post)
                         isDeleting = false
-                        dismiss()
+                        if success {
+                            onDeleted?(post)
+                            dismiss()
+                        }
                     }
                 }
                 Button("キャンセル", role: .cancel) {}

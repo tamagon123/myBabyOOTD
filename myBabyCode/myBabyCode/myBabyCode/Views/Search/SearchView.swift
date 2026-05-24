@@ -34,7 +34,7 @@ struct SearchView: View {
                             EmptyView()
                         } else {
                             LazyVStack(spacing: 0) {
-                                ForEach(results) { post in
+                                ForEach(results, id: \.post_id) { post in
                                     PostCardView(
                                         post: post,
                                         isLiked: false,

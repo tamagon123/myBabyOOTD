@@ -140,7 +140,7 @@ struct PostCardView: View {
     // MARK: - Photo Carousel
 
     private var visibleItemTags: [PostItemTag] {
-        guard showItemTags else { return [] }
+        guard showItemTags && itemsLoaded else { return [] }
         let side = currentImageIndex == 0 ? "front" : "back"
         return (post.item_tags ?? []).filter { $0.image_side == side }
     }
@@ -170,8 +170,17 @@ struct PostCardView: View {
                 .frame(height: UIScreen.main.bounds.width - 32)
                 .onTapGesture {
                     if !(post.item_tags ?? []).isEmpty {
-                        if !itemsLoaded { loadItems() }
-                        withAnimation(.easeInOut(duration: 0.2)) { showItemTags.toggle() }
+                        if !itemsLoaded { 
+                            loadItems()
+                        }
+                        withAnimation(.easeInOut(duration: 0.2)) { 
+                            showItemTags.toggle() 
+                        }
+                    }
+                }
+                .onAppear {
+                    if !(post.item_tags ?? []).isEmpty && !itemsLoaded {
+                        loadItems()
                     }
                 }
 
@@ -241,13 +250,20 @@ struct PostCardView: View {
     }
 
     private func loadItems() {
-        guard let postId = post.id else { return }
-        itemsLoaded = true
+        let postId = post.id ?? post.post_id
+        guard !postId.isEmpty else { return }
         let db = Firestore.firestore()
         Task {
-            let snap = try? await db.collection("posts").document(postId).collection("items").getDocuments()
-            let loaded = (snap?.documents ?? []).compactMap { try? $0.data(as: PostItem.self) }
-            await MainActor.run { postItems = loaded }
+            do {
+                let snap = try await db.collection("posts").document(postId).collection("items").getDocuments()
+                let loaded = snap.documents.compactMap { try? $0.data(as: PostItem.self) }
+                await MainActor.run { 
+                    postItems = loaded
+                    itemsLoaded = true
+                }
+            } catch {
+                await MainActor.run { itemsLoaded = true }
+            }
         }
     }
 

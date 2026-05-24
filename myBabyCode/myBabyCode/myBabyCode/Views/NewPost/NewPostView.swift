@@ -716,10 +716,22 @@ struct NewPostView: View {
             )
         }
 
+        // Create mapping from original indices to filtered indices
+        var originalToFilteredIndex: [Int: Int] = [:]
+        var filteredIndex = 0
+        for originalIndex in items.indices {
+            let name = items[originalIndex].brandName.trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty {
+                originalToFilteredIndex[originalIndex] = filteredIndex
+                filteredIndex += 1
+            }
+        }
+
         let tags: [PostItemTag] = items.indices.compactMap { idx -> PostItemTag? in
             guard let pos = items[idx].tagPosition else { return nil }
+            guard let filteredIdx = originalToFilteredIndex[idx] else { return nil }
             return PostItemTag(
-                item_index: idx,
+                item_index: filteredIdx,
                 x_ratio: Double(pos.x),
                 y_ratio: Double(pos.y),
                 image_side: items[idx].tagSide
