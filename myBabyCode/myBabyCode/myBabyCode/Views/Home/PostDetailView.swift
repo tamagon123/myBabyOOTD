@@ -14,6 +14,13 @@ struct PostDetailView: View {
     @State private var isDeleting = false
     @State private var postItems: [PostItem] = []
     @State private var itemsLoaded = false
+    @State private var showItemTags = false
+
+    private var visibleItemTags: [PostItemTag] {
+        guard showItemTags && itemsLoaded else { return [] }
+        let side = currentImageIndex == 0 ? "front" : "back"
+        return (post.item_tags ?? []).filter { $0.image_side == side }
+    }
 
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
@@ -34,18 +41,42 @@ struct PostDetailView: View {
                                     .foregroundColor(.secondary.opacity(0.4))
                             )
                     } else {
-                        TabView(selection: $currentImageIndex) {
-                            ForEach(imageURLs.indices, id: \.self) { idx in
-                                CachedAsyncImage(url: imageURLs[idx]) { image in
-                                        image.resizable().scaledToFit()
-                                    } placeholder: {
-                                        Color(.systemGray5).overlay(ProgressView())
-                                    }
-                                .tag(idx)
+                        ZStack(alignment: .topLeading) {
+                            TabView(selection: $currentImageIndex) {
+                                ForEach(imageURLs.indices, id: \.self) { idx in
+                                    CachedAsyncImage(url: imageURLs[idx]) { image in
+                                            image.resizable().scaledToFill()
+                                        } placeholder: {
+                                            Color(.systemGray5).overlay(ProgressView())
+                                        }
+                                    .clipped()
+                                    .tag(idx)
+                                }
                             }
+                            .tabViewStyle(.page(indexDisplayMode: imageURLs.count > 1 ? .always : .never))
+                            .frame(height: UIScreen.main.bounds.width)
+                            .onTapGesture {
+                                if !itemsLoaded { Task { await loadItems() } }
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showItemTags.toggle()
+                                }
+                            }
+
+                            GeometryReader { geo in
+                                ForEach(visibleItemTags) { tag in
+                                    itemTagDot(
+                                        item: postItems.indices.contains(tag.item_index)
+                                            ? postItems[tag.item_index] : nil,
+                                        position: CGPoint(
+                                            x: CGFloat(tag.x_ratio) * geo.size.width,
+                                            y: CGFloat(tag.y_ratio) * geo.size.height
+                                        )
+                                    )
+                                }
+                            }
+                            .allowsHitTesting(false)
+                            .frame(height: UIScreen.main.bounds.width)
                         }
-                        .tabViewStyle(.page(indexDisplayMode: imageURLs.count > 1 ? .always : .never))
-                        .frame(height: UIScreen.main.bounds.width)
                     }
 
                     VStack(alignment: .leading, spacing: 20) {
@@ -237,6 +268,44 @@ struct PostDetailView: View {
         let y = months / 12
         let m = months % 12
         return m == 0 ? "\(y)歳" : "\(y)歳\(m)ヶ月"
+    }
+
+    // MARK: - Item Tag Dot
+
+    @ViewBuilder
+    private func itemTagDot(item: PostItem?, position: CGPoint) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // White dot
+            ZStack {
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 18, height: 18)
+                    .shadow(color: .black.opacity(0.35), radius: 3)
+                Circle()
+                    .strokeBorder(Color.accentRed.opacity(0.9), lineWidth: 1.5)
+                    .frame(width: 18, height: 18)
+            }
+
+            // Label with brand and size
+            if let item = item {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.custom_name)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text(sizeLabel(item.size_value))
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.95))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.65))
+                .cornerRadius(8)
+                .shadow(color: .black.opacity(0.3), radius: 2)
+            }
+        }
+        .position(x: position.x, y: position.y)
+        .transition(.opacity)
     }
 }
 

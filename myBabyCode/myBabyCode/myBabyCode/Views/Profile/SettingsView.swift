@@ -6,6 +6,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showSignOutAlert = false
     @State private var showDeleteAccountAlert = false
+    @State private var showReauthAlert = false
+    @State private var reauthPassword = ""
 
     var body: some View {
         NavigationView {
@@ -84,14 +86,44 @@ struct SettingsView: View {
             }
             .alert("アカウントの削除", isPresented: $showDeleteAccountAlert) {
                 Button("キャンセル", role: .cancel) {}
-                Button("削除する", role: .destructive) {
-                    Task {
-                        await authViewModel.deleteAccount()
-                        dismiss()
+                Button("次へ", role: .destructive) {
+                    if authViewModel.isGoogleUser {
+                        // GoogleユーザーはGoogleサインインで再認証
+                        Task {
+                            let reauthSuccess = await authViewModel.reauthenticateWithGoogle()
+                            if reauthSuccess {
+                                await authViewModel.deleteAccount()
+                                dismiss()
+                            }
+                        }
+                    } else if authViewModel.isEmailUser {
+                        // Emailユーザーはパスワード入力
+                        showReauthAlert = true
+                    } else {
+                        // その他（Apple等）は再ログインを促す
+                        showReauthAlert = true
                     }
                 }
             } message: {
                 Text("アカウントを削除すると、投稿履歴やフォロワー情報など全てのデータが失われます。この操作は元に戻せません。")
+            }
+            .alert("パスワードを入力してください", isPresented: $showReauthAlert) {
+                SecureField("パスワード", text: $reauthPassword)
+                Button("キャンセル", role: .cancel) {
+                    reauthPassword = ""
+                }
+                Button("削除する", role: .destructive) {
+                    Task {
+                        let reauthSuccess = await authViewModel.reauthenticate(password: reauthPassword)
+                        reauthPassword = ""
+                        if reauthSuccess {
+                            await authViewModel.deleteAccount()
+                            dismiss()
+                        }
+                    }
+                }
+            } message: {
+                Text("セキュリティのため、パスワードを再度入力してください。")
             }
         }
     }

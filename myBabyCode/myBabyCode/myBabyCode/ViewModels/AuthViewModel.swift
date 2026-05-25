@@ -13,11 +13,17 @@ class AuthViewModel: ObservableObject {
     @Published var isSignedIn: Bool = false
     @Published var currentUser: AppUser?
     @Published var errorMessage: String?
+    @Published var successMessage: String?
     @Published var isLoading: Bool = false
     @Published var isInitializing: Bool = true
 
     @Published var autoLogin: Bool {
         didSet { UserDefaults.standard.set(autoLogin, forKey: "autoLogin") }
+    }
+
+    var needsProfileSetup: Bool {
+        guard isSignedIn, let user = currentUser else { return false }
+        return !(user.is_profile_complete ?? false)
     }
 
     private var currentNonce: String?
@@ -61,16 +67,19 @@ class AuthViewModel: ObservableObject {
                 let docRef = db.collection("users").document(uid)
                 let snapshot = try await docRef.getDocument()
                 if !snapshot.exists {
+                    // 新規ユーザー：最小限の情報のみ保存、プロファイル登録は別画面で完了
                     let newUser = AppUser(
                         user_id: uid,
                         unique_user_id: nil,
                         display_name: nil,
-                        avatar_id: "🐶",
+                        avatar_id: "bear",
+                        avatar_bg_color: nil,
                         region_code: "13",
                         child_birthday: Date(),
                         child_gender: 0,
                         followers_count: 0,
-                        children: nil
+                        children: nil,
+                        is_profile_complete: false
                     )
                     try docRef.setData(from: newUser)
                     currentUser = newUser
@@ -85,32 +94,25 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    func signUpWithEmail(email: String, password: String, uniqueUserId: String = "",
-                          displayName: String = "", regionCode: String = "13") {
+    func signUpWithEmail(email: String, password: String) {
         Task {
             isLoading = true
             do {
-                if !uniqueUserId.isEmpty {
-                    let available = await checkUniqueUserIdAvailable(uniqueUserId)
-                    if !available {
-                        errorMessage = "そのユーザーIDは既に使われています"
-                        isLoading = false
-                        return
-                    }
-                }
                 let result = try await FirebaseAuth.Auth.auth().createUser(withEmail: email, password: password)
                 let uid = result.user.uid
+                // 最小限の情報のみ保存、プロファイル登録は別画面で完了
                 let newUser = AppUser(
                     user_id: uid,
-                    unique_user_id: uniqueUserId.isEmpty ? nil : uniqueUserId,
-                    display_name: displayName.isEmpty ? nil : displayName,
+                    unique_user_id: nil,
+                    display_name: nil,
                     avatar_id: "bear",
                     avatar_bg_color: nil,
-                    region_code: regionCode,
+                    region_code: "13",
                     child_birthday: Date(),
                     child_gender: 0,
                     followers_count: 0,
-                    children: nil
+                    children: nil,
+                    is_profile_complete: false
                 )
                 try db.collection("users").document(uid).setData(from: newUser)
                 currentUser = newUser
@@ -134,19 +136,158 @@ class AuthViewModel: ObservableObject {
         }
     }
 
+    func reauthenticate(password: String) async -> Bool {
+        guard let user = FirebaseAuth.Auth.auth().currentUser,
+              let email = user.email else { return false }
+        let credential = FirebaseAuth.EmailAuthProvider.credential(withEmail: email, password: password)
+        do {
+            try await user.reauthenticate(with: credential)
+            return true
+        } catch {
+            errorMessage = "パスワードが正しくありません"
+            return false
+        }
+    }
+
+    func reauthenticateWithGoogle() async -> Bool {
+        guard let clientID = FirebaseApp.app()?.options.clientID else { return false }
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = windowScene.windows.first?.rootViewController else { return false }
+
+        do {
+            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootVC)
+            guard let idToken = result.user.idToken?.tokenString else {
+                errorMessage = "Googleログインに失敗しました"
+                return false
+            }
+            let accessToken = result.user.accessToken.tokenString
+            let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
+            guard let user = FirebaseAuth.Auth.auth().currentUser else { return false }
+            try await user.reauthenticate(with: credential)
+            return true
+        } catch {
+            errorMessage = "Googleログインに失敗しました"
+            return false
+        }
+    }
+
+    var isGoogleUser: Bool {
+        guard let user = FirebaseAuth.Auth.auth().currentUser else { return false }
+        return user.providerData.contains { $0.providerID == "google.com" }
+    }
+
+    var isEmailUser: Bool {
+        guard let user = FirebaseAuth.Auth.auth().currentUser else { return false }
+        return user.providerData.contains { $0.providerID == "password" }
+    }
+
+    func completeProfile(uniqueUserId: String, displayName: String, regionCode: String, avatarId: String?, avatarBgColor: String?, children: [ChildProfile]? = nil) async -> Bool {
+        guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else {
+            errorMessage = "ログイン状態を確認できません"
+            return false
+        }
+        // ユーザーIDの重複チェック
+        if !uniqueUserId.isEmpty {
+            let available = await checkUniqueUserIdAvailable(uniqueUserId)
+            if !available {
+                errorMessage = "そのユーザーIDは既に使われています"
+                return false
+            }
+        }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            var updateData: [String: Any] = [
+                "unique_user_id": uniqueUserId,
+                "display_name": displayName,
+                "region_code": regionCode,
+                "avatar_id": avatarId ?? "bear",
+                "avatar_bg_color": avatarBgColor as Any,
+                "is_profile_complete": true
+            ]
+            // Add children if provided
+            if let children = children, !children.isEmpty {
+                let childrenData = children.map { [
+                    "id": $0.id,
+                    "name": $0.name,
+                    "birthday": Timestamp(date: $0.birthday),
+                    "gender": $0.gender
+                ] }
+                updateData["children"] = childrenData
+            }
+            try await db.collection("users").document(uid).updateData(updateData)
+            // ローカル状態を更新
+            currentUser?.unique_user_id = uniqueUserId
+            currentUser?.display_name = displayName
+            currentUser?.region_code = regionCode
+            currentUser?.avatar_id = avatarId ?? "bear"
+            currentUser?.avatar_bg_color = avatarBgColor
+            currentUser?.is_profile_complete = true
+            currentUser?.children = children
+            return true
+        } catch {
+            errorMessage = "プロファイルの保存に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func deleteAccount() async {
         guard let user = FirebaseAuth.Auth.auth().currentUser,
-              let uid = currentUser?.user_id else { return }
+              let uid = currentUser?.user_id else {
+            errorMessage = "ログイン状態を確認できません"
+            return
+        }
         isLoading = true
+        defer { isLoading = false }
         do {
+            // Delete user document from Firestore
             try await db.collection("users").document(uid).delete()
+            // Delete posts by this user
+            let postsSnapshot = try await db.collection("posts")
+                .whereField("user_id", isEqualTo: uid)
+                .getDocuments()
+            for doc in postsSnapshot.documents {
+                try? await doc.reference.delete()
+            }
+            // Delete likes by this user
+            let likesSnapshot = try await db.collection("likes")
+                .whereField("user_id", isEqualTo: uid)
+                .getDocuments()
+            for doc in likesSnapshot.documents {
+                try? await doc.reference.delete()
+            }
+            // Delete follows
+            let followsSnapshot = try await db.collection("follows")
+                .whereField("follower_id", isEqualTo: uid)
+                .getDocuments()
+            for doc in followsSnapshot.documents {
+                try? await doc.reference.delete()
+            }
+            let followingSnapshot = try await db.collection("follows")
+                .whereField("following_id", isEqualTo: uid)
+                .getDocuments()
+            for doc in followingSnapshot.documents {
+                try? await doc.reference.delete()
+            }
+            // Delete Firebase Auth user
             try await user.delete()
             isSignedIn = false
             currentUser = nil
+        } catch let error as NSError {
+            print("[DeleteAccount] Error: \(error.localizedDescription), code: \(error.code)")
+            // FIRAuthErrorCodeRequiresRecentLogin = 17014
+            if error.domain == "FIRAuthErrorDomain" && error.code == 17014 {
+                errorMessage = "セキュリティのため、再度ログインしてから削除してください。"
+            } else {
+                errorMessage = "アカウントの削除に失敗しました: \(error.localizedDescription)"
+            }
         } catch {
+            print("[DeleteAccount] Unexpected error: \(error)")
             errorMessage = "アカウントの削除に失敗しました。再ログインしてお試しください。"
         }
-        isLoading = false
     }
 
     // MARK: - Google Sign In
@@ -175,16 +316,19 @@ class AuthViewModel: ObservableObject {
                 let docRef = db.collection("users").document(uid)
                 let snapshot = try await docRef.getDocument()
                 if !snapshot.exists {
+                    // 新規ユーザー：最小限の情報のみ保存、プロファイル登録は別画面で完了
                     let newUser = AppUser(
                         user_id: uid,
                         unique_user_id: nil,
-                        display_name: authResult.user.displayName,
-                        avatar_id: "🐶",
+                        display_name: nil,
+                        avatar_id: "bear",
+                        avatar_bg_color: nil,
                         region_code: "13",
                         child_birthday: Date(),
                         child_gender: 0,
                         followers_count: 0,
-                        children: nil
+                        children: nil,
+                        is_profile_complete: false
                     )
                     try docRef.setData(from: newUser)
                     currentUser = newUser
@@ -202,11 +346,13 @@ class AuthViewModel: ObservableObject {
     func resetPassword(email: String) {
         Task {
             isLoading = true
+            successMessage = nil
+            errorMessage = nil
             do {
                 try await FirebaseAuth.Auth.auth().sendPasswordReset(withEmail: email)
-                errorMessage = "パスワードリセットメールを送信しました"
+                successMessage = "パスワードリセットメールを送信しました"
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = "メール送信に失敗しました: \(error.localizedDescription)"
             }
             isLoading = false
         }
@@ -240,16 +386,19 @@ class AuthViewModel: ObservableObject {
                     let docRef = db.collection("users").document(uid)
                     let snapshot = try await docRef.getDocument()
                     if !snapshot.exists {
+                        // 新規ユーザー：最小限の情報のみ保存、プロファイル登録は別画面で完了
                         let newUser = AppUser(
                             user_id: uid,
                             unique_user_id: nil,
                             display_name: nil,
-                            avatar_id: "🐶",
+                            avatar_id: "bear",
+                            avatar_bg_color: nil,
                             region_code: "13",
                             child_birthday: Date(),
                             child_gender: 0,
                             followers_count: 0,
-                            children: nil
+                            children: nil,
+                            is_profile_complete: false
                         )
                         try docRef.setData(from: newUser)
                         currentUser = newUser

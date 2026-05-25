@@ -10,12 +10,21 @@ struct ProfileView: View {
 
     @State private var profileUser: AppUser?
     @State private var userPosts: [Post] = []
+    @State private var likedPosts: [Post] = []
     @State private var isLoading = false
     @State private var isFollowing = false
     @State private var errorMessage: String? = nil
     @State private var showEditProfile = false
     @State private var showSettings = false
     @State private var selectedPost: Post? = nil
+    @State private var selectedTab: ProfileTab = .posts
+    @State private var showFollowingList = false
+    @State private var followingUsers: [AppUser] = []
+
+    enum ProfileTab: String, CaseIterable {
+        case posts = "投稿"
+        case likes = "いいね"
+    }
 
     private let db = Firestore.firestore()
     private var isOwnProfile: Bool { userId == FirebaseAuth.Auth.auth().currentUser?.uid }
@@ -30,11 +39,20 @@ struct ProfileView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
 
+                // Tab selector
+                if isOwnProfile {
+                    tabSelector
+                }
+
                 // Posts grid
                 if isLoading {
                     ProgressView().padding()
                 } else {
-                    postsGrid
+                    if selectedTab == .posts {
+                        postsGrid
+                    } else {
+                        likedPostsGrid
+                    }
                 }
             }
         }
@@ -52,11 +70,13 @@ struct ProfileView: View {
         .refreshable {
             await loadProfile()
             await loadUserPosts()
+            if isOwnProfile { await loadLikedPosts() }
             if !isOwnProfile { await checkFollowing() }
         }
         .task {
             await loadProfile()
             await loadUserPosts()
+            if isOwnProfile { await loadLikedPosts() }
             if !isOwnProfile { await checkFollowing() }
         }
         .sheet(isPresented: $showEditProfile) {
@@ -67,6 +87,10 @@ struct ProfileView: View {
             SettingsView()
                 .environmentObject(authViewModel)
                 .environmentObject(draftManager)
+        }
+        .sheet(isPresented: $showFollowingList) {
+            FollowingListView(users: followingUsers)
+                .environmentObject(authViewModel)
         }
         .sheet(item: $selectedPost) { post in
             PostDetailView(post: post, onDeleted: { deletedPost in
@@ -127,6 +151,27 @@ struct ProfileView: View {
                 statView(count: profileUser?.followers_count ?? 0, label: "フォロワー")
             }
 
+            // Following button (only for own profile)
+            if isOwnProfile {
+                Button {
+                    Task {
+                        await loadFollowingUsers()
+                        showFollowingList = true
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.2")
+                        Text("フォロー中のアカウント")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(.accentRed)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.accentRed.opacity(0.1))
+                    .cornerRadius(12)
+                }
+            }
+
             // Action button
             if !isOwnProfile {
                 Button {
@@ -153,6 +198,31 @@ struct ProfileView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+
+    // MARK: - Tab Selector
+
+    private var tabSelector: some View {
+        HStack(spacing: 0) {
+            ForEach(ProfileTab.allCases, id: \.self) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    VStack(spacing: 8) {
+                        Text(tab.rawValue)
+                            .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .medium))
+                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+                        Rectangle()
+                            .fill(selectedTab == tab ? Color.accentRed : Color.clear)
+                            .frame(height: 2)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Posts Grid
@@ -219,6 +289,73 @@ struct ProfileView: View {
         }
     }
 
+    private func loadLikedPosts() async {
+        guard let myId = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
+        do {
+            // Get liked post IDs
+            let likesSnap = try await db.collection("likes")
+                .whereField("user_id", isEqualTo: myId)
+                .getDocuments()
+            let likedPostIds = likesSnap.documents.compactMap { $0.data()["post_id"] as? String }
+            guard !likedPostIds.isEmpty else {
+                likedPosts = []
+                return
+            }
+            // Fetch posts in batches (Firestore 'in' query has limit of 10)
+            var posts: [Post] = []
+            for batch in likedPostIds.chunked(into: 10) {
+                let snap = try await db.collection("posts")
+                    .whereField("post_id", in: batch)
+                    .whereField("is_hidden", isEqualTo: false)
+                    .getDocuments()
+                let batchPosts = try snap.documents.map { try $0.data(as: Post.self) }
+                posts.append(contentsOf: batchPosts)
+            }
+            // Sort by created_at descending
+            likedPosts = posts.sorted { $0.created_at.dateValue() > $1.created_at.dateValue() }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Liked Posts Grid
+
+    private var likedPostsGrid: some View {
+        let cellSize = (UIScreen.main.bounds.width - 4) / 3
+        let columns = [
+            GridItem(.fixed(cellSize), spacing: 2),
+            GridItem(.fixed(cellSize), spacing: 2),
+            GridItem(.fixed(cellSize), spacing: 2)
+        ]
+        return LazyVGrid(columns: columns, spacing: 2) {
+            ForEach(likedPosts, id: \.post_id) { post in
+                let url = post.image_url_front ?? post.image_url_back
+                Button {
+                    selectedPost = post
+                } label: {
+                    CachedAsyncImage(url: url) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: cellSize, height: cellSize)
+                                .clipped()
+                        } placeholder: {
+                            Color.ecruBackground
+                                .frame(width: cellSize, height: cellSize)
+                                .overlay(
+                                    Image(systemName: "photo")
+                                        .font(.title)
+                                        .foregroundColor(.secondary.opacity(0.4))
+                                )
+                        }
+                    .frame(width: cellSize, height: cellSize)
+                    .clipped()
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private func checkFollowing() async {
         guard let myId = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
         let snap = try? await db.collection("follows")
@@ -251,5 +388,203 @@ struct ProfileView: View {
         }
         isFollowing.toggle()
     }
+
+    private func loadFollowingUsers() async {
+        guard let myId = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
+        do {
+            let snap = try await db.collection("follows")
+                .whereField("follower_id", isEqualTo: myId)
+                .getDocuments()
+            let followingIds = snap.documents.compactMap { $0.data()["following_id"] as? String }
+            guard !followingIds.isEmpty else {
+                followingUsers = []
+                return
+            }
+            var users: [AppUser] = []
+            for uid in followingIds {
+                if let doc = try? await db.collection("users").document(uid).getDocument(),
+                   let user = try? doc.data(as: AppUser.self) {
+                    users.append(user)
+                }
+            }
+            followingUsers = users
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
+// MARK: - Following List View
+
+struct FollowingListView: View {
+    let users: [AppUser]
+    @EnvironmentObject var authViewModel: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedUserId: String? = nil
+    @State private var selectedUserPosts: [Post] = []
+    @State private var showUserPosts = false
+    @State private var isLoadingPosts = false
+
+    var body: some View {
+        NavigationView {
+            List {
+                if users.isEmpty {
+                    Text("フォロー中のアカウントがありません")
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 40)
+                } else {
+                    ForEach(users, id: \.user_id) { user in
+                        Button {
+                            Task {
+                                await loadUserPosts(userId: user.user_id)
+                                selectedUserId = user.user_id
+                                showUserPosts = true
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                // Avatar
+                                let avatarId = user.avatar_id ?? "bear"
+                                let bgColor = Color(hex: user.avatar_bg_color ?? "#FFEEBA")
+                                Group {
+                                    if avatarId.hasPrefix("https://") {
+                                        AsyncImage(url: URL(string: avatarId)) { img in
+                                            img.resizable().scaledToFill()
+                                        } placeholder: {
+                                            Color.ecruBackground
+                                        }
+                                    } else if avatarImageNames.contains(avatarId) {
+                                        Image(avatarId).resizable().scaledToFill()
+                                    } else {
+                                        Text(avatarId)
+                                            .font(.system(size: 24))
+                                    }
+                                }
+                                .frame(width: 48, height: 48)
+                                .background(bgColor)
+                                .clipShape(Circle())
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(user.display_name ?? "名前未設定")
+                                        .font(.system(size: 15, weight: .semibold))
+                                    if let uid = user.unique_user_id, !uid.isEmpty {
+                                        Text("@\(uid)")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("フォロー中")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showUserPosts) {
+                UserPostsSheet(userId: selectedUserId ?? "", posts: selectedUserPosts, isLoading: isLoadingPosts)
+                    .environmentObject(authViewModel)
+            }
+        }
+    }
+
+    private func loadUserPosts(userId: String) async {
+        isLoadingPosts = true
+        defer { isLoadingPosts = false }
+        do {
+            let snap = try await Firestore.firestore().collection("posts")
+                .whereField("user_id", isEqualTo: userId)
+                .whereField("is_hidden", isEqualTo: false)
+                .order(by: "created_at", descending: true)
+                .getDocuments()
+            selectedUserPosts = try snap.documents.map { try $0.data(as: Post.self) }
+        } catch {
+            selectedUserPosts = []
+        }
+    }
+}
+
+// MARK: - User Posts Sheet
+
+struct UserPostsSheet: View {
+    let userId: String
+    let posts: [Post]
+    let isLoading: Bool
+    @EnvironmentObject var authViewModel: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPost: Post? = nil
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                if isLoading {
+                    ProgressView()
+                        .padding(.top, 40)
+                } else if posts.isEmpty {
+                    Text("投稿がありません")
+                        .foregroundColor(.secondary)
+                        .padding(.top, 40)
+                } else {
+                    let cellSize = (UIScreen.main.bounds.width - 4) / 3
+                    let columns = [
+                        GridItem(.fixed(cellSize), spacing: 2),
+                        GridItem(.fixed(cellSize), spacing: 2),
+                        GridItem(.fixed(cellSize), spacing: 2)
+                    ]
+                    LazyVGrid(columns: columns, spacing: 2) {
+                        ForEach(posts, id: \.post_id) { post in
+                            let url = post.image_url_front ?? post.image_url_back
+                            Button {
+                                selectedPost = post
+                            } label: {
+                                CachedAsyncImage(url: url) { image in
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: cellSize, height: cellSize)
+                                        .clipped()
+                                } placeholder: {
+                                    Color.ecruBackground
+                                        .frame(width: cellSize, height: cellSize)
+                                        .overlay(
+                                            Image(systemName: "photo")
+                                                .font(.title)
+                                                .foregroundColor(.secondary.opacity(0.4))
+                                        )
+                                }
+                                .frame(width: cellSize, height: cellSize)
+                                .clipped()
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .background(Color.ecruBackground.ignoresSafeArea())
+            .navigationTitle("投稿")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+            .sheet(item: $selectedPost) { post in
+                PostDetailView(post: post, onDeleted: { _ in })
+                    .environmentObject(authViewModel)
+            }
+        }
+    }
+}

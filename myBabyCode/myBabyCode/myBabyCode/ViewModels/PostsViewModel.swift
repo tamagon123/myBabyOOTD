@@ -11,6 +11,16 @@ enum TimelineTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// MARK: - Array Extension for Chunking
+
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}
+
 @MainActor
 class PostsViewModel: ObservableObject {
     @Published var posts: [Post] = []
@@ -141,14 +151,8 @@ class PostsViewModel: ObservableObject {
 
     // MARK: - Following helpers
 
-    private func chunked<T>(_ array: [T], size: Int) -> [[T]] {
-        stride(from: 0, to: array.count, by: size).map {
-            Array(array[$0..<min($0 + size, array.count)])
-        }
-    }
-
     private func fetchFollowingPosts(ids: [String], before cursor: Timestamp? = nil) async throws -> [Post] {
-        let chunks = chunked(ids, size: 30)
+        let chunks = ids.chunked(into: 30)
         var allPosts: [Post] = []
         try await withThrowingTaskGroup(of: [Post].self) { group in
             for chunk in chunks {

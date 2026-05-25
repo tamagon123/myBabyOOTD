@@ -10,9 +10,12 @@ struct PostCardView: View {
     @State private var currentImageIndex: Int = 0
     @State private var showReportAlert = false
     @State private var navigateToProfile = false
+    @State private var showPostDetail = false
     @State private var showItemTags = false
     @State private var postItems: [PostItem] = []
     @State private var itemsLoaded = false
+    @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var postsViewModel: PostsViewModel
 
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
@@ -152,6 +155,14 @@ struct PostCardView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("不適切なコンテンツとして報告されます。")
+        }
+        .sheet(isPresented: $showPostDetail) {
+            PostDetailView(post: post, onDeleted: { _ in })
+                .environmentObject(authViewModel)
+                .environmentObject(postsViewModel)
+        }
+        .onTapGesture {
+            showPostDetail = true
         }
     }
 

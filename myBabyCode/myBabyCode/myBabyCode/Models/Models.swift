@@ -24,6 +24,7 @@ struct AppUser: Identifiable, Codable {
     var child_gender: Int       // 0:未選択 1:男 2:女 3:その他
     var followers_count: Int
     var children: [ChildProfile]?  // 複数子供プロファイル
+    var is_profile_complete: Bool? = false  // プロファイル登録完了フラグ
 }
 
 // MARK: - Post

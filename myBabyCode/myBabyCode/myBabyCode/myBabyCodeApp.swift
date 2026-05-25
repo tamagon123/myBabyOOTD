@@ -21,8 +21,13 @@ struct myBabyCodeApp: App {
             if authViewModel.isInitializing {
                 SplashView()
             } else if authViewModel.isSignedIn {
-                MainTabView()
-                    .environmentObject(authViewModel)
+                if authViewModel.needsProfileSetup {
+                    ProfileSetupView()
+                        .environmentObject(authViewModel)
+                } else {
+                    MainTabView()
+                        .environmentObject(authViewModel)
+                }
             } else {
                 AuthView()
                     .environmentObject(authViewModel)
