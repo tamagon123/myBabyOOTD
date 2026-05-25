@@ -1,31 +1,59 @@
+// =============================================================================
+// ファイル名: PostDetailView.swift
+// 役割: 投稿の詳細表示画面（写真拡大・投稿者情報・アイテム詳細・投稿削除）
+// 説明:
+//   タイムラインの投稿カードをタップした際に表示される詳細画面です。
+//   写真のTabViewカルーセル、投稿者情報、天気・気温情報、洋服アイテムの
+//   詳細リスト（ブランド・カテゴリ・サイズ）、説明文を表示します。
+//   自分の投稿の場合はゴミ箱アイコンから削除が可能です。
+// =============================================================================
+
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
 struct PostDetailView: View {
-    let post: Post
-    var onDeleted: ((Post) -> Void)? = nil
+    // === 入力パラメータ ===
+    let post: Post                              // 表示対象の投稿データ
+    var onDeleted: ((Post) -> Void)? = nil      // 削除完了後のコールバック（オプション）
+
+    // === 環境オブジェクト ===
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss  // シート/画面を閉じるための環境値
 
-    @State private var currentImageIndex: Int = 0
-    @State private var showDeleteConfirm = false
-    @State private var isDeleting = false
-    @State private var postItems: [PostItem] = []
-    @State private var itemsLoaded = false
-    @State private var showItemTags = false
+    // === 内部状態 ===
+    @State private var currentImageIndex: Int = 0   // 写真カルーセルの現在表示インデックス
+    @State private var showDeleteConfirm = false    // 削除確認アラートの表示状態
+    @State private var isDeleting = false           // 削除処理中フラグ
+    @State private var postItems: [PostItem] = []   // Firestoreから取得した投稿アイテム
+    @State private var itemsLoaded = false          // アイテムロード済みフラグ
+    @State private var showItemTags = false         // アイテムタグの表示/非表示
 
+    // 計算プロパティ: 現在表示中の画像面に対応するタグのみ抽出
     private var visibleItemTags: [PostItemTag] {
         guard showItemTags && itemsLoaded else { return [] }
         let side = currentImageIndex == 0 ? "front" : "back"
         return (post.item_tags ?? []).filter { $0.image_side == side }
     }
 
+    // 計算プロパティ: frontとbackの画像URLを配列化
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
     }
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: 投稿詳細画面の全体レイアウトを定義
+    // 構成:
+    //   1. ナビゲーションバー（閉じるボタン＋削除ボタン（自分の投稿時））
+    //   2. ScrollView内に:
+    //      - 写真カルーセル（TabView + アイテムタグオーバーレイ）
+    //      - 投稿者情報（アバター・名前・年齢）
+    //      - 天気・気温・地域バッジ
+    //      - アイテム詳細リスト（各アイテムのブランド・カテゴリ・サイズ）
+    //      - 説明文
+    // =============================================================================
     var body: some View {
         NavigationView {
             ScrollView {

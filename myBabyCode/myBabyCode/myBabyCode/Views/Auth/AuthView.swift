@@ -1,21 +1,51 @@
+// =============================================================================
+// ファイル名: AuthView.swift
+// 役割: ログイン・新規登録画面（メール / Apple / Google対応）
+// 説明:
+//   未ログイン時に表示される認証画面です。メールアドレスとパスワードによる
+//   ログイン・新規登録、Sign in with Apple、Google Sign-Inの3種類の認証方式を
+//   提供します。AuthViewModelと連携し、認証成功時に自動でメイン画面へ遷移します。
+// =============================================================================
+
 import SwiftUI
 import AuthenticationServices
 
+// AuthMode: 画面が「ログイン」モードか「新規登録」モードかを表す列挙型
 enum AuthMode {
     case login, signUp
 }
 
 struct AuthView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @State private var email: String = ""
-    @State private var password: String = ""
-    @State private var authMode: AuthMode = .login
-    @State private var showResetPassword: Bool = false
+    // === 環境・状態 ===
+    @EnvironmentObject var authViewModel: AuthViewModel  // 認証処理をViewModelに委譲
+    @State private var email: String = ""                  // メールアドレス入力値
+    @State private var password: String = ""               // パスワード入力値
+    @State private var authMode: AuthMode = .login       // 現在のモード（ログイン/新規登録）
+    @State private var showResetPassword: Bool = false   // パスワードリセットアラートの表示状態
 
+    // 計算プロパティ: メールとパスワードが空でないか（送信ボタンの有効化判定）
     private var canSubmit: Bool {
         !email.isEmpty && !password.isEmpty
     }
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: 認証画面の全体レイアウトを定義
+    // 構成:
+    //   1. 背景: 生成り色（ecruBackground）
+    //   2. ScrollView内にVStackで縦積み:
+    //      - アプリアイコン＋アプリ名
+    //      - メール・パスワード入力フィールド＋アクションボタン
+    //      - エラー/成功メッセージ
+    //      - モード切替ボタン（ログイン↔新規登録）
+    //      - パスワードリセットリンク（ログイン時のみ）
+    //      - 「または」区切り線
+    //      - Apple Sign Inボタン
+    //      - Google Sign Inボタン
+    //      - 自動ログイントグル
+    //      - 利用規約同意テキスト
+    //   3. パスワードリセット用アラート
+    // =============================================================================
     var body: some View {
         ZStack {
             Color.ecruBackground
@@ -176,6 +206,16 @@ struct AuthView: View {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】handleAuthAction
+    // 目的: ログインボタンまたは新規登録ボタンタップ時の処理を振り分ける
+    // 引数: なし
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. エラー・成功メッセージをクリア
+    //   2. authModeに応じてViewModelのsignInWithEmail()またはsignUpWithEmail()を呼び出し
+    // 呼び出し元: body内の「ログイン」/「アカウントを作成」ボタン
+    // =============================================================================
     private func handleAuthAction() {
         authViewModel.errorMessage = nil
         authViewModel.successMessage = nil
@@ -187,6 +227,17 @@ struct AuthView: View {
         }
     }
 
+    // =============================================================================
+    // 【Viewサマリー】inputField
+    // 目的: テキスト入力フィールド（TextField / SecureField）を生成する汎用ヘルパー
+    // 引数:
+    //   - placeholder: String - 入力欄のプレースホルダー文字列
+    //   - text: Binding<String> - 入力値を双方向バインディングするState
+    //   - contentType: UITextContentType - iOS自動入力の種類（.emailAddress / .passwordなど）
+    //   - keyboard: UIKeyboardType - 表示するキーボードタイプ
+    //   - isSecure: Bool - true=SecureField（マスク表示）、false=通常TextField
+    // 戻り値: some View
+    // =============================================================================
     @ViewBuilder
     private func inputField(placeholder: String, text: Binding<String>,
                             contentType: UITextContentType, keyboard: UIKeyboardType = .default,

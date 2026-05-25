@@ -1,0 +1,1047 @@
+================================================================================
+  myBabyOOTD / Nanikiru アプリケーション 全体フロー図
+================================================================================
+作成日: 2026/05/25
+用途: 改修・バグ対応時の参考資料
+
+================================================================================
+【目次】
+1. ファイル構成一覧
+2. アプリ起動フロー
+3. 認証フロー
+4. ホーム（タイムライン）フロー
+5. 投稿作成フロー
+6. プロフィールフロー
+7. 検索フロー
+8. モデル・定数一覧
+9. ViewModel 関数一覧
+10. View 構造体一覧
+11. Service 関数一覧
+12. データベース構造（Firestore）
+13. 依存関係図
+================================================================================
+
+
+================================================================================
+1. ファイル構成一覧
+================================================================================
+
+【プロジェクトルート】
+Package.swift                          SPM依存関係定義
+
+【アプリ層】
+myBabyCodeApp.swift                    @main アプリエントリポイント
+AppDelegate.swift                    UIApplicationDelegate + プッシュ通知
+AppColors.swift                      カラーテーマ定義
+
+【モデル層】
+Models/Models.swift                    全データモデル・定数・Enum
+
+【サービス層】
+Services/DraftManager.swift            （空: DraftManagerはPostsViewModel内に定義）
+Services/ImageCacheService.swift       メモリ画像キャッシュ + CachedAsyncImage
+Services/NotificationService.swift     プッシュ通知許可・FCMトークン管理
+Services/WeatherService.swift          Open-Meteo APIによる天気取得
+
+【ViewModel層】
+ViewModels/AuthViewModel.swift         認証・ユーザー管理
+ViewModels/PostsViewModel.swift        投稿・いいね・通報・下書き管理
+
+【View層】
+Views/SplashView.swift                 スプラッシュ画面
+Views/MainTabView.swift                メインタブ（ホーム/検索/マイページ）
+Views/Auth/AuthView.swift              ログイン・新規登録画面
+Views/Home/HomeView.swift              ホーム（タイムライン）
+Views/Home/PostCardView.swift          投稿カード（タイムライン表示）
+Views/Home/PostDetailView.swift        投稿詳細画面
+Views/Legal/LegalView.swift            利用規約・プライバシーポリシー
+Views/NewPost/NewPostView.swift        新規投稿作成（写真・スタンプ・タグ）
+Views/Profile/ProfileSetupView.swift   初回プロフィール設定
+Views/Profile/ProfileView.swift        プロフィール表示（自分/他ユーザ）
+Views/Profile/EditProfileView.swift    プロフィール編集
+Views/Profile/SettingsView.swift       設定・下書き一覧・アカウント削除
+Views/Search/SearchView.swift          絞り込み検索
+
+
+================================================================================
+2. アプリ起動フロー
+================================================================================
+
+[myBabyCodeApp.swift]
+├── init()
+│   └── FirebaseApp.configure()
+│   └── Firestore設定（オフライン永続化・100MBキャッシュ）
+│
+├── @StateObject authViewModel = AuthViewModel()
+│   └── init() → initialize() 非同期実行
+│       └── Firebase Auth状態リスナー登録
+│       └── 自動ログイン判定 → loadCurrentUser() / signOut()
+│       └── isInitializing = false
+│
+└── body: WindowGroup
+    └── authViewModel.isInitializing == true
+    │   └── SplashView()
+    │       └── アイコン＋「Nanikiru」テキスト＋ProgressView
+    │       └── スケール・透明度アニメーション
+    │
+    └── authViewModel.isSignedIn == true
+        └── authViewModel.needsProfileSetup == true
+        │   └── ProfileSetupView()
+        │       └── 初回プロフィール登録（ユーザーID・表示名・地域・アバター・子供情報）
+        │
+        └── MainTabView()
+            └── selectedTab切り替え（0:ホーム / 1:検索 / 2:マイページ）
+            └── 中央+ボタン → NewPostViewシート表示
+            └── onAppear: 通知許可要求 + FCMトークン保存
+
+
+================================================================================
+3. 認証フロー
+================================================================================
+
+[AuthView.swift] ←→ [AuthViewModel.swift]
+
+┌─────────────────────────────────────────────────────────────┐
+│  AuthView                                                    │
+│  ├── @EnvironmentObject authViewModel: AuthViewModel         │
+│  ├── @State email, password                                  │
+│  ├── @State authMode: .login / .signUp                      │
+│  └── @State showResetPassword                                │
+│                                                              │
+│  body:                                                       │
+│  ├── アイコン + 「Nanikiru」タイトル                          │
+│  ├── メール・パスワード入力フィールド                        │
+│  │   └── inputField() @ViewBuilder                          │
+│  ├── ログイン/新規作成ボタン                                 │
+│  │   └── handleAuthAction() → signInWithEmail() / signUpWithEmail()
+│  ├── エラー・成功メッセージ表示                              │
+│  ├── モード切替ボタン                                        │
+│  ├── パスワードリセットボタン                                │
+│  ├── SignInWithAppleButton (.signIn)                         │
+│  │   └── prepareSignInWithApple() → handleSignInWithApple()
+│  ├── Googleサインインボタン                                  │
+│  │   └── signInWithGoogle()                                  │
+│  └── 自動ログイントグル                                      │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  AuthViewModel (@MainActor)                                  │
+│  ├── @Published isSignedIn: Bool                             │
+│  ├── @Published currentUser: AppUser?                        │
+│  ├── @Published errorMessage, successMessage                 │
+│  ├── @Published isLoading, isInitializing                    │
+│  ├── @Published autoLogin: Bool                              │
+│  ├── needsProfileSetup: Bool（計算プロパティ）                │
+│  └── currentNonce: String?                                   │
+│                                                              │
+│  【初期化】                                                   │
+│  init() → initialize()                                       │
+│      └── Firebase Auth状態確認                               │
+│      └── autoLogin=true → loadCurrentUser()                  │
+│      └── autoLogin=false → signOut()                         │
+│                                                              │
+│  【メール認証】                                               │
+│  signInWithEmail(email, password)                             │
+│      └── Firebase Auth.signIn()                              │
+│      └── 新規 → Firestore users/{uid} に最小限データ作成     │
+│      └── 既存 → currentUser読み込み                          │
+│                                                              │
+│  signUpWithEmail(email, password)                             │
+│      └── Firebase Auth.createUser()                          │
+│      └── Firestore users/{uid} に新規ユーザーデータ作成      │
+│                                                              │
+│  resetPassword(email)                                        │
+│      └── Firebase Auth.sendPasswordReset()                   │
+│                                                              │
+│  【Google認証】                                               │
+│  signInWithGoogle()                                          │
+│      └── GIDSignIn.signIn() → idToken取得                    │
+│      └── GoogleAuthProvider.credential()                     │
+│      └── Firebase Auth.signIn(with:)                         │
+│      └── 新規/既存でFirestore users処理                        │
+│                                                              │
+│  【Apple認証】                                                │
+│  prepareSignInWithApple() → nonce生成・SHA256ハッシュ化      │
+│  handleSignInWithApple(result:)                              │
+│      └── ASAuthorizationAppleIDCredential取得               │
+│      └── OAuthProvider.appleCredential()                     │
+│      └── Firebase Auth.signIn(with:)                         │
+│      └── 新規/既存でFirestore users処理                        │
+│                                                              │
+│  【プロフィール】                                             │
+│  completeProfile(uniqueUserId, displayName, ...)          │
+│      └── checkUniqueUserIdAvailable() 重複チェック           │
+│      └── Firestore users/{uid} updateData()                  │
+│                                                              │
+│  loadCurrentUser()                                           │
+│      └── Firestore users/{uid}.getDocument()                │
+│      └── currentUser = AppUser                               │
+│                                                              │
+│  saveUserProfile(_ user)                                    │
+│      └── Firestore users/{uid}.setData(merge: true)          │
+│                                                              │
+│  saveChildren(_ children)                                   │
+│      └── currentUser.children更新 → saveUserProfile()        │
+│                                                              │
+│  【アカウント削除】                                           │
+│  deleteAccount()                                             │
+│      └── Firestore users/{uid}.delete()                    │
+│      └── posts（user_id一致）削除                            │
+│      └── likes（user_id一致）削除                            │
+│      └── follows（follower_id/following_id一致）削除         │
+│      └── Firebase Auth.user.delete()                        │
+│      └── 17014エラー → 再認証要求                            │
+│                                                              │
+│  【再認証】                                                   │
+│  reauthenticate(password) → Email credential                 │
+│  reauthenticateWithGoogle() → Google credential              │
+│                                                              │
+│  isGoogleUser, isEmailUser（計算プロパティ）                  │
+│                                                              │
+│  【アバター画像アップロード】                                 │
+│  uploadAvatarImage(_ image) → Firebase Storage               │
+│      └── Storage.avatars/{uid}.jpg                            │
+│      └── downloadURL返却                                     │
+│                                                              │
+│  【ユーティリティ】                                           │
+│  signOut() → Firebase Auth.signOut()                       │
+│  checkUniqueUserIdAvailable(_ uid) → Firestore検索           │
+│  randomNonceString() → 32文字ランダム文字列                  │
+│  sha256(_ input) → SHA256ハッシュ                            │
+└─────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. ホーム（タイムライン）フロー
+================================================================================
+
+[MainTabView] → [HomeView] → [PostCardView] → [PostDetailView]
+
+[MainTabView.swift]
+├── @StateObject postsViewModel = PostsViewModel()
+├── @StateObject draftManager = DraftManager()
+├── @State selectedTab: Int
+├── @State showNewPost: Bool
+├── body:
+│   ├── ZStack { HomeView / SearchView / ProfileView }
+│   ├── AdBannerView()（広告バナー領域）
+│   ├── BottomNavBar(selectedTab, onPostTap)
+│   │   ├── navItem(house.fill) → tab 0
+│   │   ├── +ボタン（赤丸）→ showNewPost = true
+│   │   └── navItem(person.fill) → tab 2
+│   └── .sheet(isPresented: showNewPost) → NewPostView
+│       └── onDismiss: profileRefreshId更新
+│   └── onChange(draftManager.pendingDraft) → 自動でNewPostView表示
+│   └── onAppear: NotificationService.requestPermissionIfNeeded()
+│
+[HomeView.swift]
+├── @EnvironmentObject postsViewModel: PostsViewModel
+├── @EnvironmentObject authViewModel: AuthViewModel
+├── @State scrollToTopFlag
+├── body:
+│   ├── NavigationView
+│   ├── AppHeaderView(onLogoTap, showSearchButton)
+│   │   ├── 「Nanikiru」ロゴ → scrollToTop
+│   │   └── magnifyingglass → SearchViewへNavigationLink
+│   ├── TimelineTabBar(selected: postsViewModel.currentTab)
+│   │   ├── 「新着」「おすすめ」「フォロー中」
+│   ├── ローディング → ProgressView
+│   ├── 空 → 「投稿がありません」
+│   └── ScrollView + LazyVStack + ForEach(posts)
+│       ├── PostCardView(post, isLiked, onLike, onReport)
+│       ├── .onAppear(最後の要素) → fetchMorePosts()
+│       └── Pull-to-refresh → fetchPosts() + fetchLikedPosts()
+│   └── .task(onAppear) → fetchPosts() + fetchLikedPosts()
+│   └── .onChange(currentTab) → fetchPosts()
+│
+[PostCardView.swift]
+├── let post, isLiked, onLike, onReport
+├── @State currentImageIndex, showReportAlert, navigateToProfile
+├── @State showPostDetail, showItemTags, postItems, itemsLoaded
+├── body:
+│   ├── ヘッダー（アバター＋表示名＋子供年齢・地域・時間）
+│   │   └── NavigationLink → ProfileView(userId)
+│   ├── Photo Carousel（TabView・front/back画像）
+│   │   ├── CachedAsyncImage（ImageCacheService使用）
+│   │   ├── タップ → showItemTags.toggle()
+│   │   ├── タグオーバーレイ（itemTagDot）
+│   │   └── .tabViewStyle(.page)
+│   ├── 天気バッジ（最高/最低気温 + WeatherTypeアイコン）
+│   ├── アイテムタグボタン → loadItems() → showItemTags.toggle()
+│   ├── 未タグ付けアイテム一覧（untaggedItems）
+│   ├── 説明文（3行制限）
+│   └── フッター（いいねボタン + 通報ボタン）
+│       ├── いいね → onLike() → heart.fill / heart
+│       └── 通報 → showReportAlert → onReport()
+│   └── .sheet → PostDetailView(post)
+│   └── .onTapGesture → showPostDetail = true
+│
+├── loadItems()
+│   └── Firestore posts/{postId}/items.getDocuments()
+│   └── PostItemデコード
+│
+├── ヘルパー
+│   ├── ageLabel(months) → "生後Xヶ月" / "Y歳Zヶ月"
+│   ├── regionLabel(code) → 都道府県名
+│   └── timeAgo(ts) → "たった今" / "X分前" / "Y時間前" / "Z日前"
+│
+[PostDetailView.swift]
+├── let post, onDeleted
+├── @EnvironmentObject authViewModel, postsViewModel
+├── @Environment(\.dismiss)
+├── @State currentImageIndex, showDeleteConfirm, isDeleting
+├── @State postItems, itemsLoaded, showItemTags
+├── body:
+│   ├── NavigationView + ScrollView
+│   ├── Photo Carousel（TabView・front/back・タグオーバーレイ）
+│   ├── 投稿者情報（アバター・表示名・子供年齢）
+│   ├── 天気・気温ブロック
+│   ├── 地域
+│   ├── 説明文（全文表示）
+│   └── アイテム一覧（itemsSection）
+│       └── アイテム名・カテゴリ・サイズ・タグ付け位置
+│   └── ツールバー: 閉じる + ゴミ箱（自分の投稿のみ）
+│       └── deletePost() → dismiss()
+│   └── .task → loadItems()
+│
+
+
+================================================================================
+5. 投稿作成フロー
+================================================================================
+
+[NewPostView.swift]
+├── @EnvironmentObject postsViewModel, authViewModel, draftManager
+├── @Environment(\.dismiss)
+├── 写真
+│   ├── @State frontImage, backImage
+│   ├── @State photoSourceTarget, showPhotoSourceSheet
+│   ├── @State showImagePicker, imagePickerSourceType
+│   ├── @State editingImage, showImageEditor, editorReadyImage
+│   └── photoTile(title, image, target) → Menu
+│       ├── スタンプを編集 → PhotoEditorView
+│       ├── ライブラリから選択 → ImagePickerView
+│       └── カメラで撮影 → ImagePickerView
+│
+├── アイテムタグ付け
+│   ├── @State taggingItemIndex, taggingSide
+│   └── tagPlacementView
+│       ├── フロント/バック切り替え
+│       └── GeometryReader + DragGesture → 比率座標計算
+│           └── items[idx].tagPosition = CGPoint(x: ratioX, y: ratioY)
+│
+├── 投稿情報
+│   ├── @State description（100文字制限）
+│   ├── @State selectedRegionIndex（デフォルト:東京）
+│   ├── @State selectedGender
+│   ├── @State weatherType
+│   ├── @State tempMax, tempMin
+│   └── weatherSection → fetchWeather()自動取得ボタン
+│
+├── 子供選択
+│   ├── @State selectedChildIndex
+│   └── children = authViewModel.currentUser?.children
+│   └── 子供がいれば HorizontalScroll で選択
+│
+├── アイテム入力
+│   ├── @State items: [NewItemEntry]
+│   └── ItemEntryRow(entry, onRemove, onTag)
+│       ├── カテゴリ表示
+│       ├── ブランド名TextField
+│       ├── サイズPicker
+│       ├── タグ位置設定ボタン
+│       └── 削除ボタン
+│   └── +ボタン → Menu(ItemCategory.allCases) → items追加
+│
+├── 下書き保存
+│   └── draftSaveButton → saveDraft()
+│       └── 画像をDocumentsに保存
+│       └── PostDraft作成 → DraftManager.saveDraft()
+│       └── バナー表示「下書きを保存しました」
+│
+├── 投稿ボタン → submitPost()
+│   └── 選択中の子供情報を反映（birthday, gender）
+│   ├── 画像リサイズ → resizeImage(maxDimension:1200)
+│   ├── EXIF除去 → stripEXIF()
+│   ├── Firebase Storage アップロード
+│   ├── Post作成（tempCategoryKey計算）
+│   ├── Firestore posts/{postId}.setData()
+│   ├── subcollection items 保存
+│   ├── item_tags保存
+│   └── postsViewModel.fetchPosts() + dismiss()
+│
+└── ImagePickerView (UIViewControllerRepresentable)
+    └── UIImagePickerControllerラッパー
+    └── Coordinator: imagePickerController(didFinishPicking)
+
+[PhotoEditorView]（スタンプ編集）
+├── let image, onDone
+├── @State stampItems, selectedKind, history
+├── @State canvasSize, canvasOffset, activeStampId
+├── body:
+│   ├── stampPalette（SF Symbols + カスタム画像）
+│   ├── canvas（GeometryReader + ZStack）
+│   │   ├── Image(uiImage: image) → aspectFit
+│   │   ├── タップ → stampItems.append() + history.append(.addStamp)
+│   │   └── ForEach(stampItems) → StampView
+│   └── hintText
+│   └── ツールバー: キャンセル / Undo / 完了
+│       └── 完了 → renderFinalImage() → onDone()
+│
+└── StampView
+    ├── @Binding stamp: PlacedStamp
+    ├── isActive → 選択枠＋拡縮ハンドル表示
+    ├── DragGesture → 移動
+    ├── RotationGesture → 回転
+    └── ダブルタップ → onRemove()
+
+
+================================================================================
+6. プロフィールフロー
+================================================================================
+
+[ProfileSetupView.swift]（初回登録）
+├── @EnvironmentObject authViewModel
+├── @State uniqueUserId, displayName, regionIndex
+├── @State avatarId, avatarBgColor, selectedAvatarImage
+├── @State showChildInput, childName, childBirthday, childGender
+├── @State isCheckingId, idAvailable, showError
+├── body:
+│   ├── ヘッダー「プロフィール設定」
+│   ├── avatarSection
+│   │   ├── アバター表示（URL画像 / Assets画像 / Emoji）
+│   │   ├── アバター選択ボタン → AvatarPickerViewシート
+│   │   ├── ライブラリ選択ボタン → ImagePickerView
+│   │   └── 背景色プリセット選択
+│   ├── 入力フィールド（表示名・ユーザーID・地域）
+│   ├── ユーザーID重複チェック（0.6秒デバウンス）
+│   ├── 子供情報（任意・Toggle展開）
+│   └── 保存ボタン → completeProfile()
+│       └── success → MainTabViewへ遷移
+│
+└── AvatarPickerView
+    ├── キャラクター画像グリッド（avatarImageNames）
+    └── Emojiグリッド（avatarEmojis）
+
+[ProfileView.swift]
+├── let userId
+├── @EnvironmentObject authViewModel, postsViewModel, draftManager
+├── @State profileUser, userPosts, likedPosts
+├── @State isLoading, isFollowing, showEditProfile, showSettings
+├── @State selectedTab: .posts / .likes
+├── @State showFollowingList, followingUsers
+├── private isOwnProfile: Bool
+├── body:
+│   ├── ScrollView
+│   │   ├── profileHeader
+│   │   │   ├── アバター（80x80）
+│   │   │   ├── 表示名・ユーザーID
+│   │   │   ├── 統計（投稿数・フォロワー数）
+│   │   │   ├── フォロー中ボタン（自分のみ）→ loadFollowingUsers() → FollowingListView
+│   │   │   └── フォロー/フォロー中ボタン（他ユーザ）→ toggleFollow()
+│   │   ├── tabSelector（投稿/いいね）※自分のみ
+│   │   └── postsGrid / likedPostsGrid（3列グリッド）
+│   │       └── CachedAsyncImage
+│   │       └── タップ → PostDetailViewシート
+│   └── 歯車アイコン → SettingsViewシート
+│   └── .refreshable → loadProfile() + loadUserPosts() + loadLikedPosts()
+│
+├── loadProfile() → Firestore users/{userId}.getDocument()
+├── loadUserPosts() → posts(user_id==userId, is_hidden==false)
+├── loadLikedPosts() → likes(user_id==myId) → post_idバッチ取得
+├── checkFollowing() → follows(follower_id==myId, following_id==userId)
+├── toggleFollow()
+│   ├── isFollowing → followsドキュメント削除 + followers_count--
+│   └── !isFollowing → followsドキュメント作成 + followers_count++
+└── loadFollowingUsers() → follows(follower_id==myId) → users取得
+
+[FollowingListView.swift]
+├── let users: [AppUser]
+├── @State selectedUserId, selectedUserPosts, showUserPosts
+├── body: NavigationView + List
+│   └── 各ユーザー行 → loadUserPosts() → UserPostsSheet
+│
+[UserPostsSheet.swift]
+├── let userId, posts, isLoading
+├── body: NavigationView + ScrollView + LazyVGrid（3列）
+│   └── タップ → PostDetailView
+
+[EditProfileView.swift]
+├── @EnvironmentObject authViewModel
+├── @State displayName, uniqueUserId, selectedAvatarId
+├── @State selectedBgColorHex, showAvatarImagePicker, pickedAvatarImage
+├── @State selectedRegionIndex, childBirthday, selectedGender, children
+├── @State isSaving
+├── body:
+│   ├── NavigationView + ScrollView
+│   ├── ユーザーID（テキストフィールド）
+│   ├── 表示名
+│   ├── アバターアイコン（ライブラリ選択 + Assetsグリッド + 背景色）
+│   ├── お子様情報（複数登録可・ChildProfileRow）
+│   ├── 地域Picker
+│   └── 保存ボタン → save() → saveUserProfile() → dismiss()
+│
+└── ChildProfileRow
+    ├── @Binding child: ChildProfile
+    ├── TextField: ニックネーム
+    ├── DatePicker: 生年月日
+    ├── Picker: 性別
+    └── 削除ボタン
+
+[SettingsView.swift]
+├── @EnvironmentObject authViewModel, draftManager
+├── @State showSignOutAlert, showDeleteAccountAlert, showReauthAlert
+├── @State reauthPassword
+├── body: NavigationView + List
+│   ├── Section「アカウント」
+│   │   └── NavigationLink → EditProfileView
+│   ├── Section「投稿」
+│   │   └── NavigationLink → DraftListView（下書き件数バッジ）
+│   ├── Section「法的情報」
+│   │   └── NavigationLink → TermsOfServiceView
+│   │   └── NavigationLink → PrivacyPolicyView
+│   └── Section「その他」
+│       ├── ログアウト → signOut()
+│       └── アカウント削除 → 再認証 → deleteAccount()
+│
+└── DraftListView
+    ├── @EnvironmentObject draftManager
+    ├── let onDraftSelected: () -> Void
+    ├── body: List(drafts)
+    │   └── タップ → draftManager.selectDraft() → onDraftSelected()
+    │   └── .onDelete → draftManager.deleteDraft()
+    └── formattedDate()
+
+
+================================================================================
+7. 検索フロー
+================================================================================
+
+[SearchView.swift]
+├── @EnvironmentObject authViewModel
+├── @State selectedRegionIndex: Int（-1=全国）
+├── @State selectedGender: ChildGender
+├── @State selectedWeather: WeatherType?
+├── @State selectedTempCategory: String
+├── @State brandQuery: String
+├── @State selectedSizeIndex: Int（-1=全サイズ）
+├── @State results: [Post]
+├── @State isLoading, errorMessage
+├── body:
+│   ├── NavigationView
+│   ├── AppHeaderView(showSearchButton: false)
+│   ├── ScrollView
+│   │   ├── filterSection（絞り込み検索UI）
+│   │   │   ├── 地域Picker
+│   │   │   ├── 性別チップ（未選択/男/女/その他）
+│   │   │   ├── 天気チップ（すべて/晴/曇/雨/雪）
+│   │   │   ├── 気温帯チップ（すべて/〜9℃/10〜14℃/...）
+│   │   │   ├── ブランドTextField
+│   │   │   └── サイズPicker
+│   │   ├── searchButton → executeSearch()
+│   │   └── 結果表示: PostCardViewリスト
+│   └── .navigationBarHidden(true)
+│
+└── executeSearch()
+    └── Firestore postsクエリ構築
+        └── .whereField("is_hidden", isEqualTo: false)
+        └── .orderBy("created_at", descending)
+        └── .limit(50)
+        └── 地域フィルタ（region_code）
+        └── 性別フィルタ（gender_id）
+        └── 天気フィルタ（weather_type）
+        └── 気温帯フィルタ（temp_category）
+        └── ブランド名フィルタ（descriptionに含まれるかクライアント側）
+        └── サイズフィルタ（未実装: Firestoreのsubcollection検索が必要）
+
+
+================================================================================
+8. モデル・定数一覧
+================================================================================
+
+[Models/Models.swift]
+
+【データモデル】
+struct ChildProfile: Identifiable, Codable
+├── id: String
+├── name: String（ニックネーム）
+├── birthday: Date
+└── gender: Int（0:未選択 1:男 2:女 3:その他）
+
+struct AppUser: Identifiable, Codable
+├── @DocumentID id: String?
+├── user_id: String（Firebase Auth UID）
+├── unique_user_id: String?（ユーザー識別ID）
+├── display_name: String?
+├── avatar_id: String（画像URL or Assets名 or Emoji）
+├── avatar_bg_color: String?
+├── region_code: String（2桁都道府県コード）
+├── child_birthday: Date
+├── child_gender: Int
+├── followers_count: Int
+├── children: [ChildProfile]?
+└── is_profile_complete: Bool?
+
+struct Post: Identifiable, Codable
+├── @DocumentID id: String?
+├── post_id: String
+├── user_id: String
+├── image_url_front, image_url_back: String?
+├── child_age_months: Int
+├── region_code, gender_id: Int
+├── description: String
+├── weather_type: String（sunny/cloudy/rainy/snowy）
+├── temp_max, temp_min: Double
+├── temp_category: String
+├── likes_count, reports_count: Int
+├── is_hidden: Bool
+├── created_at: Timestamp
+├── item_tags: [PostItemTag]?
+└── ローカル専用: posterAvatarId, posterAvatarBgColor, posterDisplayName, posterChildAgeName
+
+struct PostItem: Identifiable, Codable
+├── @DocumentID id: String?
+├── item_id, brand_id: String
+├── custom_name: String
+├── size_value: Int
+└── category: String（ItemCategory.rawValue）
+
+struct PostItemTag: Identifiable, Codable
+├── id: String
+├── item_index: Int（items配列インデックス）
+├── x_ratio, y_ratio: Double（0.0-1.0）
+└── image_side: String（"front" / "back"）
+
+struct Follow: Identifiable, Codable
+├── @DocumentID id: String?
+├── follow_id: String
+├── follower_id, following_id: String
+└── created_at: Timestamp
+
+struct PostDraft: Codable
+├── description, regionIndex, weatherType
+├── tempMax, tempMin: String
+├── items: [DraftItem]
+├── savedAt: Date
+└── frontImagePath, backImagePath: String?
+
+struct DraftItem: Codable, Identifiable
+├── id, category, brandName, selectedSize
+
+【Enum】
+enum ItemCategory: String（トップス/ボトムス/アクセサリー/アウター/シューズ/スタイ/その他）
+enum ChildGender: Int（未選択/男/女/その他）→ label, emoji
+enum WeatherType: String（sunny/cloudy/rainy/snowy）→ label, emoji, sfSymbol
+enum TimelineTab: String（新着/おすすめ/フォロー中）
+enum AuthMode（login / signUp）
+enum PhotoTarget（front / back）
+
+【定数】
+let clothingSizes: [Int] = [50,60,70,80,90,100,110,120,0]
+func sizeLabel(_ size) → "フリー" or "Xcm"
+let tempCategories: [(label, key)]
+let prefectures: [String]（47都道府県）
+let avatarEmojis: [String]（20個の絵文字）
+let avatarImageNames: [String]（現在: "avatar_zou"）
+let stampImageNames: [String]（現在: "stamp_zou"）
+
+
+================================================================================
+9. ViewModel 関数一覧
+================================================================================
+
+[AuthViewModel]
+┌─────────────────────────┬──────────────────────────────────────────────────┐
+│ 関数名                  │ 説明                                              │
+├─────────────────────────┼──────────────────────────────────────────────────┤
+│ initialize()            │ Firebase Auth状態確認・自動ログイン判定            │
+│ signInWithEmail()       │ メールログイン + Firestoreユーザーデータ取得       │
+│ signUpWithEmail()       │ メール新規登録 + Firestore最小限データ作成         │
+│ signInWithGoogle()      │ Googleサインイン + Firestoreデータ同期             │
+│ handleSignInWithApple() │ Appleサインイン + Firestoreデータ同期              │
+│ prepareSignInWithApple()│ nonce生成・SHA256ハッシュ返却                      │
+│ completeProfile()       │ 初回プロフィール登録・ユーザーID重複チェック       │
+│ checkUniqueUserIdAvailable() │ ユーザーID重複確認（Firestore検索）          │
+│ loadCurrentUser()       │ 現在のFirestoreユーザードキュメント読み込み        │
+│ saveUserProfile()       │ Firestoreユーザーデータ保存（merge）               │
+│ saveChildren()          │ 子供情報更新 → saveUserProfile()                  │
+│ uploadAvatarImage()     │ Storageにアバター画像アップロード                  │
+│ deleteAccount()         │ アカウント削除（Firestore+Auth+posts+likes+follows）│
+│ reauthenticate()        │ Email再認証                                       │
+│ reauthenticateWithGoogle() │ Google再認証                                  │
+│ signOut()               │ Firebase Authサインアウト                         │
+│ resetPassword()         │ パスワードリセットメール送信                      │
+│ randomNonceString()     │ 32文字ランダムnonce生成                           │
+│ sha256()                │ SHA256ハッシュ化                                  │
+└─────────────────────────┴──────────────────────────────────────────────────┘
+
+[PostsViewModel]
+┌─────────────────────────┬──────────────────────────────────────────────────┐
+│ 関数名                  │ 説明                                              │
+├─────────────────────────┼──────────────────────────────────────────────────┤
+│ fetchPosts(user:)       │ タイムライン取得（新着/おすすめ/フォロー中）        │
+│ fetchMorePosts(user:)   │ ページネーション・さらに読み込み                   │
+│ fetchFollowingPosts()   │ フォロー中ユーザーの投稿取得（30件バッチ並列）     │
+│ enrichWithPosterInfo()  │ 投稿リストに投稿者情報（アバター・名前）を付与     │
+│ fetchLikedPosts()       │ 自分のいいね済み投稿ID取得                         │
+│ toggleLike(post:)       │ いいね/いいね解除 + Firestore更新                  │
+│ report(post:)           │ 投稿通報 + reports_count更新・5件で非表示化        │
+│ uploadPost(...)         │ 投稿作成（画像アップロード→Firestore保存）        │
+│ deletePost(_ post:)      │ 投稿削除（Storage画像+Firestoreサブコレクション）  │
+│ tempCategoryKey()       │ 平均気温から気温帯キー計算                         │
+│ resizeImage()           │ 画像リサイズ（最大1200px）                        │
+│ stripEXIF()             │ EXIFメタデータ除去                                │
+│ setPendingItemTags()    │ 投稿時のitem_tags一時設定                         │
+└─────────────────────────┴──────────────────────────────────────────────────┘
+
+[DraftManager]（PostsViewModel.swift内）
+┌─────────────────────────┬──────────────────────────────────────────────────┐
+│ 関数名                  │ 説明                                              │
+├─────────────────────────┼──────────────────────────────────────────────────┤
+│ drafts                  │ UserDefaultsから下書きリスト取得（computed）       │
+│ saveDraft(_ draft:)      │ 下書き保存（先頭追加・最大20件）                   │
+│ deleteDraft(at:)        │ 下書き削除（画像ファイルも削除）                   │
+│ selectDraft(_ draft:)    │ 下書き選択→pendingDraftに設定                     │
+│ clearPendingDraft()     │ pendingDraftクリア                                │
+└─────────────────────────┴──────────────────────────────────────────────────┘
+
+
+================================================================================
+10. View 構造体一覧
+================================================================================
+
+【Auth】
+AuthView                    メール/Apple/Google認証画面
+
+【Home】
+HomeView                    タイムライン画面（Tab+ScrollView）
+├─ AppHeaderView            「Nanikiru」ヘッダー + 検索アイコン
+├─ TimelineTabBar           「新着/おすすめ/フォロー中」タブ
+└─ PostCardView             個別投稿カード（タイムライン表示）
+    ├─ photoCarousel        写真カルーセル（TabView）
+    ├─ itemTagDot           アイテムタグドット（写真上オーバーレイ）
+    ├─ weatherBadge         天気・気温バッジ
+    ├─ untaggedItemsView    未タグ付けアイテム一覧
+    └─ tagStyle             View拡張（タグスタイル）
+
+PostDetailView              投稿詳細画面（NavigationView）
+├─ itemsSection             アイテム一覧
+└─ itemTagDot               タグドット（写真上オーバーレイ）
+
+【NewPost】
+NewPostView                 新規投稿画面（NavigationView）
+├─ photoSection             写真選択エリア（front/back）
+├─ childSection             子供選択（複数対応）
+├─ itemsSection             アイテム入力リスト
+├─ tagPlacementView         タグ位置設定（タップで比率座標）
+├─ descriptionSection       説明文入力（100文字制限）
+├─ weatherSection           天気・気温入力
+├─ draftSaveButton          下書き保存ボタン
+├─ postButton               投稿ボタン
+├─ ImagePickerView          UIImagePickerControllerラッパー
+├─ PhotoEditorView          スタンプ編集画面
+│   ├─ stampPalette         スタンプ選択パレット
+│   ├─ canvas               キャンバス（タップで配置）
+│   └── StampView           個別スタンプ（移動/拡縮/回転/削除）
+└─ ItemEntryRow             アイテム入力行（ブランド+サイズ+タグ+削除）
+
+【Profile】
+ProfileSetupView            初回プロフィール設定（NavigationView）
+├─ avatarSection            アバター選択（画像/Emoji/背景色）
+├─ childInfoSection         子供情報入力（任意・Toggle展開）
+└─ AvatarPickerView         アバター選択シート（画像+Emoji）
+
+ProfileView                 プロフィール画面（自分/他ユーザ）
+├─ profileHeader            プロフィールヘッダー（アバター・統計）
+├─ tabSelector              投稿/いいねタブ（自分のみ）
+├─ postsGrid                投稿3列グリッド
+├─ likedPostsGrid           いいね済み投稿3列グリッド
+├─ FollowingListView        フォロー中一覧（NavigationView）
+│   └─ UserPostsSheet       フォロー中ユーザーの投稿一覧
+└─ 各種sheet: EditProfileView, SettingsView, PostDetailView
+
+EditProfileView             プロフィール編集（NavigationView）
+├─ アバター（ライブラリ/Assets/背景色）
+├─ 子供情報複数管理（ChildProfileRow）
+├─ 地域・表示名・ユーザーID
+└─ ChildProfileRow          子供情報行（名前/誕生日/性別/削除）
+
+SettingsView                設定画面（NavigationView + List）
+├─ EditProfileViewリンク
+├─ DraftListViewリンク      下書き一覧（件数バッジ）
+├─ TermsOfServiceView       利用規約
+├─ PrivacyPolicyView        プライバシーポリシー
+├─ ログアウト
+└─ アカウント削除（再認証フロー）
+
+【Search】
+SearchView                  絞り込み検索画面（NavigationView）
+├─ AppHeaderView
+├─ filterSection            絞り込みUI（地域/性別/天気/気温/ブランド/サイズ）
+│   ├─ filterRow            フィルタ行ラッパー
+│   └─ chipButton           チップボタン
+├─ searchButton
+└─ 結果: PostCardViewリスト
+
+【共通・その他】
+SplashView                  スプラッシュ画面（アイコン+アニメーション）
+MainTabView                 メインタブ（ホーム/検索/マイページ）
+├─ BottomNavBar             下部ナビゲーションバー
+├─ AdBannerView             広告バナー領域（現在はプレースホルダー）
+└─ Auth.currentUID          Firebase Auth UID取得ヘルパー
+
+LegalView.swift
+├─ TermsOfServiceView       利用規約（第1条〜第5条）
+└─ PrivacyPolicyView        プライバシーポリシー
+
+
+================================================================================
+11. Service 関数一覧
+================================================================================
+
+[ImageCacheService]（シングルトン）
+┌─────────────────────────┬──────────────────────────────────────────────────┐
+│ 関数名                  │ 説明                                              │
+├─────────────────────────┼──────────────────────────────────────────────────┤
+│ get(_ url:)              │ メモリキャッシュからUIImage取得                   │
+│ set(_ image:for:)        │ メモリキャッシュにUIImage保存                     │
+│ NSCache設定: countLimit=200, totalCostLimit=100MB        │
+└─────────────────────────┴──────────────────────────────────────────────────┘
+
+[CachedAsyncImage]（View）
+├─ let url, content, placeholder
+├─ @State loadedImage, isLoading
+├─ load() async
+│   ├── キャッシュヒット → loadedImage = cached
+│   └── URLSession.data() → キャッシュ保存 → loadedImage
+└─ body: Group（loadedImage ? content : placeholder）
+
+[NotificationService]（シングルトン）
+┌─────────────────────────┬──────────────────────────────────────────────────┐
+│ 関数名                  │ 説明                                              │
+├─────────────────────────┼──────────────────────────────────────────────────┤
+│ requestPermissionIfNeeded() │ 通知許可要求・リモート登録                      │
+│ saveFCMTokenIfSignedIn() │ FCMトークン取得→Firestore users/{uid}保存       │
+└─────────────────────────┴──────────────────────────────────────────────────┘
+
+[WeatherService]（Actor・シングルトン）
+┌─────────────────────────┬──────────────────────────────────────────────────┐
+│ 関数名                  │ 説明                                              │
+├─────────────────────────┼──────────────────────────────────────────────────┤
+│ fetch(regionCode:)      │ Open-Meteo APIから天気取得                        │
+│ mapWeatherCode(_ code:) │ weathercode→WeatherType文字列変換                │
+│ prefectureCoordinates   │ 都道府県コード→座標マッピング（JIS X 0401）      │
+└─────────────────────────┴──────────────────────────────────────────────────┘
+
+[AppDelegate]
+├─ application(didFinishLaunchingWithOptions)
+│   └── UNUserNotificationCenter.delegate = self
+│   └── Messaging.messaging().delegate = self
+├─ application(didRegisterForRemoteNotificationsWithDeviceToken)
+│   └── Messaging.messaging().apnsToken = deviceToken
+├─ userNotificationCenter(willPresent) → [.banner, .sound, .badge]
+├─ userNotificationCenter(didReceive)
+└─ messaging(didReceiveRegistrationToken) → Firestore fcm_token保存
+
+
+================================================================================
+12. データベース構造（Firestore）
+================================================================================
+
+users/{uid}                        AppUser
+├── user_id, unique_user_id
+├── display_name, avatar_id, avatar_bg_color
+├── region_code, child_birthday, child_gender
+├── followers_count
+├── children[]（子配列）
+├── is_profile_complete
+└── fcm_token
+
+posts/{post_id}                    Post
+├── post_id, user_id
+├── image_url_front, image_url_back
+├── child_age_months, region_code, gender_id
+├── description, weather_type
+├── temp_max, temp_min, temp_category
+├── likes_count, reports_count
+├── is_hidden, created_at
+├── item_tags[]（マップ配列）
+└── subcollection: items/{item_id}   PostItem
+    ├── item_id, brand_id, custom_name, size_value, category
+
+likes/{uid}_{post_id}              いいね
+├── user_id, post_id
+
+reports/{uid}_{post_id}            通報
+├── user_id, post_id
+
+follows/{followerId}_{followingId} フォロー
+├── follow_id, follower_id, following_id, created_at
+
+Storage:
+├── avatars/{uid}.jpg              アバター画像
+└── posts/{post_id}/front.jpg      投稿画像
+└── posts/{post_id}/back.jpg       投稿画像
+
+Local (UserDefaults):
+├── savedDraftsList_v2             下書きリストJSON
+└── autoLogin                      自動ログイン設定
+
+Local (Documents):
+├── draft_front_{uuid}.jpg         下書き画像
+└── draft_back_{uuid}.jpg          下書き画像
+
+
+================================================================================
+13. 依存関係図
+================================================================================
+
+                               ┌─────────────┐
+                               │  Firebase   │
+                               │  (Auth,    │
+                               │  Firestore,│
+                               │  Storage,  │
+                               │  Messaging)│
+                               └──────┬──────┘
+                                      │
+        ┌─────────────────────────────┼─────────────────────────────┐
+        │                             │                             │
+        ▼                             ▼                             ▼
+┌───────────────┐            ┌─────────────────┐          ┌─────────────────┐
+│ AuthViewModel │◄───────────│ PostsViewModel  │          │ WeatherService  │
+│               │            │                 │          │                 │
+│ - currentUser │            │ - posts[]       │          │ - fetch()       │
+│ - isSignedIn  │            │ - likedPostIds  │          │                 │
+│ - signIn/Out  │            │ - uploadPost()  │          │ Open-Meteo API  │
+│ - deleteAcct  │            │ - toggleLike()  │          └─────────────────┘
+└───────┬───────┘            │ - report()      │
+        │                    │ - deletePost()  │
+        │                    │ - DraftManager  │
+        │                    └────────┬────────┘
+        │                             │
+        │         ┌───────────────────┼───────────────────┐
+        │         │                   │                   │
+        ▼         ▼                   ▼                   ▼
+┌───────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│ ProfileSetup  │      │   HomeView      │      │  NewPostView    │
+│   View        │      │                 │      │                 │
+└───────────────┘      │  - PostCardView │      │  - PhotoEditor  │
+                       │  - PostDetail   │      │  - ImagePicker  │
+                       └─────────────────┘      └─────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │   SearchView    │
+                       └─────────────────┘
+
+【環境オブジェクト配布】
+myBabyCodeApp
+├── SplashView
+├── ProfileSetupView → authViewModel
+└── MainTabView
+    ├── HomeView → postsViewModel + authViewModel
+    ├── SearchView → authViewModel
+    └── ProfileView → authViewModel + postsViewModel + draftManager
+        ├── EditProfileView → authViewModel
+        └── SettingsView → authViewModel + draftManager
+            └── DraftListView → draftManager
+    └── NewPostView（sheet）→ postsViewModel + authViewModel + draftManager
+        └── PostDetailView（sheet）→ authViewModel + postsViewModel
+
+【画面遷移（NavigationLink / sheet）】
+AuthView ──成功──► ProfileSetupView ──完了──► MainTabView
+
+MainTabView
+├── HomeView
+│   ├── NavigationLink → SearchView（ヘッダー虫眼鏡）
+│   ├── PostCardView.onTapGesture → PostDetailView（sheet）
+│   └── PostCardView.NavigationLink → ProfileView（userId）
+├── SearchView
+│   └── PostCardView → PostDetailView（sheet）
+└── ProfileView
+    ├── NavigationLink → EditProfileView（sheet）
+    ├── sheet → SettingsView
+    │   ├── NavigationLink → EditProfileView
+    │   ├── NavigationLink → DraftListView
+    │   ├── NavigationLink → TermsOfServiceView
+    │   └── NavigationLink → PrivacyPolicyView
+    ├── sheet → FollowingListView → sheet → UserPostsSheet → sheet → PostDetailView
+    └── sheet → PostDetailView
+
+NewPostView（MainTabView.sheet）
+├── sheet → ImagePickerView
+├── sheet → PhotoEditorView
+└── alert → 投稿完了
+
+
+================================================================================
+14. 主要フローまとめ（シーケンス風）
+================================================================================
+
+【ログインフロー】
+1. アプリ起動 → myBabyCodeApp.init() → Firebase.configure()
+2. AuthViewModel.initialize() → Auth状態確認
+3. 未ログイン → SplashView → AuthView
+4. ログイン処理（Email/Google/Apple）→ Firestore users確認
+5. 新規 → is_profile_complete=false → ProfileSetupView
+6. 既存 → is_profile_complete=true → MainTabView
+
+【タイムライン表示フロー】
+1. HomeView.task → PostsViewModel.fetchPosts()
+2. Firestore postsクエリ（is_hidden=false, orderBy created_at desc）
+3. enrichWithPosterInfo() → 投稿者アバター・名前を並列取得
+4. HomeViewにposts配列反映 → PostCardView生成
+5. 最後の要素onAppear → fetchMorePosts() ページネーション
+6. Pull-to-refresh → fetchPosts() + fetchLikedPosts()
+
+【投稿作成フロー】
+1. MainTabView +ボタン → NewPostView（sheet）
+2. 写真選択（カメラ/ライブラリ）→ ImagePickerView → PhotoEditorView（任意）
+3. アイテム入力 → ItemEntryRow（ブランド・サイズ）
+4. アイテムタグ付け → tagPlacementView（タップで比率座標）
+5. 天気自動取得 → WeatherService.fetch(regionCode)
+6. 投稿ボタン → submitPost() → uploadPost()
+   - resizeImage() → stripEXIF() → Storageアップロード
+   - Post作成 → Firestore保存 → itemsサブコレクション保存
+   - item_tags保存
+7. 成功 → fetchPosts() → dismiss()
+
+【いいねフロー】
+1. PostCardView ハートボタンタップ → onLike()
+2. PostsViewModel.toggleLike(post)
+3. likes/{uid}_{postId} 作成/削除
+4. posts/{postId}.likes_count increment/decrement
+5. ローカル likedPostIds / posts配列更新
+
+【通報フロー】
+1. PostCardView 通報ボタン → onReport()
+2. PostsViewModel.report(post)
+3. reports/{uid}_{postId} 作成
+4. posts/{postId}.reports_count increment
+5. reports_count >= 5 → is_hidden=true → posts配列から削除
+
+【フォローフロー】
+1. ProfileView（他ユーザ）→ フォローするボタン
+2. ProfileView.toggleFollow()
+3. follows/{myId}_{userId} 作成/削除
+4. users/{userId}.followers_count increment/decrement
+
+【検索フロー】
+1. SearchView → フィルタ条件設定
+2. 検索ボタン → executeSearch()
+3. Firestore複合クエリ（region/gender/weather/temp_category）
+4. クライアント側でbrandQueryフィルタ
+5. PostCardViewリスト表示
+
+【アカウント削除フロー】
+1. SettingsView → アカウント削除
+2. 再認証ダイアログ（Emailパスワード / Google再ログイン）
+3. AuthViewModel.deleteAccount()
+4. users/{uid} 削除 → posts削除 → likes削除 → follows削除
+5. Firebase Auth.user.delete()
+6. isSignedIn=false → AuthViewへ遷移
+
+================================================================================
+                          フロー図 終了
+================================================================================

@@ -1,18 +1,40 @@
+// =============================================================================
+// ファイル名: MainTabView.swift
+// 役割: アプリのメイン画面構成（タブ切り替え＋新規投稿シート＋下部ナビゲーション）
+// 説明:
+//   ログイン後のメイン画面を構成するViewです。3つのタブ（ホーム・検索・マイページ）を
+//   ZStackで切り替え、下部にカスタムナビゲーションバーと広告バナー領域を配置します。
+//   中央の+ボタンで新規投稿シート（NewPostView）を表示します。
+//   また、ViewModel（PostsViewModel, DraftManager）を生成・保持し、
+//   各子ViewにenvironmentObjectとして配布します。
+// =============================================================================
+
 import SwiftUI
 import FirebaseAuth
 import Combine
 
 struct MainTabView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @StateObject private var postsViewModel = PostsViewModel()
-    @StateObject private var draftManager = DraftManager()
-    @State private var selectedTab: Int = 0
-    @State private var showNewPost = false
-    @State private var profileRefreshId = UUID()
+    // === 環境・状態 ===
+    @EnvironmentObject var authViewModel: AuthViewModel        // 認証状態（親から受け取る）
+    @StateObject private var postsViewModel = PostsViewModel() // 投稿管理（自身で生成・保持）
+    @StateObject private var draftManager = DraftManager()       // 下書き管理（自身で生成・保持）
+    @State private var selectedTab: Int = 0                    // 選択中のタブ（0=ホーム,1=検索,2=マイページ）
+    @State private var showNewPost = false                     // 新規投稿シートの表示状態
+    @State private var profileRefreshId = UUID()               // プロフィールViewの強制再描画用ID
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: メイン画面の全体レイアウト（コンテンツ + 広告 + ナビ + シート）を定義
+    // 構成:
+    //   1. ZStackでタブに応じた画面切り替え（HomeView / SearchView / ProfileView）
+    //   2. AdBannerView（広告バナー領域・現在はプレースホルダー）
+    //   3. BottomNavBar（カスタム下部ナビゲーション、中央に投稿ボタン）
+    //   4. .sheetでNewPostViewをモーダル表示
+    // 備考: .id(profileRefreshId)により、投稿シートを閉じた時にProfileViewを強制リフレッシュする。
+    // =============================================================================
     var body: some View {
         VStack(spacing: 0) {
-            // Main content
+            // タブに応じたメインコンテンツ領域
             ZStack {
                 switch selectedTab {
                 case 0:
@@ -27,24 +49,26 @@ struct MainTabView: View {
                         .environmentObject(authViewModel)
                         .environmentObject(postsViewModel)
                         .environmentObject(draftManager)
-                        .id(profileRefreshId)
+                        .id(profileRefreshId)  // このIDを変えるとViewが再構築されリフレッシュされる
                 default:
                     EmptyView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Ad banner space
+            // 広告バナー表示領域（現在はプレースホルダー）
             AdBannerView()
 
-            // Bottom navigation
+            // 下部カスタムナビゲーションバー
             BottomNavBar(
                 selectedTab: $selectedTab,
                 onPostTap: { showNewPost = true }
             )
         }
         .ignoresSafeArea(edges: .bottom)
+        // 新規投稿シート（+ボタンまたは下書き選択時に表示）
         .sheet(isPresented: $showNewPost, onDismiss: {
+            // シートを閉じたらプロフィールViewを再描画（投稿件数更新のため）
             profileRefreshId = UUID()
         }) {
             NewPostView()
@@ -52,6 +76,7 @@ struct MainTabView: View {
                 .environmentObject(authViewModel)
                 .environmentObject(draftManager)
         }
+        // 下書きが選択されたら自動的に投稿シートを表示
         .onChange(of: draftManager.pendingDraft != nil) { hasDraft in
             if hasDraft {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -59,6 +84,7 @@ struct MainTabView: View {
                 }
             }
         }
+        // 画面表示時にプッシュ通知の許可を要求・FCMトークンを保存
         .onAppear {
             NotificationService.shared.requestPermissionIfNeeded()
             NotificationService.shared.saveFCMTokenIfSignedIn()
@@ -66,17 +92,25 @@ struct MainTabView: View {
     }
 }
 
-// MARK: - Bottom Nav Bar
+// =============================================================================
+// MARK: - BottomNavBar
+// 役割: カスタム下部ナビゲーションバー
+// 説明:
+//   標準のTabViewではなく、HStackで自作したナビゲーションバーです。
+//   中央に浮き出た赤い+ボタン（新規投稿）を持ち、左右にホームとマイページの
+//   アイコン＋ラベルを配置しています。タブ選択時は朱色に、未選択時はグレーに変化します。
+// =============================================================================
 
 struct BottomNavBar: View {
-    @Binding var selectedTab: Int
-    var onPostTap: () -> Void
+    @Binding var selectedTab: Int   // 双方向バインディング: MainTabViewとタブ状態を同期
+    var onPostTap: () -> Void       // +ボタンタップ時のコールバック
 
     var body: some View {
         HStack {
+            // 左: ホームボタン（タブ0）
             navItem(icon: "house.fill",   label: "ホーム",  tab: 0)
             Spacer()
-            // Post button (center)
+            // 中央: 新規投稿ボタン（赤い浮き出し円）
             Button(action: onPostTap) {
                 ZStack {
                     Circle()
@@ -88,8 +122,9 @@ struct BottomNavBar: View {
                         .font(.system(size: 24, weight: .bold))
                 }
             }
-            .offset(y: -12)
+            .offset(y: -12)  // ナビバーから少し上に浮かせる
             Spacer()
+            // 右: マイページボタン（タブ2）
             navItem(icon: "person.fill",  label: "マイページ", tab: 2)
         }
         .padding(.horizontal, 32)
@@ -101,6 +136,15 @@ struct BottomNavBar: View {
         )
     }
 
+    // =============================================================================
+    // 【Viewサマリー】navItem
+    // 目的: 個別のナビゲーションアイテム（アイコン＋ラベル）を生成する
+    // 引数:
+    //   - icon: String - SF Symbolsのアイコン名
+    //   - label: String - ボタン下に表示する日本語ラベル
+    //   - tab: Int - このボタンが対応するタブ番号
+    // 戻り値: some View（ボタンView）
+    // =============================================================================
     @ViewBuilder
     private func navItem(icon: String, label: String, tab: Int) -> some View {
         Button {
@@ -112,12 +156,20 @@ struct BottomNavBar: View {
                 Text(label)
                     .font(.system(size: 10))
             }
+            // 選択中のタブは朱色、未選択はグレー
             .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
         }
     }
 }
 
-// MARK: - Ad Banner View
+// =============================================================================
+// MARK: - AdBannerView
+// 役割: 広告バナー表示領域のプレースホルダー
+// 説明:
+//   将来の広告導入に備えた領域確保Viewです。現在は「広告バナーエリア」という
+//   プレースホルダーテキストを表示しています。Google AdMobなどを導入する場合、
+//   このTextを実際の広告Viewに置き換えてください。
+// =============================================================================
 
 struct AdBannerView: View {
     var body: some View {
@@ -136,7 +188,11 @@ struct AdBannerView: View {
     }
 }
 
+// =============================================================================
 // MARK: - Auth helper shim
+// 役割: Firebase Authの現在のUIDを安全に取得するヘルパー
+// 説明: FirebaseAuth.Auth.auth().currentUser?.uid のラッパー。未ログイン時は空文字を返す。
+// =============================================================================
 
 enum Auth {
     static var currentUID: String {

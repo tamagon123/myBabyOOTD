@@ -1,7 +1,24 @@
+// =============================================================================
+// ファイル名: LegalView.swift
+// 役割: 法的情報画面（利用規約・プライバシーポリシーの表示）
+// 説明:
+//   設定画面から遷移する利用規約（TermsOfServiceView）と
+//   プライバシーポリシー（PrivacyPolicyView）を定義しています。
+//   各規約条文はlegalSectionという共通のViewBuilderで装飾して表示します。
+// =============================================================================
+
 import SwiftUI
 
 // MARK: - Terms of Service
+// 説明: 利用規約表示画面
 
+// =============================================================================
+// 【Viewサマリー】TermsOfServiceView
+// 目的: 利用規約の全文をScrollViewで表示する
+// 構成:
+//   - タイトル「利用規約」
+//   - 第1条〜第5条のlegalSection
+// =============================================================================
 struct TermsOfServiceView: View {
     var body: some View {
         ScrollView {
@@ -32,6 +49,14 @@ struct TermsOfServiceView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    // =============================================================================
+    // 【Viewサマリー】legalSection
+    // 目的: 規約条文のタイトルと本文を統一スタイルで表示するヘルパーView
+    // 引数:
+    //   - title: String - 条文タイトル（例: "第1条（適用）"）
+    //   - body: () -> String - 条文本文を返すクロージャ
+    // 戻り値: some View
+    // =============================================================================
     @ViewBuilder
     private func legalSection(title: String, body: () -> String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -46,7 +71,15 @@ struct TermsOfServiceView: View {
 }
 
 // MARK: - Privacy Policy
+// 説明: プライバシーポリシー表示画面
 
+// =============================================================================
+// 【Viewサマリー】PrivacyPolicyView
+// 目的: プライバシーポリシーの全文をScrollViewで表示する
+// 構成:
+//   - タイトル「プライバシーポリシー」
+//   - 各項目のlegalSection（収集情報・利用目的・第三者提供・子供のプライバシー・削除・お問い合わせ）
+// =============================================================================
 struct PrivacyPolicyView: View {
     var body: some View {
         ScrollView {

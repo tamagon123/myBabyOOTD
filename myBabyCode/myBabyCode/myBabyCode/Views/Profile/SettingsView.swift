@@ -1,17 +1,40 @@
+// =============================================================================
+// ファイル名: SettingsView.swift
+// 役割: 設定画面（プロフィール編集・下書き一覧・規約・ログアウト・アカウント削除）
+// 説明:
+//   マイページの歯車アイコンから遷移する設定画面です。
+//   List形式で各種設定項目を表示し、プロフィール編集、下書き一覧、利用規約・
+//   プライバシーポリシー閲覧、ログアウト、アカウント削除の各機能へ導きます。
+// =============================================================================
+
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @EnvironmentObject var draftManager: DraftManager
-    @Environment(\.dismiss) private var dismiss
-    @State private var showSignOutAlert = false
-    @State private var showDeleteAccountAlert = false
-    @State private var showReauthAlert = false
-    @State private var reauthPassword = ""
+    // === 環境 ===
+    @EnvironmentObject var authViewModel: AuthViewModel  // 認証・ユーザー情報
+    @EnvironmentObject var draftManager: DraftManager    // 下書き管理
+    @Environment(\.dismiss) private var dismiss            // 画面を閉じる
 
+    // === アラート表示フラグ ===
+    @State private var showSignOutAlert = false       // ログアウト確認アラート
+    @State private var showDeleteAccountAlert = false  // アカウント削除確認アラート
+    @State private var showReauthAlert = false        // 再認証（パスワード入力）アラート
+    @State private var reauthPassword = ""           // 再認証用パスワード入力
+
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: 設定画面の全体レイアウトを定義
+    // 構成:
+    //   1. Listでセクション分けして表示
+    //   2. 「アカウント」セクション: プロフィール編集へのリンク
+    //   3. 「投稿」セクション: 下書き一覧（件数バッジ付き）
+    //   4. 「法的情報」セクション: 利用規約・プライバシーポリシー
+    //   5. 「その他」セクション: ログアウト・アカウント削除
+    // =============================================================================
     var body: some View {
         NavigationView {
             List {
+                // --- アカウントセクション ---
                 Section {
                     NavigationLink(destination: EditProfileView().environmentObject(authViewModel)) {
                         Label("プロフィールを編集", systemImage: "person.crop.circle")
@@ -20,6 +43,7 @@ struct SettingsView: View {
                     Text("アカウント")
                 }
 
+                // --- 投稿セクション ---
                 Section {
                     NavigationLink(destination: DraftListView(onDraftSelected: { dismiss() })
                         .environmentObject(draftManager)) {
@@ -42,6 +66,7 @@ struct SettingsView: View {
                     Text("投稿")
                 }
 
+                // --- 法的情報セクション ---
                 Section {
                     NavigationLink(destination: TermsOfServiceView()) {
                         Label("利用規約", systemImage: "doc.text")
@@ -53,6 +78,7 @@ struct SettingsView: View {
                     Text("法的情報")
                 }
 
+                // --- その他セクション ---
                 Section {
                     Button(role: .destructive) {
                         showSignOutAlert = true

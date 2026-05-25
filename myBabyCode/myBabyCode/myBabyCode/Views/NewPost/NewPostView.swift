@@ -1,6 +1,20 @@
+// =============================================================================
+// ファイル名: NewPostView.swift
+// 役割: 新規投稿作成画面（写真選択・スタンプ編集・アイテム登録・天気情報・投稿）
+// 説明:
+//   ユーザーが子供のコーディネート写真を投稿するための画面です。
+//   front（正面）とback（背面）の写真をカメラまたはライブラリから選択し、
+//   スタンプ・テキストの写真編集、アイテム（洋服）情報の登録、
+//   天気・気温・地域・子供選択、説明文入力などの一連の投稿フローを提供します。
+//   投稿前に下書き保存も可能です。
+// =============================================================================
+
 import SwiftUI
 import UIKit
 
+// =============================================================================
+// View拡張: キーボードを閉じるためのユーティリティ
+// =============================================================================
 extension View {
     func dismissKeyboard() {
         #if canImport(UIKit)
@@ -12,56 +26,69 @@ extension View {
 // MARK: - NewPostView
 
 struct NewPostView: View {
-    @EnvironmentObject var postsViewModel: PostsViewModel
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @EnvironmentObject var draftManager: DraftManager
-    @Environment(\.dismiss) private var dismiss
+    // === 環境オブジェクト ===
+    @EnvironmentObject var postsViewModel: PostsViewModel  // 投稿作成処理
+    @EnvironmentObject var authViewModel: AuthViewModel    // ユーザー情報（子供・地域）
+    @EnvironmentObject var draftManager: DraftManager      // 下書き保存
+    @Environment(\.dismiss) private var dismiss              // シートを閉じる
 
-    // Photo
-    @State private var frontImage: UIImage?
-    @State private var backImage: UIImage?
-    @State private var photoSourceTarget: PhotoTarget = .front
-    @State private var showPhotoSourceSheet = false
-    @State private var showImagePicker = false
+    // === 写真関連 ===
+    @State private var frontImage: UIImage?              // 正面写真
+    @State private var backImage: UIImage?               // 背面写真
+    @State private var photoSourceTarget: PhotoTarget = .front  // 現在選択中の写真対象（front/back）
+    @State private var showPhotoSourceSheet = false      // 写真ソース選択（カメラ/ライブラリ）シート
+    @State private var showImagePicker = false           // UIImagePickerController表示フラグ
     @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
-    @State private var editingImage: UIImage?
-    @State private var showImageEditor = false
-    @State private var editorReadyImage: UIImage?
-    @State private var showEditConfirm = false
-    @State private var showPhotoActionSheet = false
+    @State private var editingImage: UIImage?            // 編集中の画像（スタンプ編集画面へ渡す）
+    @State private var showImageEditor = false           // スタンプ編集画面表示フラグ
+    @State private var editorReadyImage: UIImage?        // 編集完了後の画像
+    @State private var showEditConfirm = false           // 編集確認ダイアログ
+    @State private var showPhotoActionSheet = false      // 写真再選択/編集アクションシート
 
-    // Item tagging
-    @State private var taggingItemIndex: Int? = nil
-    @State private var taggingSide: String = "front"
+    // === アイテムタグ関連 ===
+    @State private var taggingItemIndex: Int? = nil      // タグ付け中のアイテムインデックス
+    @State private var taggingSide: String = "front"    // タグ付け対象の画像面
 
-    // Post info
-    @State private var description: String = ""
-    @State private var selectedRegionIndex: Int = 12
-    @State private var selectedGender: ChildGender = .unselected
-    @State private var weatherType: WeatherType = .sunny
-    @State private var tempMax: String = ""
-    @State private var tempMin: String = ""
-    @State private var isFetchingWeather: Bool = false
+    // === 投稿情報 ===
+    @State private var description: String = ""            // 投稿の説明文
+    @State private var selectedRegionIndex: Int = 12     // 選択中の都道府県インデックス（デフォルト: 東京都）
+    @State private var selectedGender: ChildGender = .unselected  // 選択中の子供性別
+    @State private var weatherType: WeatherType = .sunny  // 選択中の天気
+    @State private var tempMax: String = ""                // 最高気温（文字列入力）
+    @State private var tempMin: String = ""                // 最低気温（文字列入力）
+    @State private var isFetchingWeather: Bool = false    // 天気自動取得中フラグ
 
-    // Child selection
-    @State private var selectedChildIndex: Int = 0
+    // === 子供選択 ===
+    @State private var selectedChildIndex: Int = 0        // 選択中の子供インデックス
 
-    // Items — default: tops, bottoms, accessory
+    // === アイテム登録 ===
+    // デフォルトで3つのアイテム（トップス・ボトムス・アクセサリー）を初期表示
     @State private var items: [NewItemEntry] = [
         NewItemEntry(category: .tops),
         NewItemEntry(category: .bottoms),
         NewItemEntry(category: .accessory)
     ]
 
-    @State private var showSuccess = false
-    @State private var showError = false
+    // === 状態通知 ===
+    @State private var showSuccess = false                 // 投稿成功時の表示フラグ
+    @State private var showError = false                  // 投稿失敗時の表示フラグ
 
-    // Draft
-    @State private var draftSaved = false
-    @State private var showDraftSavedBanner = false
+    // === 下書き関連 ===
+    @State private var draftSaved = false                  // 下書き保存済みフラグ
+    @State private var showDraftSavedBanner = false       // 下書き保存成功バナー表示フラグ
 
+    // 計算プロパティ: ログイン中ユーザーの子供リスト（プロフィール設定時に登録）
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: 新規投稿画面の全体レイアウトを定義
+    // 構成:
+    //   1. ScrollView内にmainForm（写真選択・アイテム登録・天気情報・説明文など）
+    //   2. ツールバー（閉じるボタン、キーボード「完了」ボタン）
+    //   3. 下書き保存成功バナーのオーバーレイ
+    //   4. 各種シート・ピッカー・確認ダイアログ
+    // =============================================================================
     var body: some View {
         NavigationView {
             ScrollView {
@@ -167,6 +194,17 @@ struct NewPostView: View {
         }
     }
 
+    // =============================================================================
+    // 【Viewサマリー】mainForm
+    // 目的: 新規投稿画面のメイン入力フォーム全体を構成する
+    // 構成:
+    //   - 子供選択（childSection）
+    //   - 写真選択（photoSection）
+    //   - 説明文入力（descriptionSection）
+    //   - 天気・気温（weatherSection）
+    //   - アイテム登録（itemsSection）
+    //   - 下書き保存・投稿ボタン
+    // =============================================================================
     private var mainForm: some View {
         VStack(alignment: .leading, spacing: 28) {
             if !children.isEmpty {
@@ -196,6 +234,11 @@ struct NewPostView: View {
         .padding(.bottom, 8)
     }
 
+    // =============================================================================
+    // 【Viewサマリー】descriptionSection
+    // 目的: 投稿の説明文（服装のポイント）を入力するTextEditorを表示する
+    // 戻り値: some View
+    // =============================================================================
     private var descriptionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionLabel("服装のポイント")
@@ -220,6 +263,12 @@ struct NewPostView: View {
         }
     }
 
+    // =============================================================================
+    // 【Viewサマリー】draftSaveButton
+    // 目的: 現在の入力内容を下書きとして保存するボタン
+    // 処理: saveDraft()を呼び出し、保存成功時にバナーを表示する
+    // 戻り値: some View
+    // =============================================================================
     private var draftSaveButton: some View {
         Button {
             saveDraft()
@@ -235,6 +284,12 @@ struct NewPostView: View {
         .disabled(draftSaved)
     }
 
+    // =============================================================================
+    // 【Viewサマリー】postButton
+    // 目的: 入力内容を投稿するボタン
+    // 処理: submitPost()を非同期で呼び出す。写真が選択されていない場合は無効化
+    // 戻り値: some View
+    // =============================================================================
     private var postButton: some View {
         Button {
             Task { await submitPost() }
@@ -253,6 +308,14 @@ struct NewPostView: View {
 
     // MARK: - Photo Section
 
+    // =============================================================================
+    // 【Viewサマリー】photoSection
+    // 目的: 前面（front）と背面（back）の写真選択UIを表示する
+    // 構成:
+    //   - photoTile: 各面の写真表示/選択ボタン
+    //   - 写真タップでMenu（再選択・編集・削除）を表示
+    // 戻り値: some View
+    // =============================================================================
     private var photoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel("写真（前面・背面）")
@@ -335,6 +398,11 @@ struct NewPostView: View {
 
     // MARK: - Child Section
 
+    // =============================================================================
+    // 【Viewサマリー】childSection
+    // 目的: 投稿に紐づける子供を選択する水平スクロールセクションを表示する
+    // 戻り値: some View
+    // =============================================================================
     private var childSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("投稿するお子様")
@@ -362,6 +430,11 @@ struct NewPostView: View {
 
     // MARK: - Info Section (region only, gender comes from child)
 
+    // =============================================================================
+    // 【Viewサマリー】infoSection
+    // 目的: 投稿の地域情報を表示・選択するセクション
+    // 戻り値: some View
+    // =============================================================================
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -390,6 +463,15 @@ struct NewPostView: View {
 
     // MARK: - Weather Section
 
+    // =============================================================================
+    // 【Viewサマリー】weatherSection
+    // 目的: 天気・最高気温・最低気温の入力UIを表示する
+    // 処理:
+    //   - WeatherServiceで自動取得ボタン
+    //   - 天気アイコンPicker（晴れ/曇り/雨など）
+    //   - 気温テキスト入力
+    // 戻り値: some View
+    // =============================================================================
     private var weatherSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -447,6 +529,15 @@ struct NewPostView: View {
 
     // MARK: - Items Section
 
+    // =============================================================================
+    // 【Viewサマリー】itemsSection
+    // 目的: 洋服アイテムの登録・編集・タグ付けUIを表示する
+    // 構成:
+    //   - 各アイテムのカテゴリ・ブランド・サイズ入力
+    //   - アイテム追加/削除ボタン
+    //   - 写真へのタグ配置ボタン
+    // 戻り値: some View
+    // =============================================================================
     private var itemsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -478,6 +569,15 @@ struct NewPostView: View {
 
     // MARK: - Tag Placement View
 
+    // =============================================================================
+    // 【Viewサマリー】tagPlacementView
+    // 目的: アイテムタグを写真上に配置するためのインタラクティブView
+    // 構成:
+    //   - 編集対象の写真表示
+    //   - タップ位置にタグ（ドット＋ラベル）を配置
+    //   - 既存タグのタップで削除
+    // 戻り値: some View
+    // =============================================================================
     private var tagPlacementView: some View {
         let idx = taggingItemIndex!
         let entry = items.indices.contains(idx) ? items[idx] : nil
@@ -574,12 +674,28 @@ struct NewPostView: View {
         }
     }
 
+    // 計算プロパティ: 投稿可能かどうか（少なくとも1枚の写真が必要）
     private var canPost: Bool { frontImage != nil || backImage != nil }
 
+    // =============================================================================
+    // 【Viewサマリー】sectionLabel
+    // 目的: 各セクションのタイトルラベルを統一スタイルで表示するヘルパー
+    // 引数:
+    //   - text: String - セクションタイトル
+    // 戻り値: some View
+    // =============================================================================
     private func sectionLabel(_ text: String) -> some View {
         Text(text).font(.system(size: 15, weight: .bold)).foregroundColor(.primary)
     }
 
+    // =============================================================================
+    // 【関数サマリー】applyProfileDefaults
+    // 目的: ログイン中ユーザーのプロフィール情報を投稿フォームの初期値に反映する
+    // 処理の流れ:
+    //   1. authViewModel.currentUserから地域コードを取得してselectedRegionIndexに設定
+    //   2. 子供の性別をselectedGenderに設定
+    // 呼び出し元: bodyの.onAppear
+    // =============================================================================
     private func applyProfileDefaults() {
         guard let user = authViewModel.currentUser else { return }
         if let idx = Int(user.region_code), idx >= 1, idx <= 47 {
@@ -596,6 +712,15 @@ struct NewPostView: View {
 
     // MARK: - Draft
 
+    // =============================================================================
+    // 【関数サマリー】saveDraft
+    // 目的: 現在の入力内容をローカルに下書きとして保存する
+    // 処理の流れ:
+    //   1. 各画像をDocumentsディレクトリにJPEG保存
+    //   2. PostDraftオブジェクトを生成
+    //   3. DraftManager（UserDefaults）に保存
+    //   4. 保存成功バナーを表示
+    // =============================================================================
     private func saveDraft() {
         let draftId = UUID().uuidString
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -637,6 +762,15 @@ struct NewPostView: View {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】applyDraft
+    // 目的: 保存された下書きデータをフォームに復元する
+    // 引数:
+    //   - draft: PostDraft - 復元対象の下書きデータ
+    // 処理の流れ:
+    //   1. 各フィールドに下書きデータを反映
+    //   2. 保存済み画像ファイルをUIImageとして読み込む
+    // =============================================================================
     private func applyDraft(_ draft: PostDraft) {
         description = draft.description
         selectedRegionIndex = draft.regionIndex
@@ -658,6 +792,14 @@ struct NewPostView: View {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】fetchWeather
+    // 目的: 選択中の地域の現在の天気・気温を自動取得する
+    // 処理の流れ:
+    //   1. 選択中の地域コードでWeatherService.fetchCurrentWeatherを呼び出し
+    //   2. 結果をweatherType・tempMax・tempMinに反映
+    //   3. エラー時はエラーメッセージを設定
+    // =============================================================================
     private func fetchWeather() {
         let code = String(format: "%02d", selectedRegionIndex + 1)
         isFetchingWeather = true
@@ -673,6 +815,15 @@ struct NewPostView: View {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】submitPost
+    // 目的: 入力内容をもとに投稿を作成し、FirestoreとStorageに保存する
+    // 処理の流れ:
+    //   1. 子供情報・写真URL・アイテム情報を収集
+    //   2. postsViewModel.uploadPost()を呼び出して投稿作成
+    //   3. 成功時はダイアログを閉じてフォームをリセット
+    //   4. 失敗時はエラーアラートを表示
+    // =============================================================================
     private func submitPost() async {
         guard let user = authViewModel.currentUser else { return }
 
@@ -961,7 +1112,13 @@ struct PhotoEditorView: View {
     }
 
     // MARK: - Stamp Palette
+    // 説明: 写真編集画面で使用するスタンプ選択パレット
 
+    // =============================================================================
+    // 【Viewサマリー】stampPalette
+    // 目的: SF Symbolスタンプと画像スタンプを横スクロールで表示し、選択状態を管理する
+    // 戻り値: some View
+    // =============================================================================
     private var stampPalette: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -1012,7 +1169,13 @@ struct PhotoEditorView: View {
     }
 
     // MARK: - Canvas
+    // 説明: 写真上にスタンプを配置・編集するキャンバスView
 
+    // =============================================================================
+    // 【Viewサマリー】canvas
+    // 目的: 写真を表示し、タップ・ドラッグでスタンプの配置・移動・拡縮を可能にする
+    // 戻り値: some View
+    // =============================================================================
     private var canvas: some View {
         GeometryReader { geo in
             let imgW = image.size.width
@@ -1057,7 +1220,13 @@ struct PhotoEditorView: View {
     }
 
     // MARK: - Hint
+    // 説明: スタンプ編集画面の操作ヒントテキスト
 
+    // =============================================================================
+    // 【Viewサマリー】hintText
+    // 目的: スタンプ編集画面の操作ガイドを表示する
+    // 戻り値: some View
+    // =============================================================================
     private var hintText: some View {
         Text(selectedKind != nil ? "タップで配置" : "スタンプを選択 • ハンドル上下ドラッグで拡縮 • ダブルタップで削除")
             .font(.caption)
@@ -1067,7 +1236,15 @@ struct PhotoEditorView: View {
     }
 
     // MARK: - Undo
+    // 説明: スタンプ操作のundo機能
 
+    // =============================================================================
+    // 【関数サマリー】performUndo
+    // 目的: 最後に行ったスタンプ操作（追加・削除・移動・拡縮）を元に戻す
+    // 処理の流れ:
+    //   1. history配列から最後の操作を取り出す
+    //   2. 操作の種類に応じてstampItemsを修正
+    // =============================================================================
     private func performUndo() {
         guard let last = history.popLast() else { return }
         switch last {
@@ -1087,7 +1264,16 @@ struct PhotoEditorView: View {
     }
 
     // MARK: - Render
+    // 説明: 配置したスタンプを合成して最終画像を生成
 
+    // =============================================================================
+    // 【関数サマリー】renderFinalImage
+    // 目的: スタンプを元の写真に合成して、編集後のUIImageを生成する
+    // 戻り値: UIImage - スタンプ合成済みの最終画像
+    // 処理の流れ:
+    //   1. キャンバス座標系から画像座標系へ変換
+    //   2. UIGraphicsImageRendererで元画像に各スタンプを描画
+    // =============================================================================
     private func renderFinalImage() -> UIImage {
         let imgW = image.size.width
         let imgH = image.size.height

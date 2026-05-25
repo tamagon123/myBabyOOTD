@@ -1,50 +1,76 @@
+// =============================================================================
+// ファイル名: ProfileView.swift
+// 役割: ユーザープロフィール画面（自分・他ユーザーの投稿一覧・いいね一覧・フォロー）
+// 説明:
+//   マイページや他ユーザーのプロフィールを表示する画面です。
+//   アバター・表示名・子供情報、投稿件数、フォロー/フォロワー数をヘッダーに表示し、
+//   下部には「投稿」タブ（自分の投稿グリッド）と「いいね」タブ（いいねした投稿）を
+//   切り替えて表示します。他ユーザーのプロフィールの場合はフォローボタンが表示されます。
+// =============================================================================
+
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
 struct ProfileView: View {
-    let userId: String
+    // === 入力パラメータ ===
+    let userId: String  // 表示対象のユーザーUID（自分または他ユーザー）
+
+    // === 環境オブジェクト ===
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
     @EnvironmentObject var draftManager: DraftManager
 
-    @State private var profileUser: AppUser?
-    @State private var userPosts: [Post] = []
-    @State private var likedPosts: [Post] = []
-    @State private var isLoading = false
-    @State private var isFollowing = false
-    @State private var errorMessage: String? = nil
-    @State private var showEditProfile = false
-    @State private var showSettings = false
-    @State private var selectedPost: Post? = nil
-    @State private var selectedTab: ProfileTab = .posts
-    @State private var showFollowingList = false
-    @State private var followingUsers: [AppUser] = []
+    // === 状態 ===
+    @State private var profileUser: AppUser?          // プロフィールユーザーのデータ
+    @State private var userPosts: [Post] = []        // このユーザーの投稿一覧
+    @State private var likedPosts: [Post] = []        // 自分がいいねした投稿一覧
+    @State private var isLoading = false             // 読み込み中フラグ
+    @State private var isFollowing = false            // フォロー済みフラグ（他ユーザーの場合）
+    @State private var errorMessage: String? = nil   // エラーメッセージ
+    @State private var showEditProfile = false        // プロフィール編集シート表示フラグ
+    @State private var showSettings = false           // 設定画面表示フラグ
+    @State private var selectedPost: Post? = nil     // タップされた投稿（詳細画面へ）
+    @State private var selectedTab: ProfileTab = .posts  // 選択中のタブ（投稿/いいね）
+    @State private var showFollowingList = false       // フォロー一覧表示フラグ
+    @State private var followingUsers: [AppUser] = [] // フォロー中のユーザーリスト
 
+    // ProfileTab: マイページ内の「投稿」/「いいね」タブ
     enum ProfileTab: String, CaseIterable {
         case posts = "投稿"
         case likes = "いいね"
     }
 
+    // === プライベート ===
     private let db = Firestore.firestore()
+    // 計算プロパティ: 自分のプロフィールかどうか
     private var isOwnProfile: Bool { userId == FirebaseAuth.Auth.auth().currentUser?.uid }
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: プロフィール画面の全体レイアウトを定義
+    // 構成:
+    //   1. ヘッダー: アバター・名前・子供情報・投稿数・フォロー/フォロワー数
+    //   2. タブセレクター（自分のプロフィール時のみ: 投稿/いいね）
+    //   3. 投稿グリッド（LazyVGridで2列表示）またはいいね一覧
+    //   4. 右上: 設定ボタン（自分のプロフィール時のみ）
+    // =============================================================================
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
 
-                // Profile header
+                // プロフィールヘッダー
                 profileHeader
                     .padding(.top, 20)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
 
-                // Tab selector
+                // タブセレクター（自分のプロフィール時のみ）
                 if isOwnProfile {
                     tabSelector
                 }
 
-                // Posts grid
+                // 投稿グリッドまたはいいね一覧
                 if isLoading {
                     ProgressView().padding()
                 } else {
@@ -57,6 +83,7 @@ struct ProfileView: View {
             }
         }
         .background(Color.ecruBackground.ignoresSafeArea())
+        // 右上に設定ボタン（自分のプロフィール時のみ）
         .overlay(alignment: .topTrailing) {
             if isOwnProfile {
                 Button { showSettings = true } label: {
@@ -67,12 +94,14 @@ struct ProfileView: View {
                 }
             }
         }
+        // Pull-to-refresh
         .refreshable {
             await loadProfile()
             await loadUserPosts()
             if isOwnProfile { await loadLikedPosts() }
             if !isOwnProfile { await checkFollowing() }
         }
+        // 画面表示時にデータ取得
         .task {
             await loadProfile()
             await loadUserPosts()

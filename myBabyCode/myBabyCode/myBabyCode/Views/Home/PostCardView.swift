@@ -1,26 +1,50 @@
+// =============================================================================
+// ファイル名: PostCardView.swift
+// 役割: タイムライン上の個別投稿カード表示（写真・投稿者情報・アイテムタグ・いいね・通報）
+// 説明:
+//   HomeViewのLazyVStack内で、投稿1件分を表示するカードViewです。
+//   写真カルーセル（TabView）、投稿者情報（アバター・名前・年齢・地域・時間）、
+//   アイテムタグ（写真上のドット表示）、天気バッジ、いいねボタン、通報ボタン、
+//   説明文などを含みます。タップでPostDetailView（詳細画面）へ遷移します。
+// =============================================================================
+
 import SwiftUI
 import FirebaseFirestore
 
 struct PostCardView: View {
-    let post: Post
-    let isLiked: Bool
-    let onLike: () -> Void
-    let onReport: () -> Void
+    // === 入力パラメータ ===
+    let post: Post              // 表示する投稿データ
+    let isLiked: Bool           // 自分がいいね済みか（ハートの塗りつぶし判定）
+    let onLike: () -> Void      // いいねボタンタップ時のコールバック
+    let onReport: () -> Void    // 通報ボタンタップ時のコールバック
 
-    @State private var currentImageIndex: Int = 0
-    @State private var showReportAlert = false
-    @State private var navigateToProfile = false
-    @State private var showPostDetail = false
-    @State private var showItemTags = false
-    @State private var postItems: [PostItem] = []
-    @State private var itemsLoaded = false
+    // === 内部状態 ===
+    @State private var currentImageIndex: Int = 0     // 写真カルーセルの現在表示インデックス
+    @State private var showReportAlert = false        // 通報確認アラートの表示状態
+    @State private var navigateToProfile = false      // プロフィール画面へのナビゲーションフラグ
+    @State private var showPostDetail = false         // 投稿詳細シートの表示状態
+    @State private var showItemTags = false           // アイテムタグの表示/非表示
+    @State private var postItems: [PostItem] = []     // Firestoreから取得した投稿アイテム
+    @State private var itemsLoaded = false            // アイテムがロード済みか
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
 
+    // 計算プロパティ: frontとbackの画像URLを配列化（nil/空文字は除外）
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
     }
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: 投稿カードのレイアウトを定義
+    // 構成:
+    //   1. ヘッダー: 投稿者アバター＋表示名＋子供年齢・地域・時間
+    //   2. Photo Carousel: TabViewでfront/back画像をスワイプ表示＋タグオーバーレイ
+    //   3. タグエリア: 天気バッジ＋アイテムタグ表示ボタン
+    //   4. 未タグ付けアイテム一覧（タグ位置未設定のアイテム）
+    //   5. 説明文（3行制限）
+    //   6. フッター: いいねボタン＋通報ボタン
+    // =============================================================================
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Card header
@@ -167,13 +191,25 @@ struct PostCardView: View {
     }
 
     // MARK: - Photo Carousel
+    // 説明: 投稿写真のカルーセル表示＋アイテムタグオーバーレイ
 
+    // 計算プロパティ: 現在表示中の画像面（front/back）に対応するタグのみを抽出
     private var visibleItemTags: [PostItemTag] {
         guard showItemTags && itemsLoaded else { return [] }
         let side = currentImageIndex == 0 ? "front" : "back"
         return (post.item_tags ?? []).filter { $0.image_side == side }
     }
 
+    // =============================================================================
+    // 【Viewサマリー】photoCarousel
+    // 目的: 投稿写真をTabViewでカルーセル表示し、アイテムタグをオーバーレイする
+    // 戻り値: some View
+    // 構成:
+    //   - 画像URLがない場合: photoPlaceholder
+    //   - ある場合: TabView（.pageスタイル）+ CachedAsyncImageで画像表示
+    //   - タップでshowItemTags.toggle()
+    //   - GeometryReader上にvisibleItemTagsをドット＋ラベルでオーバーレイ
+    // =============================================================================
     private var photoCarousel: some View {
         ZStack(alignment: .topLeading) {
             if imageURLs.isEmpty {
@@ -225,7 +261,16 @@ struct PostCardView: View {
     }
 
     // MARK: - Item Tag Dot
+    // 説明: 写真上に配置されるアイテムタグのドット＋ラベル表示
 
+    // =============================================================================
+    // 【Viewサマリー】itemTagDot
+    // 目的: アイテムタグのドット（白丸＋赤枠）と、アイテム名・サイズのラベルを表示する
+    // 引数:
+    //   - item: PostItem? - タグに紐づくアイテム情報（nilの場合ラベルなし）
+    //   - position: CGPoint - 写真上の配置座標（ピクセル座標）
+    // 戻り値: some View
+    // =============================================================================
     @ViewBuilder
     private func itemTagDot(item: PostItem?, position: CGPoint) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -262,6 +307,17 @@ struct PostCardView: View {
         .transition(.opacity)
     }
 
+    // =============================================================================
+    // 【関数サマリー】loadItems
+    // 目的: 投稿に紐づくアイテム情報をFirestoreのサブコレクションから取得する
+    // 引数: なし
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. posts/{postId}/items サブコレクションを取得
+    //   2. PostItem型にデコードしてpostItems配列にセット
+    //   3. itemsLoaded = true
+    // 呼び出し元: photoCarousel.onAppear, アイテムタグボタンタップ時
+    // =============================================================================
     private func loadItems() {
         let postId = post.id ?? post.post_id
         guard !postId.isEmpty else { return }
@@ -281,7 +337,13 @@ struct PostCardView: View {
     }
 
     // MARK: - Sub views
+    // 説明: プレースホルダー・バッジ等のサブView定義
 
+    // =============================================================================
+    // 【Viewサマリー】photoPlaceholder
+    // 目的: 画像がない場合のプレースホルダーを表示する
+    // 戻り値: some View
+    // =============================================================================
     private var photoPlaceholder: some View {
         RoundedRectangle(cornerRadius: 16)
             .fill(Color.ecruBackground)
@@ -294,6 +356,11 @@ struct PostCardView: View {
             .padding(.horizontal, 16)
     }
 
+    // =============================================================================
+    // 【Viewサマリー】weatherBadge
+    // 目的: 天気アイコン＋最高/最低気温のバッジを表示する
+    // 戻り値: some View
+    // =============================================================================
     private var weatherBadge: some View {
         let wt = WeatherType(rawValue: post.weather_type)
         return Label("\(Int(post.temp_max))℃ / \(Int(post.temp_min))℃", systemImage: wt?.sfSymbol ?? "cloud.sun")
@@ -301,7 +368,15 @@ struct PostCardView: View {
     }
 
     // MARK: - Helpers
+    // 説明: 表示用ラベル文字列の生成ヘルパー
 
+    // =============================================================================
+    // 【関数サマリー】ageLabel
+    // 目的: 月数を「生後Xヶ月」または「Y歳Zヶ月」という日本語表記に変換する
+    // 引数:
+    //   - months: Int - 月数
+    // 戻り値: String - 人間が読める年齢表記
+    // =============================================================================
     private func ageLabel(months: Int) -> String {
         if months < 12 { return "生後\(months)ヶ月" }
         let y = months / 12
@@ -309,11 +384,25 @@ struct PostCardView: View {
         return m == 0 ? "\(y)歳" : "\(y)歳\(m)ヶ月"
     }
 
+    // =============================================================================
+    // 【関数サマリー】regionLabel
+    // 目的: 都道府県コードを都道府県名に変換する
+    // 引数:
+    //   - code: String - 2桁の都道府県コード（"01"〜"47"）
+    // 戻り値: String - 都道府県名（例: "東京都"）
+    // =============================================================================
     private func regionLabel(code: String) -> String {
         guard let idx = Int(code), idx >= 1, idx <= prefectures.count else { return code }
         return prefectures[idx - 1]
     }
 
+    // =============================================================================
+    // 【関数サマリー】timeAgo
+    // 目的: Firestore Timestampから「たった今」「X分前」「Y時間前」「Z日前」に変換する
+    // 引数:
+    //   - ts: Timestamp - Firestoreのタイムスタンプ
+    // 戻り値: String - 相対時間表記
+    // =============================================================================
     private func timeAgo(ts: Timestamp) -> String {
         let seconds = Int(Date().timeIntervalSince(ts.dateValue()))
         switch seconds {
@@ -325,7 +414,9 @@ struct PostCardView: View {
     }
 
     // MARK: - Untagged items view
+    // 説明: 写真上にタグ付けされていないアイテムの一覧表示
 
+    // 計算プロパティ: タグ位置が設定されていないアイテム（未タグ付け）を抽出
     private var untaggedItems: [PostItem] {
         guard itemsLoaded else { return [] }
         let taggedIndices = Set((post.item_tags ?? []).map { $0.item_index })
@@ -334,6 +425,11 @@ struct PostCardView: View {
         }
     }
 
+    // =============================================================================
+    // 【Viewサマリー】untaggedItemsView
+    // 目的: タグ付けされていないアイテムをリスト形式で表示する
+    // 戻り値: some View
+    // =============================================================================
     private var untaggedItemsView: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(untaggedItems) { item in

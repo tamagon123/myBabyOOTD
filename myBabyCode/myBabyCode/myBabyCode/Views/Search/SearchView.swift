@@ -1,22 +1,46 @@
+// =============================================================================
+// ファイル名: SearchView.swift
+// 役割: 検索画面（地域・性別・天気・気温・ブランド・サイズでの絞り込み検索）
+// 説明:
+//   検索タブから遷移する検索画面です。
+//   地域、子供の性別、天気、気温帯、ブランド名、アイテムサイズなどの条件を
+//   組み合わせて投稿を絞り込み検索できます。
+//   検索結果はタイムラインと同じPostCardViewで一覧表示されます。
+// =============================================================================
+
 import SwiftUI
 import FirebaseFirestore
 
 struct SearchView: View {
+    // === 環境 ===
     @EnvironmentObject var authViewModel: AuthViewModel
 
-    @State private var selectedRegionIndex: Int = -1    // -1 = 全国
-    @State private var selectedGender: ChildGender = .unselected
-    @State private var selectedWeather: WeatherType? = nil
-    @State private var selectedTempCategory: String = ""
-    @State private var brandQuery: String = ""
-    @State private var selectedSizeIndex: Int = -1      // -1 = 全サイズ
+    // === 検索条件 ===
+    @State private var selectedRegionIndex: Int = -1       // 都道府県インデックス（-1=全国）
+    @State private var selectedGender: ChildGender = .unselected  // 子供の性別
+    @State private var selectedWeather: WeatherType? = nil  // 天気（nil=未選択）
+    @State private var selectedTempCategory: String = ""   // 気温帯（例: "15-20"）
+    @State private var brandQuery: String = ""             // ブランド名検索キーワード
+    @State private var selectedSizeIndex: Int = -1         // サイズインデックス（-1=全サイズ）
 
-    @State private var results: [Post] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String? = nil
+    // === 検索結果 ===
+    @State private var results: [Post] = []        // 検索結果の投稿リスト
+    @State private var isLoading = false           // 検索実行中フラグ
+    @State private var errorMessage: String? = nil  // エラーメッセージ
 
+    // === プライベート ===
     private let db = Firestore.firestore()
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: 検索画面の全体レイアウトを定義
+    // 構成:
+    //   1. AppHeaderView（検索アイコン非表示）
+    //   2. ScrollView内に:
+    //      - filterSection: 検索条件入力UI（Picker, TextField等）
+    //      - searchButton: 検索実行ボタン
+    //      - 検索結果表示（PostCardViewのリスト）
+    // =============================================================================
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
@@ -60,7 +84,13 @@ struct SearchView: View {
     }
 
     // MARK: - Filter UI
+    // 説明: 検索条件入力用の各種Picker・TextFieldをまとめたView
 
+    // =============================================================================
+    // 【Viewサマリー】filterSection
+    // 目的: 地域・性別・天気・気温・ブランド・サイズの検索条件UIをまとめて表示する
+    // 戻り値: some View
+    // =============================================================================
     private var filterSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("絞り込み検索")

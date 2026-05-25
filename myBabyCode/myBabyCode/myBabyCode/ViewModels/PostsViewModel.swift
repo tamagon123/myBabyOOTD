@@ -1,9 +1,23 @@
+// =============================================================================
+// ファイル名: PostsViewModel.swift
+// 役割: 投稿（タイムライン・いいね・通報・新規投稿・削除）と下書きの管理
+// 説明:
+//   このクラスはアプリ内の「投稿に関するすべての処理」を担当します。
+//   タイムラインの取得（新着/おすすめ/フォロー中）、いいねの切り替え、
+//   投稿の通報・非表示化、新規投稿の作成（画像アップロード＋Firestore保存）、
+//   投稿削除などを行います。画面（View）と連携するため@Publishedプロパティで
+//   UIに変更を自動通知します。また、投稿作成時の下書き管理（DraftManager）も
+//   同ファイル内で定義されています。
+// =============================================================================
+
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 import FirebaseStorage
 import Combine
 
+// TimelineTab: ホーム画面の3つのタブ（新着・おすすめ・フォロー中）を表す列挙型。
+// CaseIterableにより、全ケースを自動で配列化できる（TimelineTabBarで使用）。
 enum TimelineTab: String, CaseIterable, Identifiable {
     case latest   = "新着"
     case recommend = "おすすめ"
@@ -12,8 +26,18 @@ enum TimelineTab: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Array Extension for Chunking
+// 説明: Firestoreの「in」クエリは最大30件までしか指定できないため、
+//       フォロー中ユーザーIDなどを30件ずつのチャンクに分割するために使用される。
 
 extension Array {
+    // =============================================================================
+    // 【関数サマリー】chunked
+    // 目的: 配列を指定サイズの小さな配列（チャンク）に分割する
+    // 引数:
+    //   - size: Int - 1チャンクあたりの最大要素数
+    // 戻り値: [[Element]] - チャンク化された2次元配列
+    // 呼び出し元: fetchFollowingPosts()（フォロー中IDを30件ずつに分割）
+    // =============================================================================
     func chunked(into size: Int) -> [[Element]] {
         stride(from: 0, to: count, by: size).map {
             Array(self[$0..<Swift.min($0 + size, count)])
@@ -23,23 +47,42 @@ extension Array {
 
 @MainActor
 class PostsViewModel: ObservableObject {
-    @Published var posts: [Post] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var currentTab: TimelineTab = .latest
-    @Published var likedPostIds: Set<String> = []
-    @Published var pendingItemTags: [PostItemTag] = []
-    @Published var hasMorePosts: Bool = false
+    // === UI状態通知用プロパティ ===
+    @Published var posts: [Post] = []               // 現在表示中の投稿リスト
+    @Published var isLoading = false                // データ読み込み中フラグ
+    @Published var errorMessage: String?            // エラーメッセージ
+    @Published var currentTab: TimelineTab = .latest  // 選択中のタイムラインタブ
+    @Published var likedPostIds: Set<String> = []     // 自分がいいねした投稿IDの集合
+    @Published var pendingItemTags: [PostItemTag] = [] // 新規投稿時に一時保持されるタグ位置
+    @Published var hasMorePosts: Bool = false        // さらに読み込める投稿があるか
 
-    private let db = Firestore.firestore()
-    private let storage = Storage.storage()
-    private var lastDocument: QueryDocumentSnapshot? = nil
-    private var followingCursor: Timestamp? = nil
-    private var cachedFollowingIds: [String] = []
-    private let pageSize: Int = 20
+    // === プライベート状態 ===
+    private let db = Firestore.firestore()          // Firestoreデータベース参照
+    private let storage = Storage.storage()          // Firebase Storage参照
+    private var lastDocument: QueryDocumentSnapshot? = nil  // ページネーション用カーソル
+    private var followingCursor: Timestamp? = nil     // フォロータブのページネーション用
+    private var cachedFollowingIds: [String] = []   // フォロー中ユーザーIDのキャッシュ
+    private let pageSize: Int = 20                  // 1ページあたりの取得件数
 
     // MARK: - Fetch
+    // 説明: タイムライン投稿の取得系処理
 
+    // =============================================================================
+    // 【関数サマリー】fetchPosts
+    // 目的: 現在選択中のタブに応じた投稿リストをFirestoreから取得する（初回・リフレッシュ用）
+    // 引数:
+    //   - user: AppUser? - ログイン中のユーザー（おすすめタブの絞り込みに使用）
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. ページネーション状態をリセット
+    //   2. currentTabに応じてFirestoreクエリを構築
+    //      - latest: 全投稿を新着順
+    //      - recommend: 同地域＆±3ヶ月の年齢範囲で絞り込み
+    //      - following: フォロー中ユーザーの投稿を取得
+    //   3. enrichWithPosterInfo()で投稿者情報を付加
+    //   4. posts配列にセットしUI更新
+    // 呼び出し元: HomeView.task, HomeView.refreshable, HomeView.onChange(currentTab)
+    // =============================================================================
     func fetchPosts(user: AppUser?) async {
         isLoading = true
         do {
@@ -101,6 +144,18 @@ class PostsViewModel: ObservableObject {
         isLoading = false
     }
 
+    // =============================================================================
+    // 【関数サマリー】fetchMorePosts
+    // 目的: タイムラインの次ページを取得して既存リストに追加する（無限スクロール用）
+    // 引数:
+    //   - user: AppUser? - ログイン中のユーザー
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. hasMorePosts==falseまたは既に読み込み中なら早期リターン
+    //   2. currentTabに応じてFirestoreのstart(afterDocument:)で次ページを取得
+    //   3. 取得した投稿をposts配列にappend（既存データに追加）
+    // 呼び出し元: HomeViewのScrollView内、最後のPostCardView.onAppear
+    // =============================================================================
     func fetchMorePosts(user: AppUser?) async {
         guard hasMorePosts, !isLoading, let lastDoc = lastDocument else { return }
         isLoading = true
@@ -150,7 +205,23 @@ class PostsViewModel: ObservableObject {
     }
 
     // MARK: - Following helpers
+    // 説明: フォロー中タブ専用の補助関数群
 
+    // =============================================================================
+    // 【関数サマリー】fetchFollowingPosts
+    // 目的: フォロー中のユーザーIDリストから、それらのユーザーの投稿を並列で取得する
+    // 引数:
+    //   - ids: [String] - フォロー中ユーザーのUID配列
+    //   - cursor: Timestamp? - ページネーション用の取得開始位置（前回最後のcreated_at）
+    // 戻り値: [Post] - 取得した投稿リスト（新着順・最大pageSize件）
+    // 処理の流れ:
+    //   1. idsを30件ずつのチャンクに分割（Firestoreのinクエリ上限対策）
+    //   2. withThrowingTaskGroupで各チャンクを並列クエリ
+    //   3. 結果を統合しcreated_at降順でソート
+    //   4. pageSize件に制限して返却
+    // 呼び出し元: fetchPosts(), fetchMorePosts()
+    // 備考: Firestoreの「in」クエリは最大30要素までなのでchunkedが必須。
+    // =============================================================================
     private func fetchFollowingPosts(ids: [String], before cursor: Timestamp? = nil) async throws -> [Post] {
         let chunks = ids.chunked(into: 30)
         var allPosts: [Post] = []
@@ -186,6 +257,20 @@ class PostsViewModel: ObservableObject {
             .prefix(pageSize))
     }
 
+    // =============================================================================
+    // 【関数サマリー】enrichWithPosterInfo
+    // 目的: 投稿リストに対して、各投稿者の表示情報（アバター・名前）を並列で取得・付与する
+    // 引数:
+    //   - posts: [Post] - 投稿者情報が未設定の生の投稿リスト
+    // 戻り値: [Post] - posterAvatarId / posterAvatarBgColor / posterDisplayName が埋められた投稿リスト
+    // 処理の流れ:
+    //   1. 投稿リストから重複のないuser_id一覧を抽出
+    //   2. withTaskGroupで各user_idのFirestore usersドキュメントを並列取得
+    //   3. userMap（辞書）にuser_idをキーとして情報を蓄積
+    //   4. 各Postに対応する投稿者情報をコピーして返却
+    // 呼び出し元: fetchPosts(), fetchMorePosts(), fetchFollowingPosts()
+    // 備考: これがないとタイムライン上で投稿者のアバターと名前が表示されない。
+    // =============================================================================
     private func enrichWithPosterInfo(_ posts: [Post]) async -> [Post] {
         let userIds = Array(Set(posts.map { $0.user_id }))
         var userMap: [String: (avatarId: String, avatarBgColor: String?, displayName: String?)] = [:]
@@ -217,6 +302,17 @@ class PostsViewModel: ObservableObject {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】fetchLikedPosts
+    // 目的: 現在ログイン中のユーザーが「いいね」した投稿IDの集合をFirestoreから取得する
+    // 引数: なし
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. likesコレクションでuser_id==自分のドキュメントを全取得
+    //   2. post_idフィールドを抽出してSet<String>に変換
+    //   3. likedPostIdsにセット（PostCardViewのハート表示判定に使用）
+    // 呼び出し元: HomeView.task（画面表示時）, HomeView.refreshable（引っ張り更新時）
+    // =============================================================================
     func fetchLikedPosts() async {
         guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
         do {
@@ -228,7 +324,26 @@ class PostsViewModel: ObservableObject {
     }
 
     // MARK: - Like
+    // 説明: いいね（ハート）の切り替え処理
 
+    // =============================================================================
+    // 【関数サマリー】toggleLike
+    // 目的: 指定した投稿のいいね状態をトグル（ON→OFF または OFF→ON）する
+    // 引数:
+    //   - post: Post - 対象の投稿データ
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. likedPostIdsに含まれる → いいね解除
+    //      - likes/{uid}_{postId} を削除
+    //      - posts/{postId}.likes_count を-1
+    //      - ローカルのposts配列とlikedPostIdsを更新
+    //   2. 含まれない → いいね追加
+    //      - likes/{uid}_{postId} を作成
+    //      - posts/{postId}.likes_count を+1
+    //      - ローカルのposts配列とlikedPostIdsを更新
+    // 呼び出し元: PostCardView（ハートボタンタップ時）
+    // 備考: try?でエラーを無視しているため、ネットワーク不通時でもUIは即時反映される。
+    // =============================================================================
     func toggleLike(post: Post) async {
         guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
         let postId = post.id ?? post.post_id
@@ -255,7 +370,22 @@ class PostsViewModel: ObservableObject {
     }
 
     // MARK: - Report
+    // 説明: 投稿の通報（レポート）処理。一定件数で投稿が自動非表示化される。
 
+    // =============================================================================
+    // 【関数サマリー】report
+    // 目的: 指定した投稿を通報し、通報カウントを増やす。5件以上で自動非表示化。
+    // 引数:
+    //   - post: Post - 通報対象の投稿データ
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. 既に同じユーザーが通報済みなら何もしない（重複防止）
+    //   2. reports/{uid}_{postId} に通報レコードを作成
+    //   3. posts/{postId}.reports_count を+1
+    //   4. reports_count >= 5 の場合 → is_hidden=true にし、タイムラインから削除
+    // 呼び出し元: PostCardView（通報ボタンタップ時）
+    // 備考: 通報は取り消し不可。5件という閾値は運用方針に応じて変更可能。
+    // =============================================================================
     func report(post: Post) async {
         guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
         let postId = post.id ?? post.post_id
@@ -277,7 +407,33 @@ class PostsViewModel: ObservableObject {
     }
 
     // MARK: - Upload Post
+    // 説明: 新規投稿作成（画像アップロード＋Firestore保存）処理
 
+    // =============================================================================
+    // 【関数サマリー】uploadPost
+    // 目的: ユーザーが入力した投稿内容をFirebase StorageとFirestoreに保存する
+    // 引数:
+    //   - frontImage: UIImage? - 正面写真（nil可）
+    //   - backImage: UIImage? - 背面写真（nil可）
+    //   - description: String - 投稿の説明文
+    //   - regionCode: String - 都道府県コード
+    //   - genderId: Int - 子供の性別ID
+    //   - weatherType: String - 天気種別文字列
+    //   - tempMax: Double - 最高気温
+    //   - tempMin: Double - 最低気温
+    //   - items: [PostItem] - 投稿に紐づく洋服アイテムリスト
+    //   - user: AppUser - 投稿者のユーザーデータ（年齢計算に使用）
+    // 戻り値: Bool - true=保存成功、false=失敗
+    // 処理の流れ:
+    //   1. 写真が1枚も選択されていない場合はエラー
+    //   2. 画像をリサイズ（1200px制限）→ EXIF除去 → JPEG圧縮
+    //   3. Firebase StorageにアップロードしダウンロードURLを取得
+    //   4. Post構造体を作成（temp_category自動計算）
+    //   5. Firestore posts/{postId} に保存
+    //   6. サブコレクション items/{itemId} に各アイテムを保存
+    //   7. item_tagsがあれば更新
+    // 呼び出し元: NewPostView.submitPost()
+    // =============================================================================
     func uploadPost(
         frontImage: UIImage?,
         backImage: UIImage?,
@@ -374,7 +530,18 @@ class PostsViewModel: ObservableObject {
     }
 
     // MARK: - Helpers
+    // 説明: 投稿作成時に使用される画像加工・計算系ユーティリティ
 
+    // =============================================================================
+    // 【関数サマリー】tempCategoryKey
+    // 目的: 最高気温と最低気温から、検索用の気温帯キーを計算する
+    // 引数:
+    //   - max: Double - 最高気温
+    //   - min: Double - 最低気温
+    // 戻り値: String - 気温帯キー（"0-9"/"10-14"/"15-19"/"20-24"/"25-"）
+    // 計算方法: 平均気温 = (max + min) / 2 をtempCategoriesの区間に照合
+    // 呼び出し元: uploadPost()
+    // =============================================================================
     private func tempCategoryKey(max: Double, min: Double) -> String {
         let avg = (max + min) / 2
         switch avg {
@@ -386,6 +553,16 @@ class PostsViewModel: ObservableObject {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】resizeImage
+    // 目的: オリジナル画像が大きすぎる場合、長辺を指定ピクセル以下に縮小する
+    // 引数:
+    //   - image: UIImage - オリジナルの画像
+    //   - maxDimension: CGFloat - 長辺の最大ピクセル数（デフォルト1200px）
+    // 戻り値: UIImage - リサイズ後の画像（縮小不要なら元画像のまま）
+    // 呼び出し元: uploadPost()
+    // 備考: 大きな画像をそのままアップロードすると通信コストとStorage容量が増大する。
+    // =============================================================================
     private func resizeImage(_ image: UIImage, maxDimension: CGFloat = 1200) -> UIImage {
         let size = image.size
         let scale = min(maxDimension / size.width, maxDimension / size.height, 1.0)
@@ -395,6 +572,19 @@ class PostsViewModel: ObservableObject {
         return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
     }
 
+    // =============================================================================
+    // 【関数サマリー】stripEXIF
+    // 目的: 画像からGPS情報・撮影機器情報などのEXIFメタデータを除去する
+    // 引数:
+    //   - image: UIImage - 加工元の画像
+    // 戻り値: Data? - EXIF除去後のJPEGバイナリデータ（失敗時はnil）
+    // 処理の流れ:
+    //   1. UIImageをJPEGデータに変換（品質85%）
+    //   2. CGImageSourceで画像ソースを作成
+    //   3. CGImageDestinationでメタデータを空の辞書に置き換えて再エンコード
+    // 呼び出し元: uploadPost()
+    // 備考: プライバシー保護のため、撮影位置情報などは必ず除去してからアップロードする。
+    // =============================================================================
     private func stripEXIF(from image: UIImage) -> Data? {
         guard let data = image.jpegData(compressionQuality: 0.85) else { return nil }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -408,7 +598,21 @@ class PostsViewModel: ObservableObject {
     }
 
     // MARK: - Delete Post
+    // 説明: 自分の投稿を完全に削除する処理
 
+    // =============================================================================
+    // 【関数サマリー】deletePost
+    // 目的: 指定した投稿と関連する画像・いいね・サブコレクションをすべて削除する
+    // 引数:
+    //   - post: Post - 削除対象の投稿データ
+    // 戻り値: Bool - true=削除成功、false=失敗
+    // 処理の流れ:
+    //   1. Firebase Storageからfront.jpgとback.jpgを削除
+    //   2. Firestoreのサブコレクション items/{itemId} をすべて削除
+    //   3. Firestoreのposts/{postId}ドキュメントを削除
+    //   4. ローカルのposts配列とlikedPostIdsからも該当投稿を削除
+    // 呼び出し元: PostDetailView（ゴミ箱ボタン→削除確認後）
+    // =============================================================================
     func deletePost(_ post: Post) async -> Bool {
         let postId = post.id ?? post.post_id
         isLoading = true
@@ -445,19 +649,43 @@ class PostsViewModel: ObservableObject {
     }
 }
 
+// =============================================================================
 // MARK: - DraftManager
+// 役割: 新規投稿の下書きをローカル（UserDefaults＋Documentsフォルダ）で管理する
+// 説明:
+//   投稿作成中にアプリが閉じられたり、他の画面に移動しても、入力内容と画像を
+//   保持しておくためのクラスです。下書きは最大20件まで保存されます。
+//   画像はアプリのDocumentsフォルダにファイルとして保存され、下書きデータには
+//   そのファイル名（パス）のみがJSONとしてUserDefaultsに保存されます。
+// =============================================================================
 
 class DraftManager: ObservableObject {
+    // 現在選択中・編集対象になっている下書き。NewPostViewがこれを監視して
+    // 自動的にシート表示を行う。
     @Published var pendingDraft: PostDraft? = nil
 
+    // UserDefaultsに保存する下書きリストのキー
     private let draftsKey = "savedDraftsList_v2"
 
+    // 計算プロパティ: UserDefaultsから下書きリストを読み込む
     var drafts: [PostDraft] {
         guard let data = UserDefaults.standard.data(forKey: draftsKey),
               let list = try? JSONDecoder().decode([PostDraft].self, from: data) else { return [] }
         return list
     }
 
+    // =============================================================================
+    // 【関数サマリー】saveDraft
+    // 目的: 新しい下書きをリストの先頭に追加し、UserDefaultsに保存する
+    // 引数:
+    //   - draft: PostDraft - 保存する下書きデータ
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. 既存リストの先頭に新規下書きを挿入
+    //   2. 20件を超える場合は古いものを切り捨て
+    //   3. JSONエンコードしてUserDefaultsに保存
+    // 呼び出し元: NewPostView.saveDraft()
+    // =============================================================================
     func saveDraft(_ draft: PostDraft) {
         var current = drafts
         current.insert(draft, at: 0)
@@ -467,6 +695,19 @@ class DraftManager: ObservableObject {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】deleteDraft
+    // 目的: 指定したインデックスの下書きを削除し、関連する画像ファイルも破棄する
+    // 引数:
+    //   - offsets: IndexSet - 削除対象のインデックス集合（SwiftUIの.onDeleteから渡される）
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. 削除対象の下書きに紐づく画像ファイルパスを取得
+    //   2. Documentsフォルダから各画像ファイルを物理削除
+    //   3. 下書きリストから該当インデックスを削除
+    //   4. 更新後のリストをUserDefaultsに保存
+    // 呼び出し元: DraftListView.onDelete（スワイプ削除時）
+    // =============================================================================
     func deleteDraft(at offsets: IndexSet) {
         var current = drafts
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -485,10 +726,28 @@ class DraftManager: ObservableObject {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】selectDraft
+    // 目的: 指定した下書きを選択状態（pendingDraft）に設定する
+    // 引数:
+    //   - draft: PostDraft - 選択する下書きデータ
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. pendingDraftにセット
+    //   2. MainTabViewがpendingDraftの変更を検知し、自動でNewPostViewシートを表示
+    // 呼び出し元: DraftListView（下書き行タップ時）
+    // =============================================================================
     func selectDraft(_ draft: PostDraft) {
         pendingDraft = draft
     }
 
+    // =============================================================================
+    // 【関数サマリー】clearPendingDraft
+    // 目的: 選択中の下書きをクリアする
+    // 引数: なし
+    // 戻り値: なし
+    // 呼び出し元: NewPostView（下書き適用後やシート閉じる際）
+    // =============================================================================
     func clearPendingDraft() {
         pendingDraft = nil
     }

@@ -1,39 +1,52 @@
+// =============================================================================
+// ファイル名: ProfileSetupView.swift
+// 役割: 初回プロフィール設定画面（アバター・表示名・ユーザーID・地域・子供情報）
+// 説明:
+//   新規登録後に表示される初回プロフィール設定画面です。
+//   必須項目としてユーザーID（unique_user_id）、表示名（display_name）、
+//   地域（region_code）を入力し、任意でアバター画像・背景色・子供の
+//   プロフィール（名前・生年月日・性別）を設定できます。
+//   入力完了後、AuthViewModel.completeProfile()を呼び出してFirestoreに保存します。
+// =============================================================================
+
 import SwiftUI
 
 struct ProfileSetupView: View {
+    // === 環境 ===
     @EnvironmentObject var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
-    // Required fields
-    @State private var uniqueUserId: String = ""
-    @State private var displayName: String = ""
-    @State private var regionIndex: Int = 12
+    // === 必須入力項目 ===
+    @State private var uniqueUserId: String = ""   // 一意のユーザーID（英数字・記号）
+    @State private var displayName: String = ""    // 画面に表示される名前
+    @State private var regionIndex: Int = 12       // 都道府県インデックス（デフォルト: 東京都）
 
-    // Avatar
-    @State private var avatarId: String = "bear"
-    @State private var avatarBgColor: String = "#FFEEBA"
-    @State private var selectedAvatarImage: UIImage? = nil
-    @State private var showImagePicker: Bool = false
-    @State private var showAvatarPicker: Bool = false
+    // === アバター設定 ===
+    @State private var avatarId: String = "bear"          // アバター識別子（画像名/URL/絵文字）
+    @State private var avatarBgColor: String = "#FFEEBA"  // アバター背景色（HEX）
+    @State private var selectedAvatarImage: UIImage? = nil  // ライブラリから選択した画像
+    @State private var showImagePicker: Bool = false      // 画像ピッカー表示フラグ
+    @State private var showAvatarPicker: Bool = false     // アバター選択シート表示フラグ
 
-    // Children (optional)
-    @State private var showChildInput: Bool = false
-    @State private var childName: String = ""
-    @State private var childBirthday: Date = Date()
-    @State private var childGender: Int = 0
+    // === 子供情報（任意） ===
+    @State private var showChildInput: Bool = false  // 子供入力セクションの展開フラグ
+    @State private var childName: String = ""       // 子供のニックネーム
+    @State private var childBirthday: Date = Date() // 子供の生年月日
+    @State private var childGender: Int = 0         // 子供の性別（0=未選択,1=男,2=女,3=その他）
 
-    // Validation
-    @State private var isCheckingId: Bool = false
-    @State private var idAvailable: Bool? = nil
-    @State private var showError: Bool = false
+    // === バリデーション ===
+    @State private var isCheckingId: Bool = false   // ユーザーID重複チェック中フラグ
+    @State private var idAvailable: Bool? = nil     // ユーザーIDの重複チェック結果
+    @State private var showError: Bool = false      // エラー表示フラグ
 
+    // 計算プロパティ: 送信可能かどうか（必須項目入力＆ID未重複）
     private var canSubmit: Bool {
         !uniqueUserId.trimmingCharacters(in: .whitespaces).isEmpty &&
         !displayName.trimmingCharacters(in: .whitespaces).isEmpty &&
         idAvailable != false
     }
 
-    // Preset background colors
+    // プリセットのアバター背景色（パステル系）
     private let presetColors: [String] = [
         "#FFEEBA", // Light yellow (default)
         "#FFD1DC", // Pastel pink
@@ -44,6 +57,16 @@ struct ProfileSetupView: View {
         "#F0E68C", // Khaki
     ]
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: プロフィール設定画面の全体レイアウトを定義
+    // 構成:
+    //   1. ヘッダー: 「プロフィール設定」タイトル＋説明文
+    //   2. アバターセクション: 画像選択・背景色選択
+    //   3. 入力フィールド: 表示名・ユーザーID（重複チェック付き）・地域
+    //   4. 子供情報セクション（任意）: 名前・生年月日・性別
+    //   5. 保存ボタン
+    // =============================================================================
     var body: some View {
         NavigationView {
             ScrollView {

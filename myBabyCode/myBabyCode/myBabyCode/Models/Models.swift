@@ -1,61 +1,82 @@
+// =============================================================================
+// ファイル名: Models.swift
+// 役割: アプリ全体で使用するデータモデル、列挙型、定数の定義
+// 説明:
+//   このファイルはアプリ内の「データの形」を定義するファイルです。
+//   Firestore（データベース）に保存されるドキュメントの構造と対応しています。
+//   各structはCodableプロトコルに準拠しており、Firestoreからの取得・保存時に
+//   自動的にJSON形式と相互変換されます。
+//   Identifiableプロトコルは、SwiftUIのリスト表示で各データを一意に識別するための
+//   idプロパティを要求するものです。
+// =============================================================================
+
 import Foundation
 import FirebaseFirestore
 
 // MARK: - ChildProfile
+// 説明: お子様一人分のプロフィール情報。複数の子供を持つ場合、AppUser.children配列に格納されます。
 
 struct ChildProfile: Identifiable, Codable {
-    var id: String = UUID().uuidString
+    var id: String = UUID().uuidString  // 自動生成される一意ID
     var name: String          // ニックネーム（本名非推奨）
-    var birthday: Date
-    var gender: Int           // 0:未選択 1:男 2:女 3:その他
+    var birthday: Date        // 生年月日。年齢計算に使用されます。
+    var gender: Int           // 0:未選択 1:男の子 2:女の子 3:その他
 }
 
-// MARK: - User
+// MARK: - AppUser
+// 説明: アプリのユーザーアカウント情報。Firestoreのusersコレクションに1ユーザー1ドキュメントで保存されます。
+//       @DocumentIDはFirestoreが自動付与するドキュメントID（= Firebase Auth UID）を表します。
 
 struct AppUser: Identifiable, Codable {
     @DocumentID var id: String?
-    var user_id: String
-    var unique_user_id: String?  // ユニークなユーザーID（任意・他ユーザーから識別用）
-    var display_name: String?  // 表示名（任意）
-    var avatar_id: String
-    var avatar_bg_color: String?
-    var region_code: String
-    var child_birthday: Date
-    var child_gender: Int       // 0:未選択 1:男 2:女 3:その他
-    var followers_count: Int
-    var children: [ChildProfile]?  // 複数子供プロファイル
-    var is_profile_complete: Bool? = false  // プロファイル登録完了フラグ
+    var user_id: String                  // Firebase AuthのUID（認証用固有ID）
+    var unique_user_id: String?          // ユーザーが自由に設定できる表示ID（@user_name的なもの）
+    var display_name: String?          // 画面上に表示される名前
+    var avatar_id: String              // アバター画像URL、Assets名、または絵文字文字列
+    var avatar_bg_color: String?       // アバター背景色（HEX文字列）
+    var region_code: String            // 都道府県コード（2桁文字列。例: "13"=東京都）
+    var child_birthday: Date           // 【旧仕様】単一子供用の生年月日。children配列が優先される。
+    var child_gender: Int              // 【旧仕様】単一子供用の性別。children配列が優先される。
+    var followers_count: Int           // フォロワー数（他ユーザーからのフォロー総数）
+    var children: [ChildProfile]?      // 【新仕様】複数の子供プロファイルを配列で保持
+    var is_profile_complete: Bool? = false  // 初回プロフィール設定が完了したかのフラグ
 }
 
 // MARK: - Post
+// 説明: ユーザーが投稿したコーディネート1件分の情報。Firestoreのpostsコレクションに保存されます。
+//       posterAvatarId〜posterChildAgeNameはFirestoreには保存されず、クライアント側で
+//       投稿者情報を付加する際に使用する一時的なフィールドです。
 
 struct Post: Identifiable, Codable {
     @DocumentID var id: String?
-    var post_id: String
-    var user_id: String
-    var image_url_front: String?
-    var image_url_back: String?
-    var child_age_months: Int
-    var region_code: String
-    var gender_id: Int
-    var description: String
-    var weather_type: String    // sunny, cloudy, rainy, snowy
-    var temp_max: Double
-    var temp_min: Double
-    var temp_category: String
-    var likes_count: Int
-    var reports_count: Int
-    var is_hidden: Bool
-    var created_at: Timestamp
+    var post_id: String                // 投稿固有のUUID
+    var user_id: String                // 投稿者のFirebase Auth UID
+    var image_url_front: String?       // 正面写真のFirebase StorageダウンロードURL
+    var image_url_back: String?        // 背面写真のFirebase StorageダウンロードURL（任意）
+    var child_age_months: Int          // 投稿時の子供の年齢（月数）。検索の絞り込みに使用。
+    var region_code: String            // 投稿時の都道府県コード
+    var gender_id: Int                 // 投稿時の子供の性別（0〜3）
+    var description: String            // 投稿の説明文（コメント）
+    var weather_type: String           // 天気種別文字列（"sunny"/"cloudy"/"rainy"/"snowy"）
+    var temp_max: Double               // 最高気温（検索・表示用）
+    var temp_min: Double               // 最低気温（検索・表示用）
+    var temp_category: String          // 気温帯キー（"0-9"/"10-14"など）。検索用。
+    var likes_count: Int               // いいねの総数
+    var reports_count: Int             // 通報の総数（5件以上で非表示化）
+    var is_hidden: Bool                // 運営側・通報により非表示になったか
+    var created_at: Timestamp          // 投稿日時（Firestoreのサーバータイムスタンプ）
 
-    var item_tags: [PostItemTag]?  // アイテムタグ位置
+    var item_tags: [PostItemTag]?      // 写真上に配置されたアイテムタグの位置情報
 
-    // Local helper: poster info loaded separately (not stored in Firestore)
+    // 以下はFirestoreには保存されないローカル専用フィールド
+    // タイムライン表示時に、投稿者情報を付加するために使用
     var posterAvatarId: String?
     var posterAvatarBgColor: String?
     var posterDisplayName: String?
     var posterChildAgeName: String?
 
+    // CodingKeys: Firestoreとの送受信時に含めるフィールドを限定
+    // ローカル専用フィールド（poster〜）を除外して送受信する
     enum CodingKeys: String, CodingKey {
         case post_id, user_id
         case image_url_front, image_url_back
@@ -68,7 +89,9 @@ struct Post: Identifiable, Codable {
 }
 
 // MARK: - PostItem
+// 説明: 投稿に紐づく洋服アイテム1件分の情報。Firestoreではposts/{postId}/itemsサブコレクションに保存されます。
 
+// ItemCategory: アイテムの分類。Pickerやチップ選択に使用される。
 enum ItemCategory: String, CaseIterable, Identifiable, Codable {
     case tops        = "トップス"
     case bottoms     = "ボトムス"
@@ -82,35 +105,41 @@ enum ItemCategory: String, CaseIterable, Identifiable, Codable {
 
 struct PostItem: Identifiable, Codable {
     @DocumentID var id: String?
-    var item_id: String
-    var brand_id: String
-    var custom_name: String
-    var size_value: Int
-    var category: String      // ItemCategory.rawValue
+    var item_id: String                // アイテム固有のUUID
+    var brand_id: String               // ブランド名（自由入力）
+    var custom_name: String            // ユーザーが入力したアイテムの表示名
+    var size_value: Int                // サイズ数値（cm）。0は「フリー」を表す。
+    var category: String               // ItemCategoryのrawValue文字列
 }
 
 // MARK: - PostItemTag
+// 説明: 投稿写真上にアイテムタグを配置する際の座標情報。
+//       x_ratio/y_ratioは0.0〜1.0の比率値で、どの画面サイズでも正しい位置にタグが表示されるようになっています。
 
 struct PostItemTag: Identifiable, Codable {
     var id: String = UUID().uuidString
-    var item_index: Int      // items配列のインデックス
-    var x_ratio: Double      // 写真幅に対する横方向比率 (0.0–1.0)
-    var y_ratio: Double      // 写真高さに対する縦方向比率 (0.0–1.0)
-    var image_side: String   // "front" or "back"
+    var item_index: Int      // items配列の何番目のアイテムか（0から始まるインデックス）
+    var x_ratio: Double      // 写真の左端からの横方向位置（0.0=左端 1.0=右端）
+    var y_ratio: Double      // 写真の上端からの縦方向位置（0.0=上端 1.0=下端）
+    var image_side: String   // タグを貼る写真の面（"front"=正面 "back"=背面）
 }
 
 // MARK: - Follow
+// 説明: ユーザー間のフォロー関係。Firestoreのfollowsコレクションに保存されます。
+//       follower_idのユーザーがfollowing_idのユーザーをフォローしていることを表します。
 
 struct Follow: Identifiable, Codable {
     @DocumentID var id: String?
-    var follow_id: String
-    var follower_id: String
-    var following_id: String
-    var created_at: Timestamp
+    var follow_id: String      // 関係固有のUUID
+    var follower_id: String    // フォローしている側のユーザーID
+    var following_id: String   // フォローされている側のユーザーID
+    var created_at: Timestamp  // フォローした日時
 }
 
 // MARK: - Enums / Constants
+// 説明: アプリ内で共通使用される列挙型と定数群。
 
+// ChildGender: 子供の性別を表すEnum。FirestoreにはInt値（rawValue）として保存される。
 enum ChildGender: Int, CaseIterable, Identifiable {
     case unselected = 0, boy = 1, girl = 2, other = 3
     var id: Int { rawValue }
@@ -131,6 +160,7 @@ enum ChildGender: Int, CaseIterable, Identifiable {
     }
 }
 
+// WeatherType: 天気の種類を表すEnum。投稿時に選択・検索時に絞り込みに使用される。
 enum WeatherType: String, CaseIterable, Identifiable {
     case sunny, cloudy, rainy, snowy
     var id: String { rawValue }
@@ -150,6 +180,7 @@ enum WeatherType: String, CaseIterable, Identifiable {
         case .snowy:  return "❄️"
         }
     }
+    // sfSymbol: AppleのSF Symbolsアイコン名。SwiftUIでImage(systemName:)として使用。
     var sfSymbol: String {
         switch self {
         case .sunny:  return "sun.max"
@@ -160,12 +191,23 @@ enum WeatherType: String, CaseIterable, Identifiable {
     }
 }
 
+// clothingSizes: 洋服のサイズ選択肢（cm）。0はフリーサイズを表す。
 let clothingSizes: [Int] = [50, 60, 70, 80, 90, 100, 110, 120, 0]
 
+// =============================================================================
+// 【関数サマリー】sizeLabel
+// 目的: サイズ数値を人間が読める文字列に変換する
+// 引数:
+//   - size: Int - clothingSizesの要素値
+// 戻り値: String - "フリー" または "Xcm"
+// 呼び出し元: ItemEntryRow, PostDetailViewなどでサイズ表示時に使用
+// =============================================================================
 func sizeLabel(_ size: Int) -> String {
     size == 0 ? "フリー" : "\(size)cm"
 }
 
+// tempCategories: 気温帯の選択肢。検索絞り込みと投稿時の自動分類に使用される。
+// labelは画面上の表示文字列、keyはFirestoreに保存される識別子。
 let tempCategories: [(label: String, key: String)] = [
     ("〜9℃", "0-9"),
     ("10〜14℃", "10-14"),
@@ -175,26 +217,29 @@ let tempCategories: [(label: String, key: String)] = [
 ]
 
 // MARK: - Draft
+// 説明: 新規投稿の下書き情報。UserDefaultsにJSON形式でローカル保存されます。
+//       画像はファイルパス文字列で参照し、実体はアプリのDocumentsフォルダに保存されます。
 
 struct PostDraft: Codable {
     var description: String = ""
-    var regionIndex: Int = 12
+    var regionIndex: Int = 12            // デフォルトは東京都（prefecturesの12番目）
     var weatherType: String = WeatherType.sunny.rawValue
     var tempMax: String = ""
     var tempMin: String = ""
     var items: [DraftItem] = []
-    var savedAt: Date = Date()
-    var frontImagePath: String? = nil
-    var backImagePath: String? = nil
+    var savedAt: Date = Date()           // 保存日時（下書き一覧の並び順に使用）
+    var frontImagePath: String? = nil    // Documentsフォルダ内の画像ファイルパス
+    var backImagePath: String? = nil     // Documentsフォルダ内の画像ファイルパス
 }
 
 struct DraftItem: Codable, Identifiable {
     var id: String = UUID().uuidString
     var category: String = ItemCategory.tops.rawValue
     var brandName: String = ""
-    var selectedSize: Int = 70
+    var selectedSize: Int = 70           // デフォルトサイズ70cm
 }
 
+// prefectures: 日本の47都道府県名の配列。Pickerや検索UIに使用される。
 let prefectures: [String] = [
     "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
     "茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
@@ -205,13 +250,15 @@ let prefectures: [String] = [
     "熊本県","大分県","宮崎県","鹿児島県","沖縄県"
 ]
 
+// avatarEmojis: アバターとして使用できる絵文字の候補リスト。
 let avatarEmojis: [String] = [
     "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯",
     "🦁","🐮","🐷","🐸","🐙","🦋","🐝","🦄","🐧","🦩"
 ]
 
 // MARK: - Avatar Image Names
-// Assets.xcassets/AvatarIcons/ に画像を追加したら、ここに名前を1行追記してください
+// 説明: Assets.xcassets/AvatarIcons/ に画像を追加したら、ここに名前を1行追記してください。
+//       ProfileSetupViewやEditProfileViewのアバター選択グリッドに自動的に表示されます。
 let avatarImageNames: [String] = [
     // 例: "avatar_bear",
     // 例: "avatar_cat",
@@ -219,7 +266,8 @@ let avatarImageNames: [String] = [
 ]
 
 // MARK: - Stamp Image Names
-// Assets.xcassets/StampImages/ に画像を追加したら、ここに名前を1行追記してください
+// 説明: Assets.xcassets/StampImages/ に画像を追加したら、ここに名前を1行追記してください。
+//       PhotoEditorViewのスタンプパレットに自動的に表示されます。
 let stampImageNames: [String] = [
     // 例: "stamp_star",
     // 例: "stamp_heart",

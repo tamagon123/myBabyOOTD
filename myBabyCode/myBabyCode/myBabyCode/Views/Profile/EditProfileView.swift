@@ -1,22 +1,34 @@
+// =============================================================================
+// ファイル名: EditProfileView.swift
+// 役割: プロフィール編集画面（表示名・ユーザーID・アバター・背景色・子供情報の変更）
+// 説明:
+//   マイページの設定から遷移するプロフィール編集画面です。
+//   表示名、ユーザーID、アバター画像・背景色、居住地域、子供の名前・生年月日・性別を
+//   変更できます。変更内容はAuthViewModel.updateProfile()を通じてFirestoreに保存されます。
+// =============================================================================
+
 import SwiftUI
 
 struct EditProfileView: View {
+    // === 環境 ===
     @EnvironmentObject var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var displayName: String = ""
-    @State private var uniqueUserId: String = ""
-    @State private var selectedAvatarId: String = "bear"
-    @State private var selectedBgColorHex: String = "#FFEEBA"
-    @State private var showAvatarImagePicker = false
-    @State private var pickedAvatarImage: UIImage? = nil
-    @State private var isUploadingAvatar = false
-    @State private var selectedRegionIndex: Int = 12
-    @State private var childBirthday: Date = Date()
-    @State private var selectedGender: ChildGender = .unselected
-    @State private var children: [ChildProfile] = []
-    @State private var isSaving = false
+    // === 編集項目 ===
+    @State private var displayName: String = ""           // 表示名
+    @State private var uniqueUserId: String = ""        // 一意のユーザーID
+    @State private var selectedAvatarId: String = "bear"  // アバター識別子
+    @State private var selectedBgColorHex: String = "#FFEEBA"  // アバター背景色
+    @State private var showAvatarImagePicker = false      // 画像ピッカー表示フラグ
+    @State private var pickedAvatarImage: UIImage? = nil  // 選択したアバター画像
+    @State private var isUploadingAvatar = false          // アバターアップロード中フラグ
+    @State private var selectedRegionIndex: Int = 12    // 都道府県インデックス
+    @State private var childBirthday: Date = Date()       // 子供の生年月日
+    @State private var selectedGender: ChildGender = .unselected  // 子供の性別
+    @State private var children: [ChildProfile] = []    // 子供プロフィールリスト
+    @State private var isSaving = false                   // 保存処理中フラグ
 
+    // アバター背景色のプリセット選択肢
     private let bgColorOptions: [(label: String, hex: String)] = [
         ("ふんわり", "#FFEEBA"),
         ("空", "#D0EAFA"),
@@ -27,6 +39,17 @@ struct EditProfileView: View {
         ("グレー", "#E0E0E0"),
     ]
 
+    // =============================================================================
+    // 【Viewサマリー】body
+    // 目的: プロフィール編集画面の全体レイアウトを定義
+    // 構成:
+    //   1. ユーザーID入力
+    //   2. 表示名入力
+    //   3. アバター選択（ライブラリ・背景色プリセット）
+    //   4. 地域選択
+    //   5. 子供情報（名前・生年月日・性別）
+    //   6. 保存ボタン
+    // =============================================================================
     var body: some View {
         NavigationView {
             ScrollView {
