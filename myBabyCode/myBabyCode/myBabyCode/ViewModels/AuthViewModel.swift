@@ -4,6 +4,7 @@ import FirebaseAuth
 import AuthenticationServices
 import CryptoKit
 import FirebaseFirestore
+import FirebaseStorage
 import GoogleSignIn
 import FirebaseCore
 
@@ -28,6 +29,14 @@ class AuthViewModel: ObservableObject {
     }
 
     private func initialize() async {
+        await withCheckedContinuation { continuation in
+            var resolved = false
+            FirebaseAuth.Auth.auth().addStateDidChangeListener { _, user in
+                guard !resolved else { return }
+                resolved = true
+                continuation.resume()
+            }
+        }
         let hasSession = FirebaseAuth.Auth.auth().currentUser != nil
         if hasSession && autoLogin {
             await loadCurrentUser()
@@ -38,7 +47,6 @@ class AuthViewModel: ObservableObject {
             }
             isSignedIn = false
         }
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
         isInitializing = false
     }
 
@@ -77,19 +85,28 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    func signUpWithEmail(email: String, password: String, uniqueUserId: String = "") {
+    func signUpWithEmail(email: String, password: String, uniqueUserId: String = "",
+                          displayName: String = "", regionCode: String = "13") {
         Task {
             isLoading = true
             do {
+                if !uniqueUserId.isEmpty {
+                    let available = await checkUniqueUserIdAvailable(uniqueUserId)
+                    if !available {
+                        errorMessage = "そのユーザーIDは既に使われています"
+                        isLoading = false
+                        return
+                    }
+                }
                 let result = try await FirebaseAuth.Auth.auth().createUser(withEmail: email, password: password)
                 let uid = result.user.uid
-                let resolvedUniqueId = uniqueUserId.isEmpty ? nil : uniqueUserId
                 let newUser = AppUser(
                     user_id: uid,
-                    unique_user_id: resolvedUniqueId,
-                    display_name: nil,
-                    avatar_id: "🐶",
-                    region_code: "13",
+                    unique_user_id: uniqueUserId.isEmpty ? nil : uniqueUserId,
+                    display_name: displayName.isEmpty ? nil : displayName,
+                    avatar_id: "bear",
+                    avatar_bg_color: nil,
+                    region_code: regionCode,
                     child_birthday: Date(),
                     child_gender: 0,
                     followers_count: 0,
@@ -103,6 +120,33 @@ class AuthViewModel: ObservableObject {
             }
             isLoading = false
         }
+    }
+
+    func checkUniqueUserIdAvailable(_ uid: String) async -> Bool {
+        do {
+            let snapshot = try await db.collection("users")
+                .whereField("unique_user_id", isEqualTo: uid)
+                .limit(to: 1)
+                .getDocuments()
+            return snapshot.documents.isEmpty
+        } catch {
+            return true
+        }
+    }
+
+    func deleteAccount() async {
+        guard let user = FirebaseAuth.Auth.auth().currentUser,
+              let uid = currentUser?.user_id else { return }
+        isLoading = true
+        do {
+            try await db.collection("users").document(uid).delete()
+            try await user.delete()
+            isSignedIn = false
+            currentUser = nil
+        } catch {
+            errorMessage = "アカウントの削除に失敗しました。再ログインしてお試しください。"
+        }
+        isLoading = false
     }
 
     // MARK: - Google Sign In
@@ -259,6 +303,15 @@ class AuthViewModel: ObservableObject {
         guard var user = currentUser else { return }
         user.children = children
         await saveUserProfile(user)
+    }
+
+    func uploadAvatarImage(_ image: UIImage) async throws -> String {
+        guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { throw URLError(.badURL) }
+        guard let data = image.jpegData(compressionQuality: 0.8) else { throw URLError(.cannotDecodeContentData) }
+        let ref = Storage.storage().reference().child("avatars/\(uid).jpg")
+        _ = try await ref.putDataAsync(data)
+        let url = try await ref.downloadURL()
+        return url.absoluteString
     }
 
     // MARK: - Nonce helpers

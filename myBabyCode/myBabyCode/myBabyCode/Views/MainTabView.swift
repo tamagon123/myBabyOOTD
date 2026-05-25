@@ -5,6 +5,7 @@ import Combine
 struct MainTabView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var postsViewModel = PostsViewModel()
+    @StateObject private var draftManager = DraftManager()
     @State private var selectedTab: Int = 0
     @State private var showNewPost = false
     @State private var profileRefreshId = UUID()
@@ -25,6 +26,7 @@ struct MainTabView: View {
                     ProfileView(userId: Auth.currentUID)
                         .environmentObject(authViewModel)
                         .environmentObject(postsViewModel)
+                        .environmentObject(draftManager)
                         .id(profileRefreshId)
                 default:
                     EmptyView()
@@ -48,6 +50,18 @@ struct MainTabView: View {
             NewPostView()
                 .environmentObject(postsViewModel)
                 .environmentObject(authViewModel)
+                .environmentObject(draftManager)
+        }
+        .onChange(of: draftManager.pendingDraft != nil) { hasDraft in
+            if hasDraft {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    showNewPost = true
+                }
+            }
+        }
+        .onAppear {
+            NotificationService.shared.requestPermissionIfNeeded()
+            NotificationService.shared.saveFCMTokenIfSignedIn()
         }
     }
 }
@@ -66,9 +80,9 @@ struct BottomNavBar: View {
             Button(action: onPostTap) {
                 ZStack {
                     Circle()
-                        .fill(Color.indigo)
+                        .fill(Color.accentRed)
                         .frame(width: 56, height: 56)
-                        .shadow(color: Color.indigo.opacity(0.4), radius: 8, y: 4)
+                        .shadow(color: Color.accentRed.opacity(0.3), radius: 8, y: 4)
                     Image(systemName: "plus")
                         .foregroundColor(.white)
                         .font(.system(size: 24, weight: .bold))
@@ -98,7 +112,7 @@ struct BottomNavBar: View {
                 Text(label)
                     .font(.system(size: 10))
             }
-            .foregroundColor(selectedTab == tab ? .indigo : Color(.systemGray3))
+            .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
         }
     }
 }

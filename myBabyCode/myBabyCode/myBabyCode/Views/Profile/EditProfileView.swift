@@ -6,12 +6,26 @@ struct EditProfileView: View {
 
     @State private var displayName: String = ""
     @State private var uniqueUserId: String = ""
-    @State private var selectedAvatarId: String = "🐶"
+    @State private var selectedAvatarId: String = "bear"
+    @State private var selectedBgColorHex: String = "#FFEEBA"
+    @State private var showAvatarImagePicker = false
+    @State private var pickedAvatarImage: UIImage? = nil
+    @State private var isUploadingAvatar = false
     @State private var selectedRegionIndex: Int = 12
     @State private var childBirthday: Date = Date()
     @State private var selectedGender: ChildGender = .unselected
     @State private var children: [ChildProfile] = []
     @State private var isSaving = false
+
+    private let bgColorOptions: [(label: String, hex: String)] = [
+        ("ふんわり", "#FFEEBA"),
+        ("空", "#D0EAFA"),
+        ("草", "#D4EDD8"),
+        ("桃", "#FFD6D6"),
+        ("ラベンダー", "#E8D8F0"),
+        ("白", "#FFFFFF"),
+        ("グレー", "#E0E0E0"),
+    ]
 
     var body: some View {
         NavigationView {
@@ -47,40 +61,79 @@ struct EditProfileView: View {
                     // Avatar selection
                     VStack(alignment: .leading, spacing: 12) {
                         sectionLabel("アバターアイコン")
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
-                            if avatarImageNames.isEmpty {
-                                // 画像未追加時は絵文字で表示
-                                ForEach(avatarEmojis, id: \.self) { emoji in
-                                    Button {
-                                        selectedAvatarId = emoji
-                                    } label: {
-                                        Text(emoji)
-                                            .font(.system(size: 28))
-                                            .frame(width: 52, height: 52)
-                                            .background(selectedAvatarId == emoji ? Color.indigo.opacity(0.15) : Color(.systemGray6))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 14)
-                                                    .stroke(selectedAvatarId == emoji ? Color.indigo : Color.clear, lineWidth: 2)
-                                            )
-                                            .cornerRadius(14)
-                                    }
+
+                        Text("個人が特定できる写真の使用はお控えください")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        // ライブラリから選択ボタン
+                        Button {
+                            showAvatarImagePicker = true
+                        } label: {
+                            Label("ライブラリから写真を選ぶ", systemImage: "photo")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.accentBlue)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.accentBlue.opacity(0.08))
+                                .cornerRadius(10)
+                        }
+                        if let img = pickedAvatarImage {
+                            HStack(spacing: 10) {
+                                Image(uiImage: img)
+                                    .resizable().scaledToFill()
+                                    .frame(width: 52, height: 52)
+                                    .clipShape(Circle())
+                                Text("選択中の写真").font(.caption).foregroundColor(.secondary)
+                                Spacer()
+                                if isUploadingAvatar { ProgressView().scaleEffect(0.8) }
+                                Button {
+                                    pickedAvatarImage = nil
+                                    selectedAvatarId = "bear"
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                                 }
-                            } else {
-                                // AvatarIcons/ に画像が追加されたら自動で画像グリッドに切り替わる
-                                ForEach(avatarImageNames, id: \.self) { name in
+                            }
+                        }
+
+                        // アセット画像グリッド
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                            ForEach(avatarImageNames, id: \.self) { name in
+                                Button {
+                                    selectedAvatarId = name
+                                    pickedAvatarImage = nil
+                                } label: {
+                                    Image(name)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 52, height: 52)
+                                        .background(selectedAvatarId == name && pickedAvatarImage == nil ? Color.accentBlue.opacity(0.12) : Color(.systemGray6))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(selectedAvatarId == name && pickedAvatarImage == nil ? Color.accentBlue : Color.clear, lineWidth: 2)
+                                        )
+                                        .cornerRadius(14)
+                                }
+                            }
+                        }
+
+                        // 背景色選択
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("アイコン背景色")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                ForEach(bgColorOptions, id: \.hex) { opt in
                                     Button {
-                                        selectedAvatarId = name
+                                        selectedBgColorHex = opt.hex
                                     } label: {
-                                        Image(name)
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(width: 52, height: 52)
-                                            .background(selectedAvatarId == name ? Color.indigo.opacity(0.15) : Color(.systemGray6))
+                                        Circle()
+                                            .fill(Color(hex: opt.hex))
+                                            .frame(width: 30, height: 30)
                                             .overlay(
-                                                RoundedRectangle(cornerRadius: 14)
-                                                    .stroke(selectedAvatarId == name ? Color.indigo : Color.clear, lineWidth: 2)
+                                                Circle()
+                                                    .stroke(selectedBgColorHex == opt.hex ? Color.primary : Color.clear, lineWidth: 2)
                                             )
-                                            .cornerRadius(14)
                                     }
                                 }
                             }
@@ -99,7 +152,7 @@ struct EditProfileView: View {
                             } label: {
                                 Label("追加", systemImage: "plus.circle.fill")
                                     .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.indigo)
+                                    .foregroundColor(.accentGreen)
                             }
                         }
 
@@ -151,7 +204,7 @@ struct EditProfileView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.indigo)
+                            .background(Color.accentRed)
                             .cornerRadius(16)
                     }
                     .disabled(isSaving)
@@ -168,6 +221,11 @@ struct EditProfileView: View {
                 }
             }
             .onAppear { loadExistingData() }
+            .sheet(isPresented: $showAvatarImagePicker) {
+                ImagePickerView(sourceType: .photoLibrary) { img in
+                    pickedAvatarImage = img
+                }
+            }
         }
     }
 
@@ -181,6 +239,7 @@ struct EditProfileView: View {
         displayName = user.display_name ?? ""
         uniqueUserId = user.unique_user_id ?? ""
         selectedAvatarId = user.avatar_id
+        selectedBgColorHex = user.avatar_bg_color ?? "#FFEEBA"
         childBirthday = user.child_birthday
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
         if let idx = Int(user.region_code), idx >= 1, idx <= 47 {
@@ -195,7 +254,19 @@ struct EditProfileView: View {
         let trimmedUniqueId = uniqueUserId.trimmingCharacters(in: .whitespaces)
         user.unique_user_id = trimmedUniqueId.isEmpty ? nil : trimmedUniqueId
         user.display_name = displayName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : displayName.trimmingCharacters(in: .whitespaces)
-        user.avatar_id = selectedAvatarId
+        if let img = pickedAvatarImage {
+            do {
+                isUploadingAvatar = true
+                let url = try await authViewModel.uploadAvatarImage(img)
+                user.avatar_id = url
+                isUploadingAvatar = false
+            } catch {
+                isUploadingAvatar = false
+            }
+        } else {
+            user.avatar_id = selectedAvatarId
+        }
+        user.avatar_bg_color = selectedBgColorHex
         user.child_birthday = childBirthday
         user.child_gender = selectedGender.rawValue
         user.region_code = String(format: "%02d", selectedRegionIndex + 1)
@@ -250,8 +321,8 @@ struct ChildProfileRow: View {
             }
         }
         .padding(12)
-        .background(Color(.systemIndigo).opacity(0.05))
+        .background(Color.ecruBackground.opacity(0.9))
         .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.indigo.opacity(0.15), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 1))
     }
 }

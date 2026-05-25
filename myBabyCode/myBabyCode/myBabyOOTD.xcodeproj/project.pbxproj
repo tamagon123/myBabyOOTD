@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BF1674482FC3FD4B00889299 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = BF1674472FC3FD4B00889299 /* FirebaseMessaging */; };
 		BF283F132FC30E810033705B /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = BF283F122FC30E810033705B /* GoogleSignIn */; };
 		BF283F152FC30E810033705B /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = BF283F142FC30E810033705B /* GoogleSignInSwift */; };
 		BFBD2C512FC09BCE00ECDEDB /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = BFBD2C502FC09BCE00ECDEDB /* FirebaseAuth */; };
@@ -18,9 +19,22 @@
 		BFBD2BF92FC0968800ECDEDB /* myBabyCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = myBabyCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BF1674D12FC42EC400889299 /* Exceptions for "myBabyCode" folder in "myBabyCode" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = BFBD2BF82FC0968800ECDEDB /* myBabyCode */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BFBD2BFB2FC0968800ECDEDB /* myBabyCode */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BF1674D12FC42EC400889299 /* Exceptions for "myBabyCode" folder in "myBabyCode" target */,
+			);
 			path = myBabyCode;
 			sourceTree = "<group>";
 		};
@@ -31,6 +45,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BF1674482FC3FD4B00889299 /* FirebaseMessaging in Frameworks */,
 				BF283F152FC30E810033705B /* GoogleSignInSwift in Frameworks */,
 				BFBD2C512FC09BCE00ECDEDB /* FirebaseAuth in Frameworks */,
 				BF283F132FC30E810033705B /* GoogleSignIn in Frameworks */,
@@ -83,6 +98,7 @@
 				BFBD2C542FC09BCE00ECDEDB /* FirebaseStorage */,
 				BF283F122FC30E810033705B /* GoogleSignIn */,
 				BF283F142FC30E810033705B /* GoogleSignInSwift */,
+				BF1674472FC3FD4B00889299 /* FirebaseMessaging */,
 			);
 			productName = myBabyCode;
 			productReference = BFBD2BF92FC0968800ECDEDB /* myBabyCode.app */;
@@ -278,6 +294,7 @@
 				DEVELOPMENT_TEAM = G75W83BT8C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = myBabyCode/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "コーディネートの写真を撮影するためにカメラを使用します。";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "コーディネートの写真を選択するためにフォトライブラリへのアクセスが必要です。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -313,6 +330,7 @@
 				DEVELOPMENT_TEAM = G75W83BT8C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = myBabyCode/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "コーディネートの写真を撮影するためにカメラを使用します。";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "コーディネートの写真を選択するためにフォトライブラリへのアクセスが必要です。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -381,6 +399,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		BF1674472FC3FD4B00889299 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BFBD2C4F2FC09BCE00ECDEDB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
 		BF283F122FC30E810033705B /* GoogleSignIn */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = BF283F112FC30E810033705B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;

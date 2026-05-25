@@ -19,19 +19,27 @@ class PostsViewModel: ObservableObject {
     @Published var currentTab: TimelineTab = .latest
     @Published var likedPostIds: Set<String> = []
     @Published var pendingItemTags: [PostItemTag] = []
+    @Published var hasMorePosts: Bool = false
 
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
+    private var lastDocument: QueryDocumentSnapshot? = nil
+    private var followingCursor: Timestamp? = nil
+    private var cachedFollowingIds: [String] = []
+    private let pageSize: Int = 20
 
     // MARK: - Fetch
 
     func fetchPosts(user: AppUser?) async {
         isLoading = true
         do {
+            lastDocument = nil
+            followingCursor = nil
+            hasMorePosts = false
             var query: Query = db.collection("posts")
                 .whereField("is_hidden", isEqualTo: false)
                 .order(by: "created_at", descending: true)
-                .limit(to: 30)
+                .limit(to: pageSize)
 
             switch currentTab {
             case .latest:
@@ -48,7 +56,7 @@ class PostsViewModel: ObservableObject {
                         .whereField("child_age_months", isLessThanOrEqualTo: upper)
                         .order(by: "child_age_months")
                         .order(by: "created_at", descending: true)
-                        .limit(to: 30)
+                        .limit(to: pageSize)
                 }
             case .following:
                 guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { break }
@@ -56,44 +64,141 @@ class PostsViewModel: ObservableObject {
                     .whereField("follower_id", isEqualTo: uid)
                     .getDocuments()
                 let followingIds = followSnaps.documents.compactMap { $0.data()["following_id"] as? String }
+                cachedFollowingIds = followingIds
                 guard !followingIds.isEmpty else {
                     posts = []
                     isLoading = false
                     return
                 }
-                query = db.collection("posts")
-                    .whereField("is_hidden", isEqualTo: false)
-                    .whereField("user_id", in: Array(followingIds.prefix(10)))
-                    .order(by: "created_at", descending: true)
-                    .limit(to: 30)
+                let followPage = try await fetchFollowingPosts(ids: followingIds)
+                let enrichedFollow = await enrichWithPosterInfo(followPage)
+                posts = enrichedFollow
+                followingCursor = enrichedFollow.last?.created_at
+                hasMorePosts = followPage.count == pageSize
+                isLoading = false
+                return
             }
 
             let snapshot = try await query.getDocuments()
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
             fetched = await enrichWithPosterInfo(fetched)
             posts = fetched
+            lastDocument = snapshot.documents.last
+            hasMorePosts = snapshot.documents.count == pageSize
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
     }
 
+    func fetchMorePosts(user: AppUser?) async {
+        guard hasMorePosts, !isLoading, let lastDoc = lastDocument else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            var query: Query
+            switch currentTab {
+            case .latest:
+                query = db.collection("posts")
+                    .whereField("is_hidden", isEqualTo: false)
+                    .order(by: "created_at", descending: true)
+                    .start(afterDocument: lastDoc)
+                    .limit(to: pageSize)
+            case .recommend:
+                if let user = user {
+                    let ageMonths = Calendar.current.dateComponents([.month], from: user.child_birthday, to: Date()).month ?? 0
+                    let lower = max(0, ageMonths - 3)
+                    let upper = ageMonths + 3
+                    query = db.collection("posts")
+                        .whereField("is_hidden", isEqualTo: false)
+                        .whereField("region_code", isEqualTo: user.region_code)
+                        .whereField("child_age_months", isGreaterThanOrEqualTo: lower)
+                        .whereField("child_age_months", isLessThanOrEqualTo: upper)
+                        .order(by: "child_age_months")
+                        .order(by: "created_at", descending: true)
+                        .start(afterDocument: lastDoc)
+                        .limit(to: pageSize)
+                } else { return }
+            case .following:
+                guard !cachedFollowingIds.isEmpty, let cursor = followingCursor else { return }
+                let followPage = try await fetchFollowingPosts(ids: cachedFollowingIds, before: cursor)
+                let enrichedFollow = await enrichWithPosterInfo(followPage)
+                posts.append(contentsOf: enrichedFollow)
+                followingCursor = enrichedFollow.last?.created_at
+                hasMorePosts = followPage.count == pageSize
+                return
+            }
+            let snapshot = try await query.getDocuments()
+            var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
+            fetched = await enrichWithPosterInfo(fetched)
+            posts.append(contentsOf: fetched)
+            lastDocument = snapshot.documents.last
+            hasMorePosts = snapshot.documents.count == pageSize
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Following helpers
+
+    private func chunked<T>(_ array: [T], size: Int) -> [[T]] {
+        stride(from: 0, to: array.count, by: size).map {
+            Array(array[$0..<min($0 + size, array.count)])
+        }
+    }
+
+    private func fetchFollowingPosts(ids: [String], before cursor: Timestamp? = nil) async throws -> [Post] {
+        let chunks = chunked(ids, size: 30)
+        var allPosts: [Post] = []
+        try await withThrowingTaskGroup(of: [Post].self) { group in
+            for chunk in chunks {
+                group.addTask {
+                    let snap: QuerySnapshot
+                    if let cursor = cursor {
+                        snap = try await self.db.collection("posts")
+                            .whereField("is_hidden", isEqualTo: false)
+                            .whereField("user_id", in: chunk)
+                            .whereField("created_at", isLessThan: cursor)
+                            .order(by: "created_at", descending: true)
+                            .limit(to: self.pageSize)
+                            .getDocuments()
+                    } else {
+                        snap = try await self.db.collection("posts")
+                            .whereField("is_hidden", isEqualTo: false)
+                            .whereField("user_id", in: chunk)
+                            .order(by: "created_at", descending: true)
+                            .limit(to: self.pageSize)
+                            .getDocuments()
+                    }
+                    return try snap.documents.map { try $0.data(as: Post.self) }
+                }
+            }
+            for try await result in group {
+                allPosts.append(contentsOf: result)
+            }
+        }
+        return Array(allPosts
+            .sorted { $0.created_at.seconds > $1.created_at.seconds }
+            .prefix(pageSize))
+    }
+
     private func enrichWithPosterInfo(_ posts: [Post]) async -> [Post] {
         let userIds = Array(Set(posts.map { $0.user_id }))
-        var userMap: [String: (avatarId: String, displayName: String?)] = [:]
-        await withTaskGroup(of: (String, String, String?)?.self) { group in
+        var userMap: [String: (avatarId: String, avatarBgColor: String?, displayName: String?)] = [:]
+        await withTaskGroup(of: (String, String, String?, String?)?.self) { group in
             for uid in userIds {
                 group.addTask {
                     guard let snap = try? await Firestore.firestore().collection("users").document(uid).getDocument(),
                           let data = snap.data() else { return nil }
-                    let avatarId = data["avatar_id"] as? String ?? "🐶"
-                    let displayName = data["display_name"] as? String
-                    return (uid, avatarId, displayName)
+                    let avatarId = data["avatar_id"] as? String ?? "bear"
+                    let avatarBgColor = data["avatar_bg_color"] as? String
+                    let displayName = (data["display_name"] as? String) ?? (data["unique_user_id"] as? String)
+                    return (uid, avatarId, avatarBgColor, displayName)
                 }
             }
             for await result in group {
-                if let (uid, avatarId, displayName) = result {
-                    userMap[uid] = (avatarId, displayName)
+                if let (uid, avatarId, avatarBgColor, displayName) = result {
+                    userMap[uid] = (avatarId, avatarBgColor, displayName)
                 }
             }
         }
@@ -101,6 +206,7 @@ class PostsViewModel: ObservableObject {
             var p = post
             if let info = userMap[post.user_id] {
                 p.posterAvatarId = info.avatarId
+                p.posterAvatarBgColor = info.avatarBgColor
                 p.posterDisplayName = info.displayName
             }
             return p
@@ -120,8 +226,9 @@ class PostsViewModel: ObservableObject {
     // MARK: - Like
 
     func toggleLike(post: Post) async {
-        guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid,
-              let postId = post.id else { return }
+        guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
+        let postId = post.id ?? post.post_id
+        guard !postId.isEmpty else { return }
 
         let likeRef = db.collection("likes").document("\(uid)_\(postId)")
         let postRef = db.collection("posts").document(postId)
@@ -130,14 +237,14 @@ class PostsViewModel: ObservableObject {
             likedPostIds.remove(postId)
             try? await likeRef.delete()
             try? await postRef.updateData(["likes_count": FieldValue.increment(Int64(-1))])
-            if let idx = posts.firstIndex(where: { $0.id == postId }) {
+            if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
                 posts[idx].likes_count = max(0, posts[idx].likes_count - 1)
             }
         } else {
             likedPostIds.insert(postId)
             try? await likeRef.setData(["user_id": uid, "post_id": postId])
             try? await postRef.updateData(["likes_count": FieldValue.increment(Int64(1))])
-            if let idx = posts.firstIndex(where: { $0.id == postId }) {
+            if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
                 posts[idx].likes_count += 1
             }
         }
@@ -146,8 +253,9 @@ class PostsViewModel: ObservableObject {
     // MARK: - Report
 
     func report(post: Post) async {
-        guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid,
-              let postId = post.id else { return }
+        guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
+        let postId = post.id ?? post.post_id
+        guard !postId.isEmpty else { return }
 
         let reportRef = db.collection("reports").document("\(uid)_\(postId)")
         let snapshot = try? await reportRef.getDocument()
@@ -197,13 +305,13 @@ class PostsViewModel: ObservableObject {
             var frontURL: String? = nil
             var backURL: String? = nil
 
-            if let front = frontImage, let data = stripEXIF(from: front) {
+            if let front = frontImage, let data = stripEXIF(from: resizeImage(front)) {
                 let ref = storage.reference().child("posts/\(postId)/front.jpg")
                 _ = try await ref.putDataAsync(data)
                 frontURL = try await ref.downloadURL().absoluteString
             }
 
-            if let back = backImage, let data = stripEXIF(from: back) {
+            if let back = backImage, let data = stripEXIF(from: resizeImage(back)) {
                 let ref = storage.reference().child("posts/\(postId)/back.jpg")
                 _ = try await ref.putDataAsync(data)
                 backURL = try await ref.downloadURL().absoluteString
@@ -228,6 +336,7 @@ class PostsViewModel: ObservableObject {
                 created_at: Timestamp(date: Date()),
                 item_tags: nil,
                 posterAvatarId: nil,
+                posterAvatarBgColor: nil,
                 posterDisplayName: nil,
                 posterChildAgeName: nil
             )
@@ -271,6 +380,15 @@ class PostsViewModel: ObservableObject {
         case 20..<25: return "20-24"
         default:     return "25-"
         }
+    }
+
+    private func resizeImage(_ image: UIImage, maxDimension: CGFloat = 1200) -> UIImage {
+        let size = image.size
+        let scale = min(maxDimension / size.width, maxDimension / size.height, 1.0)
+        guard scale < 1.0 else { return image }
+        let newSize = CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
     }
 
     private func stripEXIF(from image: UIImage) -> Data? {
@@ -320,5 +438,54 @@ class PostsViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+}
+
+// MARK: - DraftManager
+
+class DraftManager: ObservableObject {
+    @Published var pendingDraft: PostDraft? = nil
+
+    private let draftsKey = "savedDraftsList_v2"
+
+    var drafts: [PostDraft] {
+        guard let data = UserDefaults.standard.data(forKey: draftsKey),
+              let list = try? JSONDecoder().decode([PostDraft].self, from: data) else { return [] }
+        return list
+    }
+
+    func saveDraft(_ draft: PostDraft) {
+        var current = drafts
+        current.insert(draft, at: 0)
+        if current.count > 20 { current = Array(current.prefix(20)) }
+        if let data = try? JSONEncoder().encode(current) {
+            UserDefaults.standard.set(data, forKey: draftsKey)
+        }
+    }
+
+    func deleteDraft(at offsets: IndexSet) {
+        var current = drafts
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        for idx in offsets where idx < current.count {
+            let draft = current[idx]
+            if let path = draft.frontImagePath {
+                try? FileManager.default.removeItem(at: docsURL.appendingPathComponent(path))
+            }
+            if let path = draft.backImagePath {
+                try? FileManager.default.removeItem(at: docsURL.appendingPathComponent(path))
+            }
+        }
+        current.remove(atOffsets: offsets)
+        if let data = try? JSONEncoder().encode(current) {
+            UserDefaults.standard.set(data, forKey: draftsKey)
+        }
+    }
+
+    func selectDraft(_ draft: PostDraft) {
+        pendingDraft = draft
+    }
+
+    func clearPendingDraft() {
+        pendingDraft = nil
     }
 }

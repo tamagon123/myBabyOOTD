@@ -6,11 +6,13 @@ struct ProfileView: View {
     let userId: String
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
+    @EnvironmentObject var draftManager: DraftManager
 
     @State private var profileUser: AppUser?
     @State private var userPosts: [Post] = []
     @State private var isLoading = false
     @State private var isFollowing = false
+    @State private var errorMessage: String? = nil
     @State private var showEditProfile = false
     @State private var showSettings = false
     @State private var selectedPost: Post? = nil
@@ -21,6 +23,7 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
+
                 // Profile header
                 profileHeader
                     .padding(.top, 20)
@@ -32,6 +35,17 @@ struct ProfileView: View {
                     ProgressView().padding()
                 } else {
                     postsGrid
+                }
+            }
+        }
+        .background(Color.ecruBackground.ignoresSafeArea())
+        .overlay(alignment: .topTrailing) {
+            if isOwnProfile {
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 20))
+                        .foregroundColor(.secondary)
+                        .padding(16)
                 }
             }
         }
@@ -52,6 +66,7 @@ struct ProfileView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(authViewModel)
+                .environmentObject(draftManager)
         }
         .sheet(item: $selectedPost) { post in
             PostDetailView(post: post, onDeleted: { deletedPost in
@@ -60,6 +75,11 @@ struct ProfileView: View {
                 .environmentObject(authViewModel)
                 .environmentObject(postsViewModel)
         }
+        .alert("エラー", isPresented: .constant(errorMessage != nil)) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     // MARK: - Header
@@ -67,9 +87,16 @@ struct ProfileView: View {
     private var profileHeader: some View {
         VStack(spacing: 16) {
             // Avatar
-            let avatarId = profileUser?.avatar_id ?? "🐶"
+            let avatarId = profileUser?.avatar_id ?? "bear"
+            let bgColor = Color(hex: profileUser?.avatar_bg_color ?? "#FFEEBA")
             Group {
-                if avatarImageNames.contains(avatarId) {
+                if avatarId.hasPrefix("https://") {
+                    AsyncImage(url: URL(string: avatarId)) { img in
+                        img.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.ecruBackground
+                    }
+                } else if avatarImageNames.contains(avatarId) {
                     Image(avatarId)
                         .resizable()
                         .scaledToFill()
@@ -79,7 +106,7 @@ struct ProfileView: View {
                 }
             }
             .frame(width: 80, height: 80)
-            .background(Color(.systemYellow).opacity(0.3))
+            .background(bgColor)
             .clipShape(Circle())
 
             // Display name
@@ -100,39 +127,8 @@ struct ProfileView: View {
                 statView(count: profileUser?.followers_count ?? 0, label: "フォロワー")
             }
 
-            // Child info
-            if let user = profileUser {
-                let ageMonths = Calendar.current.dateComponents([.month], from: user.child_birthday, to: Date()).month ?? 0
-                let ageStr = ageMonths < 12 ? "生後\(ageMonths)ヶ月" : "\(ageMonths/12)歳\(ageMonths%12 == 0 ? "" : "\(ageMonths%12)ヶ月")"
-                let genderStr = ChildGender(rawValue: user.child_gender)?.label ?? "未選択"
-                let region = (Int(user.region_code).map { $0 >= 1 && $0 <= 47 ? prefectures[$0 - 1] : user.region_code }) ?? user.region_code
-
-                Text("\(ageStr) \(genderStr) • \(region)")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-
             // Action button
-            if isOwnProfile {
-                HStack {
-                    Spacer()
-                    Button {
-                        showSettings = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "gearshape.fill")
-                            Text("設定")
-                                .font(.system(size: 14, weight: .medium))
-                        }
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                    }
-                    Spacer()
-                }
-            } else {
+            if !isOwnProfile {
                 Button {
                     Task { await toggleFollow() }
                 } label: {
@@ -141,7 +137,7 @@ struct ProfileView: View {
                         .foregroundColor(isFollowing ? .secondary : .white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(isFollowing ? Color(.systemGray5) : Color.indigo)
+                        .background(isFollowing ? Color(.systemGray5) : Color.accentBlue)
                         .cornerRadius(12)
                 }
             }
@@ -174,16 +170,14 @@ struct ProfileView: View {
                 Button {
                     selectedPost = post
                 } label: {
-                    AsyncImage(url: URL(string: url ?? "")) { phase in
-                        switch phase {
-                        case .success(let image):
+                    CachedAsyncImage(url: url) { image in
                             image
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: cellSize, height: cellSize)
                                 .clipped()
-                        default:
-                            Color(.systemIndigo).opacity(0.1)
+                        } placeholder: {
+                            Color.ecruBackground
                                 .frame(width: cellSize, height: cellSize)
                                 .overlay(
                                     Image(systemName: "photo")
@@ -191,7 +185,6 @@ struct ProfileView: View {
                                         .foregroundColor(.secondary.opacity(0.4))
                                 )
                         }
-                    }
                     .frame(width: cellSize, height: cellSize)
                     .clipped()
                 }
@@ -207,7 +200,9 @@ struct ProfileView: View {
         do {
             let doc = try await db.collection("users").document(userId).getDocument()
             profileUser = try doc.data(as: AppUser.self)
-        } catch {}
+        } catch {
+            errorMessage = error.localizedDescription
+        }
         isLoading = false
     }
 
@@ -219,7 +214,9 @@ struct ProfileView: View {
                 .order(by: "created_at", descending: true)
                 .getDocuments()
             userPosts = try snap.documents.map { try $0.data(as: Post.self) }
-        } catch {}
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func checkFollowing() async {

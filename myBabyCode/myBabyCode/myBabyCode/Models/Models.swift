@@ -18,6 +18,7 @@ struct AppUser: Identifiable, Codable {
     var unique_user_id: String?  // ユニークなユーザーID（任意・他ユーザーから識別用）
     var display_name: String?  // 表示名（任意）
     var avatar_id: String
+    var avatar_bg_color: String?
     var region_code: String
     var child_birthday: Date
     var child_gender: Int       // 0:未選択 1:男 2:女 3:その他
@@ -50,6 +51,7 @@ struct Post: Identifiable, Codable {
 
     // Local helper: poster info loaded separately (not stored in Firestore)
     var posterAvatarId: String?
+    var posterAvatarBgColor: String?
     var posterDisplayName: String?
     var posterChildAgeName: String?
 
@@ -72,6 +74,7 @@ enum ItemCategory: String, CaseIterable, Identifiable, Codable {
     case accessory   = "アクセサリー"
     case outerwear   = "アウター"
     case shoes       = "シューズ"
+    case bib         = "スタイ"
     case other       = "その他"
     var id: String { rawValue }
 }
@@ -146,9 +149,21 @@ enum WeatherType: String, CaseIterable, Identifiable {
         case .snowy:  return "❄️"
         }
     }
+    var sfSymbol: String {
+        switch self {
+        case .sunny:  return "sun.max"
+        case .cloudy: return "cloud"
+        case .rainy:  return "cloud.rain"
+        case .snowy:  return "cloud.snow"
+        }
+    }
 }
 
-let clothingSizes: [Int] = [50, 60, 70, 80, 90, 100, 110, 120]
+let clothingSizes: [Int] = [50, 60, 70, 80, 90, 100, 110, 120, 0]
+
+func sizeLabel(_ size: Int) -> String {
+    size == 0 ? "フリー" : "\(size)cm"
+}
 
 let tempCategories: [(label: String, key: String)] = [
     ("〜9℃", "0-9"),
@@ -168,6 +183,8 @@ struct PostDraft: Codable {
     var tempMin: String = ""
     var items: [DraftItem] = []
     var savedAt: Date = Date()
+    var frontImagePath: String? = nil
+    var backImagePath: String? = nil
 }
 
 struct DraftItem: Codable, Identifiable {

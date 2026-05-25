@@ -14,6 +14,7 @@ extension View {
 struct NewPostView: View {
     @EnvironmentObject var postsViewModel: PostsViewModel
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var draftManager: DraftManager
     @Environment(\.dismiss) private var dismiss
 
     // Photo
@@ -56,12 +57,8 @@ struct NewPostView: View {
     @State private var showError = false
 
     // Draft
-    @State private var showDiscardAlert = false
+    @State private var draftSaved = false
     @State private var showDraftSavedBanner = false
-
-    private var hasDraftContent: Bool {
-        !description.isEmpty || frontImage != nil || backImage != nil || !tempMax.isEmpty || !tempMin.isEmpty
-    }
 
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
 
@@ -70,6 +67,12 @@ struct NewPostView: View {
             ScrollView {
                 mainForm
             }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完了") { dismissKeyboard() }
+                }
+            }
             .overlay(alignment: .top) {
                 if showDraftSavedBanner {
                     Text("下書きを保存しました")
@@ -77,7 +80,7 @@ struct NewPostView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
-                        .background(Color.indigo.opacity(0.9))
+                        .background(Color.black.opacity(0.82))
                         .cornerRadius(20)
                         .padding(.top, 16)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -89,25 +92,9 @@ struct NewPostView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("閉じる") {
-                        if hasDraftContent {
-                            showDiscardAlert = true
-                        } else {
-                            dismiss()
-                        }
+                        dismiss()
                     }
                 }
-            }
-            .alert("下書き保存", isPresented: $showDiscardAlert) {
-                Button("保存する") {
-                    saveDraft()
-                    dismiss()
-                }
-                Button("保存せずに閉じる", role: .destructive) {
-                    dismiss()
-                }
-                Button("キャンセル", role: .cancel) {}
-            } message: {
-                Text("入力内容を下書きとして保存しますか？")
             }
             .onAppear { applyProfileDefaults() }
             .confirmationDialog("写真を選択", isPresented: $showPhotoSourceSheet, titleVisibility: .visible) {
@@ -170,7 +157,7 @@ struct NewPostView: View {
                     dismiss()
                 }
             } message: {
-                Text("コーディネートを共有しました🎉")
+                Text("コーディネートを共有しました")
             }
             .alert("エラー", isPresented: $showError) {
                 Button("OK") {}
@@ -213,18 +200,12 @@ struct NewPostView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionLabel("服装のポイント")
             if #available(iOS 16.0, *) {
-                TextField("例：気温が上がったので半袖デビュー！", text: $description, axis: .vertical)
+                TextField("例：気温が上がったので半西デビュー！", text: $description, axis: .vertical)
                     .lineLimit(3...5)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: description, perform: { v in
                         if v.count > 100 { description = String(v.prefix(100)) }
                     })
-                    .toolbar {
-                        ToolbarItemGroup(placement: .keyboard) {
-                            Spacer()
-                            Button("完了") { dismissKeyboard() }
-                        }
-                    }
             } else {
                 TextEditor(text: $description)
                     .frame(minHeight: 80, maxHeight: 120)
@@ -232,12 +213,6 @@ struct NewPostView: View {
                     .onChange(of: description, perform: { v in
                         if v.count > 100 { description = String(v.prefix(100)) }
                     })
-                    .toolbar {
-                        ToolbarItemGroup(placement: .keyboard) {
-                            Spacer()
-                            Button("完了") { dismissKeyboard() }
-                        }
-                    }
             }
             Text("\(description.count)/100")
                 .font(.caption)
@@ -251,12 +226,13 @@ struct NewPostView: View {
         } label: {
             Label("下書きとして保存", systemImage: "square.and.arrow.down")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.indigo)
+                .foregroundColor(draftSaved ? .secondary : Color.accentGreen)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Color.indigo.opacity(0.08))
+                .background(draftSaved ? Color(.systemGray5) : Color.accentGreen.opacity(0.1))
                 .cornerRadius(14)
         }
+        .disabled(draftSaved)
     }
 
     private var postButton: some View {
@@ -268,7 +244,7 @@ struct NewPostView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(canPost ? Color.indigo : Color.gray)
+                .background(canPost ? Color.accentRed : Color.gray)
                 .cornerRadius(16)
         }
         .disabled(!canPost || postsViewModel.isLoading)
@@ -295,12 +271,29 @@ struct NewPostView: View {
 
     @ViewBuilder
     private func photoTile(title: String, image: UIImage?, target: PhotoTarget) -> some View {
-        Button {
-            photoSourceTarget = target
+        Menu {
             if image != nil {
-                showPhotoActionSheet = true
-            } else {
-                showPhotoSourceSheet = true
+                Button {
+                    photoSourceTarget = target
+                    editorReadyImage = image
+                    showImageEditor = true
+                } label: {
+                    Label("スタンプを編集", systemImage: "pencil")
+                }
+            }
+            Button {
+                photoSourceTarget = target
+                imagePickerSourceType = .photoLibrary
+                showImagePicker = true
+            } label: {
+                Label("ライブラリから選択", systemImage: "photo")
+            }
+            Button {
+                photoSourceTarget = target
+                imagePickerSourceType = .camera
+                showImagePicker = true
+            } label: {
+                Label("カメラで撮影", systemImage: "camera")
             }
         } label: {
             ZStack {
@@ -309,7 +302,6 @@ struct NewPostView: View {
                         .resizable()
                         .scaledToFill()
                         .clipped()
-                    // 編集アイコンバッジ
                     VStack {
                         Spacer()
                         HStack {
@@ -325,7 +317,7 @@ struct NewPostView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "camera.fill")
                             .font(.system(size: 28))
-                            .foregroundColor(.indigo.opacity(0.5))
+                            .foregroundColor(.secondary)
                         Text(title)
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -334,25 +326,11 @@ struct NewPostView: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 140)
-            .background(Color(.systemIndigo).opacity(0.06))
+            .background(Color.ecruBackground)
             .cornerRadius(16)
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.indigo.opacity(0.15), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .confirmationDialog("写真を変更", isPresented: Binding(
-            get: { showPhotoActionSheet && photoSourceTarget == target },
-            set: { if !$0 { showPhotoActionSheet = false } }
-        ), titleVisibility: .visible) {
-            Button("スタンプを編集") {
-                let img = target == .front ? frontImage : backImage
-                editorReadyImage = img
-                showImageEditor = true
-            }
-            Button("写真を入れ替え") {
-                showPhotoSourceSheet = true
-            }
-            Button("キャンセル", role: .cancel) {}
-        }
     }
 
     // MARK: - Child Section
@@ -367,16 +345,12 @@ struct NewPostView: View {
                         Button {
                             selectedChildIndex = idx
                         } label: {
-                            VStack(spacing: 4) {
-                                Text(ChildGender(rawValue: child.gender)?.emoji ?? "🧒")
-                                    .font(.title2)
-                                Text(child.name.isEmpty ? "子供\(idx+1)" : child.name)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(selectedChildIndex == idx ? .white : .primary)
-                            }
+                            Text(child.name.isEmpty ? "子供\(idx+1)" : child.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(selectedChildIndex == idx ? .white : .primary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
-                            .background(selectedChildIndex == idx ? Color.indigo : Color(.systemGray6))
+                            .background(selectedChildIndex == idx ? Color.accentRed : Color(.systemGray6))
                             .cornerRadius(20)
                         }
                         .buttonStyle(.plain)
@@ -395,7 +369,7 @@ struct NewPostView: View {
                 Spacer()
                 Text("プロフィールから反映")
                     .font(.caption2)
-                    .foregroundColor(.indigo)
+                    .foregroundColor(.accentBlue)
             }
             Picker("地域", selection: $selectedRegionIndex) {
                 ForEach(prefectures.indices, id: \.self) { i in
@@ -427,7 +401,7 @@ struct NewPostView: View {
                     Button { fetchWeather() } label: {
                         Label("自動取得", systemImage: "arrow.clockwise")
                             .font(.caption)
-                            .foregroundColor(.indigo)
+                            .foregroundColor(.accentBlue)
                     }
                 }
             }
@@ -437,15 +411,16 @@ struct NewPostView: View {
                         weatherType = w
                     } label: {
                         VStack(spacing: 2) {
-                            Text(w.emoji).font(.title3)
+                            Image(systemName: w.sfSymbol)
+                                .font(.system(size: 18))
                             Text(w.label).font(.system(size: 10))
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(weatherType == w ? Color.indigo.opacity(0.12) : Color(.systemGray6))
+                        .background(weatherType == w ? Color.accentBlue.opacity(0.12) : Color(.systemGray6))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(weatherType == w ? Color.indigo : Color.clear, lineWidth: 1.5)
+                                .stroke(weatherType == w ? Color.accentBlue : Color.clear, lineWidth: 1.5)
                         )
                         .cornerRadius(12)
                     }
@@ -466,12 +441,6 @@ struct NewPostView: View {
             TextField("例: 25", text: text)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("完了") { dismissKeyboard() }
-                    }
-                }
         }
         .frame(maxWidth: .infinity)
     }
@@ -491,7 +460,7 @@ struct NewPostView: View {
                     }
                 } label: {
                     Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.indigo)
+                        .foregroundColor(.accentGreen)
                         .font(.system(size: 22))
                 }
             }
@@ -528,7 +497,7 @@ struct NewPostView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
-            .background(Color.indigo)
+            .background(Color(red: 0.12, green: 0.12, blue: 0.12))
 
             HStack(spacing: 12) {
                 ForEach(["front", "back"], id: \.self) { side in
@@ -541,7 +510,7 @@ struct NewPostView: View {
                                 .font(.system(size: 12, weight: .medium))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
-                                .background(taggingSide == side ? Color.indigo : Color(.systemGray5))
+                                .background(taggingSide == side ? Color.accentBlue : Color(.systemGray5))
                                 .foregroundColor(taggingSide == side ? .white : .primary)
                                 .cornerRadius(10)
                         }
@@ -598,7 +567,7 @@ struct NewPostView: View {
                     .frame(width: 20, height: 20)
                     .shadow(color: .black.opacity(0.4), radius: 3)
                 Circle()
-                    .stroke(Color.indigo, lineWidth: 2)
+                    .stroke(Color.accentRed, lineWidth: 2)
                     .frame(width: 20, height: 20)
             }
             .position(x: pos.x * geoWidth, y: pos.y * imgH)
@@ -617,32 +586,38 @@ struct NewPostView: View {
             selectedRegionIndex = idx - 1
         }
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
-        fetchWeather()
-        loadDraftIfNeeded()
+        if let draft = draftManager.pendingDraft {
+            applyDraft(draft)
+            draftManager.clearPendingDraft()
+        } else {
+            fetchWeather()
+        }
     }
 
     // MARK: - Draft
 
-    private struct DraftItem: Codable {
-        let id: String
-        let category: String
-        let brandName: String
-        let selectedSize: Int
-    }
-
-    private struct PostDraft: Codable {
-        let description: String
-        let regionIndex: Int
-        let weatherType: String
-        let tempMax: String
-        let tempMin: String
-        let items: [DraftItem]
-    }
-
     private func saveDraft() {
+        let draftId = UUID().uuidString
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var frontPath: String? = nil
+        var backPath: String? = nil
+        if let img = frontImage, let data = img.jpegData(compressionQuality: 0.7) {
+            let filename = "draft_front_\(draftId).jpg"
+            try? data.write(to: docsURL.appendingPathComponent(filename))
+            frontPath = filename
+        }
+        if let img = backImage, let data = img.jpegData(compressionQuality: 0.7) {
+            let filename = "draft_back_\(draftId).jpg"
+            try? data.write(to: docsURL.appendingPathComponent(filename))
+            backPath = filename
+        }
         let draftItems = items.map { entry in
-            DraftItem(id: entry.id.uuidString, category: entry.category.rawValue,
-                      brandName: entry.brandName, selectedSize: entry.selectedSize)
+            DraftItem(
+                id: entry.id.uuidString,
+                category: entry.category.rawValue,
+                brandName: entry.brandName,
+                selectedSize: entry.selectedSize
+            )
         }
         let draft = PostDraft(
             description: description,
@@ -650,20 +625,19 @@ struct NewPostView: View {
             weatherType: weatherType.rawValue,
             tempMax: tempMax,
             tempMin: tempMin,
-            items: draftItems
+            items: draftItems,
+            frontImagePath: frontPath,
+            backImagePath: backPath
         )
-        if let data = try? JSONEncoder().encode(draft) {
-            UserDefaults.standard.set(data, forKey: "postDraft")
-        }
+        draftManager.saveDraft(draft)
+        draftSaved = true
         withAnimation { showDraftSavedBanner = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             withAnimation { showDraftSavedBanner = false }
         }
     }
 
-    private func loadDraftIfNeeded() {
-        guard let data = UserDefaults.standard.data(forKey: "postDraft"),
-              let draft = try? JSONDecoder().decode(PostDraft.self, from: data) else { return }
+    private func applyDraft(_ draft: PostDraft) {
         description = draft.description
         selectedRegionIndex = draft.regionIndex
         weatherType = WeatherType(rawValue: draft.weatherType) ?? .sunny
@@ -674,6 +648,13 @@ struct NewPostView: View {
             entry.brandName = di.brandName
             entry.selectedSize = di.selectedSize
             return entry
+        }
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        if let path = draft.frontImagePath {
+            frontImage = UIImage(contentsOfFile: docsURL.appendingPathComponent(path).path)
+        }
+        if let path = draft.backImagePath {
+            backImage = UIImage(contentsOfFile: docsURL.appendingPathComponent(path).path)
         }
     }
 
@@ -800,8 +781,8 @@ struct ItemEntryRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Color.indigo.opacity(0.1))
-                    .foregroundColor(.indigo)
+                    .background(Color.accentBlue.opacity(0.1))
+                    .foregroundColor(.accentBlue)
                     .cornerRadius(10)
                 Spacer()
                 // Tag button
@@ -809,11 +790,11 @@ struct ItemEntryRow: View {
                     HStack(spacing: 4) {
                         Image(systemName: entry.tagPosition != nil ? "mappin.circle.fill" : "mappin.circle")
                             .font(.system(size: 16))
-                            .foregroundColor(entry.tagPosition != nil ? .indigo : .secondary)
+                            .foregroundColor(entry.tagPosition != nil ? .accentBlue : .secondary)
                         if entry.tagPosition != nil {
                             Text(entry.tagSide == "front" ? "F" : "B")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.indigo)
+                                .foregroundColor(.accentBlue)
                         }
                     }
                 }
@@ -828,7 +809,7 @@ struct ItemEntryRow: View {
                     .frame(maxWidth: .infinity)
                 Picker("サイズ", selection: $entry.selectedSize) {
                     ForEach(clothingSizes, id: \.self) { s in
-                        Text("\(s)").tag(s)
+                        Text(sizeLabel(s)).tag(s)
                     }
                 }
                 .pickerStyle(.menu)
@@ -890,7 +871,7 @@ struct PlacedStamp: Identifiable {
     let id = UUID()
     var kind: StampKind
     var position: CGPoint
-    var scale: CGFloat = 1.0
+    var scale: CGFloat = 1.8
     var rotation: Angle = .zero
 }
 
@@ -910,7 +891,7 @@ enum StampSymbol: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var color: Color {
         switch self {
-        case .circle:   return .indigo
+        case .circle:   return .accentRed
         case .square:   return .orange
         case .triangle: return .green
         case .star:     return .yellow
@@ -940,7 +921,7 @@ struct PhotoEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var stampItems: [PlacedStamp] = []
-    @State private var selectedKind: StampKind = .symbol(.star)
+    @State private var selectedKind: StampKind? = nil
     @State private var history: [EditorAction] = []
     @State private var canvasSize: CGSize = .zero
     @State private var canvasOffset: CGPoint = .zero
@@ -994,11 +975,11 @@ struct PhotoEditorView: View {
                             .font(.system(size: 24))
                             .foregroundColor(sym.color)
                             .frame(width: 44, height: 44)
-                            .background(selectedKind == kind ? Color.indigo.opacity(0.12) : Color(.systemGray6))
+                            .background(selectedKind == kind ? Color(UIColor.systemGray4).opacity(0.6) : Color(.systemGray6))
                             .cornerRadius(10)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .stroke(selectedKind == kind ? Color.indigo : Color.clear, lineWidth: 1.5)
+                                    .stroke(selectedKind == kind ? Color.primary.opacity(0.5) : Color.clear, lineWidth: 1.5)
                             )
                     }
                 }
@@ -1014,11 +995,11 @@ struct PhotoEditorView: View {
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 44, height: 44)
-                                .background(selectedKind == kind ? Color.indigo.opacity(0.12) : Color(.systemGray6))
+                                .background(selectedKind == kind ? Color(UIColor.systemGray4).opacity(0.6) : Color(.systemGray6))
                                 .cornerRadius(10)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10)
-                                        .stroke(selectedKind == kind ? Color.indigo : Color.clear, lineWidth: 1.5)
+                                        .stroke(selectedKind == kind ? Color.primary.opacity(0.5) : Color.clear, lineWidth: 1.5)
                                 )
                         }
                     }
@@ -1054,10 +1035,12 @@ struct PhotoEditorView: View {
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 0)
                             .onEnded { val in
-                                let stamp = PlacedStamp(kind: selectedKind, position: val.location)
+                                guard let kind = selectedKind else { return }
+                                let stamp = PlacedStamp(kind: kind, position: val.location)
                                 stampItems.append(stamp)
                                 history.append(.addStamp(stamp))
                                 activeStampId = stamp.id
+                                selectedKind = nil
                             }
                     )
                 ForEach($stampItems) { $stamp in
@@ -1076,9 +1059,9 @@ struct PhotoEditorView: View {
     // MARK: - Hint
 
     private var hintText: some View {
-        Text("タップでスタンプを配置 • ピンチで拡縮・回転 • ダブルタップで削除")
+        Text(selectedKind != nil ? "タップで配置" : "スタンプを選択 • ハンドル上下ドラッグで拡縮 • ダブルタップで削除")
             .font(.caption)
-            .foregroundColor(.secondary)
+            .foregroundColor(selectedKind != nil ? .accentRed : .secondary)
             .padding(.vertical, 6)
             .padding(.horizontal, 16)
     }
@@ -1161,8 +1144,8 @@ struct StampView: View {
     private let baseSize: CGFloat = 44
 
     @GestureState private var dragOffset: CGSize = .zero
-    @GestureState private var pinchScale: CGFloat = 1.0
     @GestureState private var rotationAngle: Angle = .zero
+    @State private var liveScaleFactor: CGFloat = 1.0
 
     var body: some View {
         Group {
@@ -1179,29 +1162,41 @@ struct StampView: View {
             }
         }
         .frame(width: baseSize, height: baseSize)
-        .scaleEffect(stamp.scale * pinchScale)
+        .scaleEffect(stamp.scale * liveScaleFactor)
         .rotationEffect(stamp.rotation + rotationAngle)
         .shadow(color: .black.opacity(0.2), radius: 2)
         .overlay {
             if isActive {
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
-                    .frame(width: baseSize * stamp.scale + 12, height: baseSize * stamp.scale + 12)
-                // 1本指スケールハンドル
+                    .frame(width: baseSize * stamp.scale * liveScaleFactor + 12,
+                           height: baseSize * stamp.scale * liveScaleFactor + 12)
                 VStack {
                     HStack {
                         Spacer()
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 12, weight: .bold))
+                        Image(systemName: "arrow.up.and.down")
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(4)
-                            .background(Color.indigo.opacity(0.8))
+                            .padding(5)
+                            .background(Color.black.opacity(0.72))
                             .clipShape(Circle())
                             .offset(x: 4, y: -4)
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { val in
+                                        let factor = 1.0 + (-val.translation.height / 80.0)
+                                        liveScaleFactor = max(0.1, factor)
+                                    }
+                                    .onEnded { val in
+                                        stamp.scale = max(0.2, min(6.0, stamp.scale * liveScaleFactor))
+                                        liveScaleFactor = 1.0
+                                    }
+                            )
                     }
                     Spacer()
                 }
-                .frame(width: baseSize * stamp.scale + 12, height: baseSize * stamp.scale + 12)
+                .frame(width: baseSize * stamp.scale * liveScaleFactor + 12,
+                       height: baseSize * stamp.scale * liveScaleFactor + 12)
             }
         }
         .position(
@@ -1210,19 +1205,12 @@ struct StampView: View {
         )
         .gesture(
             SimultaneousGesture(
-                SimultaneousGesture(
-                    DragGesture()
-                        .updating($dragOffset) { val, state, _ in state = val.translation }
-                        .onEnded { val in
-                            stamp.position.x += val.translation.width
-                            stamp.position.y += val.translation.height
-                        },
-                    MagnificationGesture()
-                        .updating($pinchScale) { val, state, _ in state = val }
-                        .onEnded { val in
-                            stamp.scale *= val
-                        }
-                ),
+                DragGesture()
+                    .updating($dragOffset) { val, state, _ in state = val.translation }
+                    .onEnded { val in
+                        stamp.position.x += val.translation.width
+                        stamp.position.y += val.translation.height
+                    },
                 RotationGesture()
                     .updating($rotationAngle) { val, state, _ in state = val }
                     .onEnded { val in

@@ -30,19 +30,25 @@ struct PostCardView: View {
                 } label: {
                     HStack(spacing: 10) {
                         // Avatar
-                        let avatarId = post.posterAvatarId ?? "🐶"
+                        let avatarId = post.posterAvatarId ?? "bear"
+                        let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
                         Group {
-                            if avatarImageNames.contains(avatarId) {
+                            if avatarId.hasPrefix("https://") {
+                                AsyncImage(url: URL(string: avatarId)) { img in
+                                    img.resizable().scaledToFill()
+                                } placeholder: { Color.ecruBackground }
+                            } else if avatarImageNames.contains(avatarId) {
                                 Image(avatarId)
                                     .resizable()
                                     .scaledToFill()
                             } else {
-                                Text(avatarId)
+                                Image(systemName: "person.fill")
                                     .font(.system(size: 20))
+                                    .foregroundColor(.secondary)
                             }
                         }
                         .frame(width: 44, height: 44)
-                        .background(Color(.systemYellow).opacity(0.3))
+                        .background(avatarBg)
                         .clipShape(Circle())
 
                         VStack(alignment: .leading, spacing: 2) {
@@ -69,21 +75,33 @@ struct PostCardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     weatherBadge
-                    if !(post.item_tags ?? []).isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: showItemTags ? "tag.fill" : "tag")
-                            Text("アイテム")
+                    if !(post.item_tags ?? []).isEmpty || (itemsLoaded && !postItems.isEmpty) {
+                        Button {
+                            if !itemsLoaded { loadItems() }
+                            withAnimation(.easeInOut(duration: 0.2)) { showItemTags.toggle() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: showItemTags ? "tag.fill" : "tag")
+                                Text("アイテム")
+                            }
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.accentGreen)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.accentGreen.opacity(0.1))
+                            .cornerRadius(16)
                         }
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.indigo)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.indigo.opacity(0.08))
-                        .cornerRadius(16)
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+            }
+
+            // Untagged items list (items with no photo tag assigned)
+            if showItemTags && itemsLoaded && !untaggedItems.isEmpty {
+                untaggedItemsView
+                    .transition(.opacity)
             }
 
             // Description
@@ -152,15 +170,10 @@ struct PostCardView: View {
             } else {
                 TabView(selection: $currentImageIndex) {
                     ForEach(imageURLs.indices, id: \.self) { idx in
-                        AsyncImage(url: URL(string: imageURLs[idx])) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().scaledToFill()
-                            case .failure:
-                                photoPlaceholder
-                            default:
-                                Color(.systemGray5).overlay(ProgressView())
-                            }
+                        CachedAsyncImage(url: imageURLs[idx]) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Color(.systemGray5).overlay(ProgressView())
                         }
                         .clipped()
                         .tag(idx)
@@ -169,17 +182,13 @@ struct PostCardView: View {
                 .tabViewStyle(.page(indexDisplayMode: imageURLs.count > 1 ? .always : .never))
                 .frame(height: UIScreen.main.bounds.width - 32)
                 .onTapGesture {
-                    if !(post.item_tags ?? []).isEmpty {
-                        if !itemsLoaded { 
-                            loadItems()
-                        }
-                        withAnimation(.easeInOut(duration: 0.2)) { 
-                            showItemTags.toggle() 
-                        }
+                    if !itemsLoaded { loadItems() }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showItemTags.toggle()
                     }
                 }
                 .onAppear {
-                    if !(post.item_tags ?? []).isEmpty && !itemsLoaded {
+                    if !itemsLoaded {
                         loadItems()
                     }
                 }
@@ -216,16 +225,9 @@ struct PostCardView: View {
                     .frame(width: 18, height: 18)
                     .shadow(color: .black.opacity(0.35), radius: 3)
                 Circle()
-                    .strokeBorder(Color.indigo.opacity(0.9), lineWidth: 1.5)
+                    .strokeBorder(Color.accentRed.opacity(0.9), lineWidth: 1.5)
                     .frame(width: 18, height: 18)
             }
-
-            // Connector line (short)
-            Rectangle()
-                .fill(Color.white.opacity(0.9))
-                .frame(width: 1, height: 10)
-                .shadow(color: .black.opacity(0.2), radius: 1)
-                .opacity(item == nil ? 0 : 1)
 
             // Label with brand and size
             if let item = item {
@@ -234,7 +236,7 @@ struct PostCardView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white)
                         .lineLimit(1)
-                    Text("\(item.size_value)cm")
+                    Text(sizeLabel(item.size_value))
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.95))
                 }
@@ -271,18 +273,19 @@ struct PostCardView: View {
 
     private var photoPlaceholder: some View {
         RoundedRectangle(cornerRadius: 16)
-            .fill(Color(.systemIndigo).opacity(0.08))
+            .fill(Color.ecruBackground)
             .frame(height: UIScreen.main.bounds.width - 32)
             .overlay(
-                Text("📷")
+                Image(systemName: "photo")
                     .font(.system(size: 40))
+                    .foregroundColor(.secondary.opacity(0.4))
             )
             .padding(.horizontal, 16)
     }
 
     private var weatherBadge: some View {
         let wt = WeatherType(rawValue: post.weather_type)
-        return Text("\(wt?.emoji ?? "🌤") \(Int(post.temp_max))℃ / \(Int(post.temp_min))℃")
+        return Label("\(Int(post.temp_max))℃ / \(Int(post.temp_min))℃", systemImage: wt?.sfSymbol ?? "cloud.sun")
             .tagStyle(bg: Color.blue.opacity(0.1), fg: Color.blue.opacity(0.8))
     }
 
@@ -309,11 +312,45 @@ struct PostCardView: View {
         default:        return "\(seconds / 86400)日前"
         }
     }
+
+    // MARK: - Untagged items view
+
+    private var untaggedItems: [PostItem] {
+        guard itemsLoaded else { return [] }
+        let taggedIndices = Set((post.item_tags ?? []).map { $0.item_index })
+        return postItems.indices.compactMap { idx in
+            taggedIndices.contains(idx) ? nil : postItems[idx]
+        }
+    }
+
+    private var untaggedItemsView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(untaggedItems) { item in
+                HStack(spacing: 8) {
+                    Text(item.custom_name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(sizeLabel(item.size_value))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(6)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.white)
+    }
 }
 
 // MARK: - Tag style modifier
 
-private extension Text {
+private extension View {
     func tagStyle(bg: Color, fg: Color) -> some View {
         self
             .font(.system(size: 11, weight: .bold))

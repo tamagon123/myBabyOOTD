@@ -12,6 +12,8 @@ struct PostDetailView: View {
     @State private var currentImageIndex: Int = 0
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
+    @State private var postItems: [PostItem] = []
+    @State private var itemsLoaded = false
 
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
@@ -24,7 +26,7 @@ struct PostDetailView: View {
                     // Photo carousel
                     if imageURLs.isEmpty {
                         RoundedRectangle(cornerRadius: 0)
-                            .fill(Color(.systemIndigo).opacity(0.08))
+                            .fill(Color.ecruBackground)
                             .frame(height: UIScreen.main.bounds.width)
                             .overlay(
                                 Image(systemName: "photo")
@@ -34,16 +36,11 @@ struct PostDetailView: View {
                     } else {
                         TabView(selection: $currentImageIndex) {
                             ForEach(imageURLs.indices, id: \.self) { idx in
-                                AsyncImage(url: URL(string: imageURLs[idx])) { phase in
-                                    switch phase {
-                                    case .success(let image):
+                                CachedAsyncImage(url: imageURLs[idx]) { image in
                                         image.resizable().scaledToFit()
-                                    case .failure:
-                                        Color(.systemGray5)
-                                    default:
+                                    } placeholder: {
                                         Color(.systemGray5).overlay(ProgressView())
                                     }
-                                }
                                 .tag(idx)
                             }
                         }
@@ -54,16 +51,23 @@ struct PostDetailView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         // Poster info
                         HStack(spacing: 12) {
-                            let avatarId = post.posterAvatarId ?? "🐶"
+                            let avatarId = post.posterAvatarId ?? "bear"
+                            let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
                             Group {
-                                if avatarImageNames.contains(avatarId) {
+                                if avatarId.hasPrefix("https://") {
+                                    AsyncImage(url: URL(string: avatarId)) { img in
+                                        img.resizable().scaledToFill()
+                                    } placeholder: { Color.ecruBackground }
+                                } else if avatarImageNames.contains(avatarId) {
                                     Image(avatarId).resizable().scaledToFill()
                                 } else {
-                                    Text(avatarId).font(.system(size: 20))
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(.secondary)
                                 }
                             }
                             .frame(width: 44, height: 44)
-                            .background(Color(.systemYellow).opacity(0.3))
+                            .background(avatarBg)
                             .clipShape(Circle())
 
                             VStack(alignment: .leading, spacing: 2) {
@@ -79,7 +83,7 @@ struct PostDetailView: View {
                         // Weather / Temp
                         let wt = WeatherType(rawValue: post.weather_type)
                         HStack(spacing: 8) {
-                            Text("\(wt?.emoji ?? "🌤") \(wt?.label ?? "")")
+                            Label(wt?.label ?? "", systemImage: wt?.sfSymbol ?? "cloud.sun")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.blue)
                             Spacer()
@@ -106,10 +110,16 @@ struct PostDetailView: View {
                                 .font(.system(size: 15))
                                 .foregroundColor(.primary)
                         }
+
+                        // Items
+                        if itemsLoaded && !postItems.isEmpty {
+                            itemsSection
+                        }
                     }
                     .padding(20)
                 }
             }
+            .task { await loadItems() }
             .navigationTitle("投稿詳細")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -144,6 +154,82 @@ struct PostDetailView: View {
                 Text("この投稿を削除しますか？この操作は取り消せません。")
             }
         }
+    }
+
+    // MARK: - Items Section
+
+    private var itemsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("アイテム")
+                .font(.system(size: 15, weight: .bold))
+
+            ForEach(postItems.indices, id: \.self) { idx in
+                let item = postItems[idx]
+                let tags = (post.item_tags ?? []).filter { $0.item_index == idx }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.custom_name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                            Text(item.category)
+                                .font(.system(size: 11))
+                                .foregroundColor(.accentGreen)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.accentGreen.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                        Spacer()
+                        Text(sizeLabel(item.size_value))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                    }
+                    if !tags.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(tags) { tag in
+                                HStack(spacing: 3) {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.pink)
+                                    Text(tag.image_side == "front" ? "フロント" : "バック")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.pink.opacity(0.08))
+                                .cornerRadius(6)
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color.white)
+                .cornerRadius(12)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func loadItems() async {
+        let postId = post.id ?? post.post_id
+        guard !postId.isEmpty else {
+            itemsLoaded = true
+            return
+        }
+        let db = Firestore.firestore()
+        do {
+            let snap = try await db.collection("posts").document(postId).collection("items").getDocuments()
+            postItems = snap.documents.compactMap { try? $0.data(as: PostItem.self) }
+        } catch {}
+        itemsLoaded = true
     }
 
     private func ageLabel(months: Int) -> String {

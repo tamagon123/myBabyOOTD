@@ -7,27 +7,33 @@ struct SearchView: View {
     @State private var selectedRegionIndex: Int = -1    // -1 = 全国
     @State private var selectedGender: ChildGender = .unselected
     @State private var selectedWeather: WeatherType? = nil
-    @State private var selectedMaxTempCategory: String = ""
-    @State private var selectedMinTempCategory: String = ""
+    @State private var selectedTempCategory: String = ""
     @State private var brandQuery: String = ""
     @State private var selectedSizeIndex: Int = -1      // -1 = 全サイズ
 
     @State private var results: [Post] = []
     @State private var isLoading = false
+    @State private var errorMessage: String? = nil
 
     private let db = Firestore.firestore()
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                AppHeaderView()
+                AppHeaderView(showSearchButton: false)
 
                 ScrollView {
+
                     VStack(alignment: .leading, spacing: 20) {
                         filterSection
                         searchButton
 
-                        if isLoading {
+                        if let err = errorMessage {
+                            Text(err)
+                                .foregroundColor(.red)
+                                .font(.system(size: 13))
+                                .padding()
+                        } else if isLoading {
                             HStack { Spacer(); ProgressView(); Spacer() }
                                 .padding()
                         } else if results.isEmpty {
@@ -90,39 +96,31 @@ struct SearchView: View {
                         selectedWeather = nil
                     }
                     ForEach(WeatherType.allCases) { w in
-                        chipButton(label: w.emoji + w.label, active: selectedWeather == w) {
+                        Button {
                             selectedWeather = (selectedWeather == w) ? nil : w
+                        } label: {
+                            Label(w.label, systemImage: w.sfSymbol)
+                                .font(.system(size: 12, weight: .medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(selectedWeather == w ? Color.accentRed : Color(.systemGray6))
+                                .foregroundColor(selectedWeather == w ? .white : .primary)
+                                .cornerRadius(16)
                         }
                     }
                 }
             }
 
-            // Max Temp Category
-            filterRow(label: "最高気温帯") {
+            // Temp Category
+            filterRow(label: "気温帯") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        chipButton(label: "すべて", active: selectedMaxTempCategory.isEmpty) {
-                            selectedMaxTempCategory = ""
+                        chipButton(label: "すべて", active: selectedTempCategory.isEmpty) {
+                            selectedTempCategory = ""
                         }
                         ForEach(tempCategories, id: \.key) { cat in
-                            chipButton(label: cat.label, active: selectedMaxTempCategory == cat.key) {
-                                selectedMaxTempCategory = (selectedMaxTempCategory == cat.key) ? "" : cat.key
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Min Temp Category
-            filterRow(label: "最低気温帯") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        chipButton(label: "すべて", active: selectedMinTempCategory.isEmpty) {
-                            selectedMinTempCategory = ""
-                        }
-                        ForEach(tempCategories, id: \.key) { cat in
-                            chipButton(label: cat.label, active: selectedMinTempCategory == cat.key) {
-                                selectedMinTempCategory = (selectedMinTempCategory == cat.key) ? "" : cat.key
+                            chipButton(label: cat.label, active: selectedTempCategory == cat.key) {
+                                selectedTempCategory = (selectedTempCategory == cat.key) ? "" : cat.key
                             }
                         }
                     }
@@ -140,10 +138,10 @@ struct SearchView: View {
                 Picker("サイズ", selection: $selectedSizeIndex) {
                     Text("全サイズ").tag(-1)
                     ForEach(clothingSizes.indices, id: \.self) { i in
-                        Text("\(clothingSizes[i])").tag(i)
+                        Text(sizeLabel(clothingSizes[i])).tag(i)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
             }
         }
     }
@@ -157,7 +155,7 @@ struct SearchView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Color.indigo)
+                .background(Color.accentRed)
                 .cornerRadius(14)
         }
         .padding(.horizontal)
@@ -182,7 +180,7 @@ struct SearchView: View {
                 .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(active ? Color.indigo : Color(.systemGray6))
+                .background(active ? Color.accentRed : Color(.systemGray6))
                 .foregroundColor(active ? .white : .primary)
                 .cornerRadius(16)
         }
@@ -208,17 +206,22 @@ struct SearchView: View {
             if let w = selectedWeather {
                 query = query.whereField("weather_type", isEqualTo: w.rawValue)
             }
-            if !selectedMaxTempCategory.isEmpty {
-                query = query.whereField("temp_max_category", isEqualTo: selectedMaxTempCategory)
-            }
-            if !selectedMinTempCategory.isEmpty {
-                query = query.whereField("temp_min_category", isEqualTo: selectedMinTempCategory)
+            if !selectedTempCategory.isEmpty {
+                query = query.whereField("temp_category", isEqualTo: selectedTempCategory)
             }
 
             let snapshot = try await query.getDocuments()
-            results = try snapshot.documents.map { try $0.data(as: Post.self) }
+            var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
+
+            let q = brandQuery.trimmingCharacters(in: .whitespaces).lowercased()
+            if !q.isEmpty {
+                fetched = fetched.filter { $0.description.lowercased().contains(q) }
+            }
+
+            results = fetched
+            errorMessage = nil
         } catch {
-            // silently ignore search errors
+            errorMessage = "検索中にエラーが発生しました。再度お試しください。"
         }
         isLoading = false
     }
