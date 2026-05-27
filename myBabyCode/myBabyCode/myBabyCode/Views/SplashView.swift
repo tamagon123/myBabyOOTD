@@ -13,7 +13,7 @@ import SwiftUI
 
 struct SplashView: View {
     // アニメーション用状態変数
-    @State private var scale: CGFloat = 0.7   // アイコンの初期スケール（70%）
+    @State private var scale: CGFloat = 0.8   // ロゴの初期スケール（80%）
     @State private var opacity: Double = 0      // 全体の初期透明度（完全透明）
 
     // =============================================================================
@@ -33,22 +33,14 @@ struct SplashView: View {
             Color.ecruBackground
                 .ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                // アプリアイコン画像（Assets.xcassetsの「icon」）
-                Image("icon")
+            VStack(spacing: 32) {
+                // アプリロゴ画像
+                Image("logo")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 110, height: 110)
-                    .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                    .shadow(color: .black.opacity(0.10), radius: 24, y: 10)
+                    .frame(height: 160)
                     .scaleEffect(scale)    // アニメーション対象: スケール
                     .opacity(opacity)      // アニメーション対象: 透明度
-
-                // アプリ名ロゴ
-                Text("Nanikiru")
-                    .font(.system(size: 30, weight: .heavy))
-                    .foregroundColor(.accentRed)
-                    .opacity(opacity)
 
                 // iOS標準のくるくる回る読み込みインジケータ
                 ProgressView()

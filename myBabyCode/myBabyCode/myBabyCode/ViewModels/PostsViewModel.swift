@@ -273,8 +273,8 @@ class PostsViewModel: ObservableObject {
     // =============================================================================
     private func enrichWithPosterInfo(_ posts: [Post]) async -> [Post] {
         let userIds = Array(Set(posts.map { $0.user_id }))
-        var userMap: [String: (avatarId: String, avatarBgColor: String?, displayName: String?)] = [:]
-        await withTaskGroup(of: (String, String, String?, String?)?.self) { group in
+        var userMap: [String: (avatarId: String, avatarBgColor: String?, displayName: String?, uniqueUserId: String?, children: [[String: Any]]?)] = [:]
+        await withTaskGroup(of: (String, String, String?, String?, String?, [[String: Any]]?)?.self) { group in
             for uid in userIds {
                 group.addTask {
                     guard let snap = try? await Firestore.firestore().collection("users").document(uid).getDocument(),
@@ -282,12 +282,14 @@ class PostsViewModel: ObservableObject {
                     let avatarId = data["avatar_id"] as? String ?? "bear"
                     let avatarBgColor = data["avatar_bg_color"] as? String
                     let displayName = (data["display_name"] as? String) ?? (data["unique_user_id"] as? String)
-                    return (uid, avatarId, avatarBgColor, displayName)
+                    let uniqueUserId = data["unique_user_id"] as? String
+                    let children = data["children"] as? [[String: Any]]
+                    return (uid, avatarId, avatarBgColor, displayName, uniqueUserId, children)
                 }
             }
             for await result in group {
-                if let (uid, avatarId, avatarBgColor, displayName) = result {
-                    userMap[uid] = (avatarId, avatarBgColor, displayName)
+                if let (uid, avatarId, avatarBgColor, displayName, uniqueUserId, children) = result {
+                    userMap[uid] = (avatarId, avatarBgColor, displayName, uniqueUserId, children)
                 }
             }
         }
@@ -297,6 +299,12 @@ class PostsViewModel: ObservableObject {
                 p.posterAvatarId = info.avatarId
                 p.posterAvatarBgColor = info.avatarBgColor
                 p.posterDisplayName = info.displayName
+                p.posterUniqueUserId = info.uniqueUserId
+                // 子供名・性別: children配列の最初の子供の情報を使う
+                if let children = info.children, let firstChild = children.first {
+                    p.posterChildAgeName = firstChild["name"] as? String
+                    p.posterChildGender = firstChild["gender"] as? Int
+                }
             }
             return p
         }
@@ -465,13 +473,13 @@ class PostsViewModel: ObservableObject {
             var frontURL: String? = nil
             var backURL: String? = nil
 
-            if let front = frontImage, let data = stripEXIF(from: resizeImage(front)) {
+            if let front = frontImage, let data = stripEXIF(from: front) {
                 let ref = storage.reference().child("posts/\(postId)/front.jpg")
                 _ = try await ref.putDataAsync(data)
                 frontURL = try await ref.downloadURL().absoluteString
             }
 
-            if let back = backImage, let data = stripEXIF(from: resizeImage(back)) {
+            if let back = backImage, let data = stripEXIF(from: back) {
                 let ref = storage.reference().child("posts/\(postId)/back.jpg")
                 _ = try await ref.putDataAsync(data)
                 backURL = try await ref.downloadURL().absoluteString

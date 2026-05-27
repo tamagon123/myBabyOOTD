@@ -392,11 +392,37 @@ class AuthViewModel: ObservableObject {
         do {
             // Delete user document from Firestore
             try await db.collection("users").document(uid).delete()
-            // Delete posts by this user
+            // Delete posts by this user (including subcollections and Storage images)
             let postsSnapshot = try await db.collection("posts")
                 .whereField("user_id", isEqualTo: uid)
                 .getDocuments()
             for doc in postsSnapshot.documents {
+                let postId = doc.documentID
+                let postData = doc.data()
+                // Delete Storage images
+                for key in ["image_url_front", "image_url_back"] {
+                    if let urlStr = postData[key] as? String, !urlStr.isEmpty,
+                       let url = URL(string: urlStr) {
+                        let path = url.path.components(separatedBy: "/o/").last?
+                            .components(separatedBy: "?").first ?? ""
+                        let decoded = path.removingPercentEncoding ?? path
+                        if !decoded.isEmpty {
+                            try? await Storage.storage().reference(withPath: decoded).delete()
+                        }
+                    }
+                }
+                // Delete items subcollection
+                let itemsSnap = try? await doc.reference.collection("items").getDocuments()
+                for itemDoc in itemsSnap?.documents ?? [] {
+                    try? await itemDoc.reference.delete()
+                }
+                // Delete likes on this post by other users
+                let postLikesSnap = try? await db.collection("likes")
+                    .whereField("post_id", isEqualTo: postId)
+                    .getDocuments()
+                for likeDoc in postLikesSnap?.documents ?? [] {
+                    try? await likeDoc.reference.delete()
+                }
                 try? await doc.reference.delete()
             }
             // Delete likes by this user

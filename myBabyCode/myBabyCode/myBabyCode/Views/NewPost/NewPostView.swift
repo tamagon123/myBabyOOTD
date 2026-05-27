@@ -487,6 +487,27 @@ struct NewPostView: View {
                     }
                 }
             }
+
+            // 地域選択（天気自動取得の基準地域）
+            VStack(alignment: .leading, spacing: 4) {
+                Text("地域")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Picker("地域", selection: $selectedRegionIndex) {
+                    ForEach(-1..<prefectures.count, id: \.self) { i in
+                        Text(i == -1 ? "非公表" : prefectures[i]).tag(i)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+                .onChange(of: selectedRegionIndex) { _ in
+                    if selectedRegionIndex >= 0 { fetchWeather() }
+                }
+            }
+
             HStack(spacing: 8) {
                 ForEach(WeatherType.allCases) { w in
                     Button {
@@ -621,31 +642,34 @@ struct NewPostView: View {
 
             if let uiImg = img {
                 GeometryReader { geo in
-                    let imgH = uiImg.size.height / uiImg.size.width * geo.size.width
-                    ZStack {
+                    let imgW = geo.size.width
+                    let imgH = uiImg.size.height / uiImg.size.width * imgW
+                    ZStack(alignment: .topLeading) {
                         Image(uiImage: uiImg)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: geo.size.width)
+                            .frame(width: imgW, height: imgH)
                             .contentShape(Rectangle())
                             .gesture(
                                 DragGesture(minimumDistance: 0)
                                     .onEnded { val in
                                         guard items.indices.contains(idx) else { return }
-                                        let ratioX = val.location.x / geo.size.width
-                                        let ratioY = val.location.y / imgH
+                                        let ratioX = max(0, min(1, val.location.x / imgW))
+                                        let ratioY = max(0, min(1, val.location.y / imgH))
                                         items[idx].tagPosition = CGPoint(x: ratioX, y: ratioY)
                                         items[idx].tagSide = taggingSide
+                                        print("[DEBUG] Tag saved: item=\(idx), side=\(taggingSide), pos=(\(ratioX), \(ratioY))")
                                         taggingItemIndex = nil
                                     }
                             )
                         ForEach(items.indices, id: \.self) { i in
                             tagDotOverlay(items: items, i: i, side: taggingSide,
-                                          geoWidth: geo.size.width, imgH: imgH)
+                                          geoWidth: imgW, imgH: imgH)
                         }
                     }
+                    .frame(width: imgW, height: imgH)
                 }
-                .frame(height: UIScreen.main.bounds.width * CGFloat(uiImg.size.height / uiImg.size.width))
+                .frame(height: UIScreen.main.bounds.width * CGFloat(uiImg.size.height) / CGFloat(uiImg.size.width))
             } else {
                 Text("写真を先に追加してください")
                     .font(.caption)
@@ -700,6 +724,8 @@ struct NewPostView: View {
         guard let user = authViewModel.currentUser else { return }
         if let idx = Int(user.region_code), idx >= 1, idx <= 47 {
             selectedRegionIndex = idx - 1
+        } else {
+            selectedRegionIndex = -1
         }
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
         if let draft = draftManager.pendingDraft {
@@ -801,17 +827,22 @@ struct NewPostView: View {
     //   3. エラー時はエラーメッセージを設定
     // =============================================================================
     private func fetchWeather() {
+        guard selectedRegionIndex >= 0 else {
+            isFetchingWeather = false
+            return
+        }
         let code = String(format: "%02d", selectedRegionIndex + 1)
         isFetchingWeather = true
         Task {
-            if let result = await WeatherService.shared.fetch(regionCode: code) {
-                await MainActor.run {
+            let result = await WeatherService.shared.fetch(regionCode: code)
+            await MainActor.run {
+                if let result = result {
                     tempMax = String(format: "%.0f", result.tempMax)
                     tempMin = String(format: "%.0f", result.tempMin)
                     weatherType = WeatherType(rawValue: result.weatherType) ?? .sunny
                 }
+                isFetchingWeather = false
             }
-            await MainActor.run { isFetchingWeather = false }
         }
     }
 
@@ -832,7 +863,7 @@ struct NewPostView: View {
         let effectiveBirthday = selectedChild?.birthday ?? user.child_birthday
         let effectiveGender = selectedChild.map { ChildGender(rawValue: $0.gender)?.rawValue ?? selectedGender.rawValue } ?? selectedGender.rawValue
 
-        let regionCode = String(format: "%02d", selectedRegionIndex + 1)
+        let regionCode = selectedRegionIndex >= 0 ? String(format: "%02d", selectedRegionIndex + 1) : "00"
         let tMax = Double(tempMax) ?? 20
         let tMin = Double(tempMin) ?? 15
 
@@ -862,12 +893,14 @@ struct NewPostView: View {
         let tags: [PostItemTag] = items.indices.compactMap { idx -> PostItemTag? in
             guard let pos = items[idx].tagPosition else { return nil }
             guard let filteredIdx = originalToFilteredIndex[idx] else { return nil }
-            return PostItemTag(
+            let tag = PostItemTag(
                 item_index: filteredIdx,
                 x_ratio: Double(pos.x),
                 y_ratio: Double(pos.y),
                 image_side: items[idx].tagSide
             )
+            print("[DEBUG] PostItemTag created: item_index=\(tag.item_index), side=\(tag.image_side)")
+            return tag
         }
         var collectedTags: [PostItemTag] = tags
         postsViewModel.setPendingItemTags(collectedTags)
@@ -925,6 +958,8 @@ struct ItemEntryRow: View {
     var onRemove: () -> Void
     var onTag: () -> Void
 
+    @State private var showBrandSearch = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -954,10 +989,30 @@ struct ItemEntryRow: View {
                         .foregroundColor(.red.opacity(0.7))
                 }
             }
-            HStack(spacing: 12) {
-                TextField("ブランド名（例: UNIQLO）", text: $entry.brandName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 8) {
+                // ブランド入力フィールド
+                HStack(spacing: 0) {
+                    TextField("ブランド名（例: UNIQLO）", text: $entry.brandName)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                    Button {
+                        showBrandSearch = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Color.accentBlue)
+                            .cornerRadius(8)
+                    }
+                    .padding(.trailing, 4)
+                }
+                .background(Color(.systemBackground))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.systemGray4), lineWidth: 1))
+                .frame(maxWidth: .infinity)
+
                 Picker("サイズ", selection: $entry.selectedSize) {
                     ForEach(clothingSizes, id: \.self) { s in
                         Text(sizeLabel(s)).tag(s)
@@ -973,6 +1028,129 @@ struct ItemEntryRow: View {
         .padding(10)
         .background(Color(.systemGray6).opacity(0.6))
         .cornerRadius(12)
+        .sheet(isPresented: $showBrandSearch) {
+            BrandSearchSheet(selectedBrand: $entry.brandName)
+        }
+    }
+}
+
+// MARK: - BrandSearchSheet（メルカリ風ブランド検索）
+
+struct BrandSearchSheet: View {
+    @Binding var selectedBrand: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var query: String = ""
+    @FocusState private var isSearchFocused: Bool
+
+    private let popularBrands: [String] = [
+        "UNIQLO", "無印良品", "GU", "H&M", "Zara", "GAP",
+        "babyGAP", "Old Navy", "Carter's", "西松屋", "しまむら",
+        "mikihouse", "COMME CA ISM", "F.O.KIDS", "Petit Bateau",
+        "Boden", "Gymboree", "The Children's Place", "next",
+        "ZARA KIDS", "H&M Kids", "Mothercare", "Frugi",
+        "Boboli", "Mexx", "Oilily", "Jacadi", "Bonpoint",
+        "POLO Ralph Lauren Kids", "Tommy Hilfiger Kids",
+        "Nike Kids", "adidas Kids", "New Balance Kids",
+        "CONVERSE KIDS", "VANS Kids", "Reebok Kids",
+        "familiar", "セラフ", "コムサイズム", "ナルミヤ",
+        "BREEZE", "BREEZE BRONCO", "BONJOUR DIARY",
+        "earth music&ecology Kids", "Ribbon Tribe",
+        "ALGY", "COMME CA DU MODE", "SHIPS Kids", "EDIFICE Kids"
+    ]
+
+    private var filteredBrands: [String] {
+        if query.isEmpty { return popularBrands }
+        return popularBrands.filter { $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // 検索バー
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("ブランド名を検索", text: $query)
+                        .focused($isSearchFocused)
+                        .submitLabel(.search)
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+                // 直接入力ボタン（検索結果にない場合）
+                if !query.isEmpty && !filteredBrands.contains(where: { $0.lowercased() == query.lowercased() }) {
+                    Button {
+                        selectedBrand = query
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.accentBlue)
+                            Text("「\(query)」を使用する")
+                                .font(.system(size: 14))
+                                .foregroundColor(.accentBlue)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.accentBlue.opacity(0.06))
+                    }
+                    .buttonStyle(.plain)
+                    Divider()
+                }
+
+                // ブランドリスト
+                List {
+                    if filteredBrands.isEmpty {
+                        Text("該当するブランドが見つかりません")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 20)
+                            .listRowBackground(Color.clear)
+                    } else {
+                        Section(header: Text(query.isEmpty ? "人気ブランド" : "検索結果").font(.caption)) {
+                            ForEach(filteredBrands, id: \.self) { brand in
+                                Button {
+                                    selectedBrand = brand
+                                    dismiss()
+                                } label: {
+                                    HStack {
+                                        Text(brand)
+                                            .font(.system(size: 15))
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        if selectedBrand == brand {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.accentBlue)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+            .navigationTitle("ブランドを選択")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+            .onAppear { isSearchFocused = true }
+        }
     }
 }
 
@@ -1199,7 +1377,14 @@ struct PhotoEditorView: View {
                         DragGesture(minimumDistance: 0)
                             .onEnded { val in
                                 guard let kind = selectedKind else { return }
-                                let stamp = PlacedStamp(kind: kind, position: val.location)
+                                // GeometryReader座標 → 実際の画像上の座標に変換
+                                let stampX = val.location.x - offsetX
+                                let stampY = val.location.y - offsetY
+                                let position = CGPoint(
+                                    x: max(0, min(stampX, dispW)),
+                                    y: max(0, min(stampY, dispH))
+                                )
+                                let stamp = PlacedStamp(kind: kind, position: position)
                                 stampItems.append(stamp)
                                 history.append(.addStamp(stamp))
                                 activeStampId = stamp.id
@@ -1208,6 +1393,7 @@ struct PhotoEditorView: View {
                     )
                 ForEach($stampItems) { $stamp in
                     StampView(stamp: $stamp,
+                              canvasOffset: canvasOffset,
                               isActive: activeStampId == stamp.id,
                               onTap: { activeStampId = stamp.id },
                               onRemove: {
@@ -1323,6 +1509,7 @@ struct PhotoEditorView: View {
 
 struct StampView: View {
     @Binding var stamp: PlacedStamp
+    let canvasOffset: CGPoint
     let isActive: Bool
     let onTap: () -> Void
     let onRemove: () -> Void
@@ -1386,8 +1573,8 @@ struct StampView: View {
             }
         }
         .position(
-            x: stamp.position.x + dragOffset.width,
-            y: stamp.position.y + dragOffset.height
+            x: stamp.position.x + canvasOffset.x + dragOffset.width,
+            y: stamp.position.y + canvasOffset.y + dragOffset.height
         )
         .gesture(
             SimultaneousGesture(

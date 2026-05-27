@@ -70,6 +70,47 @@ final class ImageCacheService {
 //       contentクロージャで表示方法（角丸、リサイズなど）をカスタマイズできる。
 //       placeholderクロージャで読み込み中のプレースホルダーを指定できる。
 
+// MARK: - CachedAsyncImageWithSize
+// UIImageを直接コンテンツクロージャに渡すバリアント（アスペクト比計算など用途に使用）
+struct CachedAsyncImageWithSize<Content: View, Placeholder: View>: View {
+    let url: String?
+    let content: (UIImage) -> Content
+    let placeholder: () -> Placeholder
+
+    @State private var loadedImage: UIImage? = nil
+    @State private var isLoading = false
+
+    var body: some View {
+        Group {
+            if let img = loadedImage {
+                content(img)
+            } else {
+                placeholder()
+                    .task(id: url) { await load() }
+            }
+        }
+    }
+
+    private func load() async {
+        guard let urlString = url, !urlString.isEmpty,
+              let nsURL = URL(string: urlString) else { return }
+        if let cached = ImageCacheService.shared.get(urlString) {
+            loadedImage = cached
+            return
+        }
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: nsURL)
+            if let img = UIImage(data: data) {
+                ImageCacheService.shared.set(img, for: urlString)
+                loadedImage = img
+            }
+        } catch {}
+    }
+}
+
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let url: String?                   // 画像のダウンロードURL（StorageのURLなど）
     let content: (Image) -> Content    // 画像読み込み成功時のView生成クロージャ

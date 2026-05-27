@@ -19,7 +19,7 @@ struct ProfileSetupView: View {
     // === 必須入力項目 ===
     @State private var uniqueUserId: String = ""   // 一意のユーザーID（英数字・記号）
     @State private var displayName: String = ""    // 画面に表示される名前
-    @State private var regionIndex: Int = 12       // 都道府県インデックス（デフォルト: 東京都）
+    @State private var regionIndex: Int = -1       // 都道府県インデックス（-1=非公表、デフォルト）
 
     // === アバター設定 ===
     @State private var avatarId: String = "bear"          // アバター識別子（画像名/URL/絵文字）
@@ -38,6 +38,9 @@ struct ProfileSetupView: View {
     @State private var isCheckingId: Bool = false   // ユーザーID重複チェック中フラグ
     @State private var idAvailable: Bool? = nil     // ユーザーIDの重複チェック結果
     @State private var showError: Bool = false      // エラー表示フラグ
+    
+    // === 使い方ページ表示 ===
+    @State private var showAppGuide: Bool = false   // 使い方ページ表示フラグ
 
     // 計算プロパティ: 送信可能かどうか（必須項目入力＆ID未重複）
     private var canSubmit: Bool {
@@ -48,13 +51,10 @@ struct ProfileSetupView: View {
 
     // プリセットのアバター背景色（パステル系）
     private let presetColors: [String] = [
-        "#FFEEBA", // Light yellow (default)
-        "#FFD1DC", // Pastel pink
-        "#C1E1C1", // Pastel green
-        "#B4D7F0", // Pastel blue
-        "#E6E6FA", // Lavender
-        "#FFDAB9", // Peach
-        "#F0E68C", // Khaki
+        "#FFEEBA", "#D0EAFA", "#D4EDD8", "#FFD6D6", "#E8D8F0",
+        "#FFFFFF", "#E0E0E0", "#B2F0E8", "#FFCBA4", "#D8C5F0",
+        "#B8E2FF", "#FFF5B2", "#FFB6C1", "#BDD5BD", "#FFF8D6",
+        "#555555", "#2C3E6B"
     ]
 
     // =============================================================================
@@ -143,11 +143,12 @@ struct ProfileSetupView: View {
 
                         // Region
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("お住まいの地域 *")
+                            Text("お住まいの地域")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 4)
                             Picker("地域", selection: $regionIndex) {
+                                Text("非公表").tag(-1)
                                 ForEach(prefectures.indices, id: \.self) { i in
                                     Text(prefectures[i]).tag(i)
                                 }
@@ -219,16 +220,25 @@ struct ProfileSetupView: View {
             .sheet(isPresented: $showAvatarPicker) {
                 AvatarPickerView(selectedAvatarId: $avatarId, isPresented: $showAvatarPicker)
             }
+            // 使い方ページ表示（初回登録時）
+            .sheet(isPresented: $showAppGuide) {
+                AppGuideView(
+                    isFirstLaunch: true,
+                    onComplete: {
+                        showAppGuide = false
+                        dismiss()
+                    }
+                )
+            }
         }
     }
 
     // MARK: - Avatar Section
     private var avatarSection: some View {
         VStack(spacing: 16) {
-            // Avatar display
+            // Avatar display (preview)
             ZStack {
                 if let selectedImage = selectedAvatarImage {
-                    // Selected library image (preview before upload)
                     Image(uiImage: selectedImage)
                         .resizable()
                         .scaledToFill()
@@ -240,40 +250,53 @@ struct ProfileSetupView: View {
                     }
                 } else if avatarImageNames.contains(avatarId) {
                     Image(avatarId).resizable().scaledToFill()
-                } else if avatarId.count == 1 || avatarId.count == 2 {
-                    // Emoji avatar (1 or 2 character emoji string)
-                    Text(avatarId)
-                        .font(.system(size: 56))
                 } else {
                     Image(systemName: "person.fill")
                         .font(.system(size: 40))
                         .foregroundColor(.secondary)
                 }
             }
-            .frame(width: 100, height: 100)
+            .frame(width: 90, height: 90)
             .background(Color(hex: avatarBgColor))
             .clipShape(Circle())
             .overlay(Circle().stroke(Color.white, lineWidth: 3))
             .shadow(radius: 4)
 
-            // Avatar selection buttons
-            HStack(spacing: 16) {
-                Button {
-                    selectedAvatarImage = nil
-                    showAvatarPicker = true
-                } label: {
-                    Label("アバターを選択", systemImage: "face.smiling")
-                        .font(.system(size: 13))
-                        .foregroundColor(.accentRed)
+            // キャラクターアバターのインライングリッド
+            VStack(alignment: .leading, spacing: 8) {
+                Text("アバターを選択")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 70))], spacing: 10) {
+                    ForEach(avatarImageNames, id: \.self) { name in
+                        Button {
+                            selectedAvatarImage = nil
+                            avatarId = name
+                        } label: {
+                            Image(name)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(6)
+                                .frame(width: 70, height: 70)
+                                .background(Color.white)
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(avatarId == name ? Color.accentRed : Color.clear, lineWidth: 2.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+            }
 
-                Button {
-                    showImagePicker = true
-                } label: {
-                    Label("ライブラリから選択", systemImage: "photo")
-                        .font(.system(size: 13))
-                        .foregroundColor(.accentRed)
-                }
+            // ライブラリから写真を選ぶボタン
+            Button {
+                showImagePicker = true
+            } label: {
+                Label("写真ライブラリから選択", systemImage: "photo")
+                    .font(.system(size: 13))
+                    .foregroundColor(.accentRed)
             }
 
             // Background color selection
@@ -281,12 +304,11 @@ struct ProfileSetupView: View {
                 Text("アバター背景色")
                     .font(.caption)
                     .foregroundColor(.secondary)
-
-                HStack(spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 9), spacing: 10) {
                     ForEach(presetColors, id: \.self) { color in
                         Circle()
                             .fill(Color(hex: color))
-                            .frame(width: 32, height: 32)
+                            .frame(width: 30, height: 30)
                             .overlay(
                                 Circle()
                                     .stroke(avatarBgColor == color ? Color.primary : Color.clear, lineWidth: 2)
@@ -330,9 +352,8 @@ struct ProfileSetupView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 4)
-                        DatePicker("", selection: $childBirthday, displayedComponents: .date)
-                            .datePickerStyle(.compact)
-                            .padding()
+                        SplitBirthdayPicker(date: $childBirthday)
+                            .padding(8)
                             .background(Color.white)
                             .cornerRadius(14)
                             .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
@@ -364,7 +385,7 @@ struct ProfileSetupView: View {
     // MARK: - Actions
     private func completeProfile() {
         showError = false
-        let code = String(format: "%02d", regionIndex + 1)
+        let code = regionIndex >= 0 ? String(format: "%02d", regionIndex + 1) : "00"
 
         // Build children array if input is enabled
         var children: [ChildProfile]? = nil
@@ -386,7 +407,10 @@ struct ProfileSetupView: View {
                 avatarBgColor: avatarBgColor,
                 children: children
             )
-            if !success {
+            if success {
+                // プロフィール設定完了後、使い方ページを表示
+                showAppGuide = true
+            } else {
                 showError = true
             }
         }

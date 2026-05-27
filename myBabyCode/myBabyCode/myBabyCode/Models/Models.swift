@@ -74,6 +74,8 @@ struct Post: Identifiable, Codable {
     var posterAvatarBgColor: String?
     var posterDisplayName: String?
     var posterChildAgeName: String?
+    var posterUniqueUserId: String?    // 表示用ユーザーID（@xxx）
+    var posterChildGender: Int?        // 子供の性別（ChildGender.rawValue）
 
     // CodingKeys: Firestoreとの送受信時に含めるフィールドを限定
     // ローカル専用フィールド（poster〜）を除外して送受信する
@@ -262,7 +264,14 @@ let avatarEmojis: [String] = [
 let avatarImageNames: [String] = [
     // 例: "avatar_bear",
     // 例: "avatar_cat",
-    "avatar_zou"
+    "zou",
+    "inu",
+    "kirin",
+    "neko",
+    "saru",
+    "panda",
+    "tori"
+    
 ]
 
 // MARK: - Stamp Image Names
@@ -271,5 +280,13 @@ let avatarImageNames: [String] = [
 let stampImageNames: [String] = [
     // 例: "stamp_star",
     // 例: "stamp_heart",
-    "stamp_zou"
+    "face1a",
+    "face1b",
+    "face1c",
+    "face2a",
+    "face2b",
+    "face2c",
+    "face3a",
+    "face3b",
+    "face3c"
 ]

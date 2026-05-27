@@ -29,10 +29,14 @@ struct PostCardView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
 
-    // 計算プロパティ: frontとbackの画像URLを配列化（nil/空文字は除外）
-    private var imageURLs: [String] {
-        [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
+    // 計算プロパティ: frontとbackの画像URLを(URL, side)のタプルで配列化
+    private var imageEntries: [(url: String, side: String)] {
+        var result: [(url: String, side: String)] = []
+        if let f = post.image_url_front, !f.isEmpty { result.append((f, "front")) }
+        if let b = post.image_url_back, !b.isEmpty { result.append((b, "back")) }
+        return result
     }
+    private var imageURLs: [String] { imageEntries.map { $0.url } }
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -78,13 +82,40 @@ struct PostCardView: View {
                         .background(avatarBg)
                         .clipShape(Circle())
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(post.posterDisplayName ?? "名前未設定")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.primary)
-                            Text(ageLabel(months: post.child_age_months) + " • " + regionLabel(code: post.region_code) + " • " + timeAgo(ts: post.created_at))
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            // 1行目: 表示名 + グレーのユーザーID
+                            HStack(spacing: 4) {
+                                Text(post.posterDisplayName ?? "名前未設定")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                if let uid = post.posterUniqueUserId, !uid.isEmpty {
+                                    Text("@\(uid)")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            // 2行目: 子供名・性別・生後○ヶ月・地域・時刻
+                            HStack(spacing: 4) {
+                                if let name = post.posterChildAgeName, !name.isEmpty {
+                                    Text(name)
+                                        .lineLimit(1)
+                                }
+                                let genderStr = genderLabel(post.posterChildGender)
+                                if !genderStr.isEmpty {
+                                    Text("・\(genderStr)")
+                                        .lineLimit(1)
+                                }
+                                Text("・\(ageLabel(months: post.child_age_months))")
+                                    .lineLimit(1)
+                                Text("・\(regionLabel(code: post.region_code))")
+                                    .lineLimit(1)
+                                Text("・\(timeAgo(ts: post.created_at))")
+                                    .lineLimit(1)
+                            }
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -181,7 +212,12 @@ struct PostCardView: View {
             Text("不適切なコンテンツとして報告されます。")
         }
         .sheet(isPresented: $showPostDetail) {
-            PostDetailView(post: post, onDeleted: { _ in })
+            PostDetailView(
+                post: post,
+                isLiked: isLiked,
+                onLike: onLike,
+                onDeleted: { _ in }
+            )
                 .environmentObject(authViewModel)
                 .environmentObject(postsViewModel)
         }
@@ -193,67 +229,71 @@ struct PostCardView: View {
     // MARK: - Photo Carousel
     // 説明: 投稿写真のカルーセル表示＋アイテムタグオーバーレイ
 
+    private func imageSlide(uiImage: UIImage, entry: (url: String, side: String), geo: GeometryProxy) -> some View {
+        let imgAspect = uiImage.size.height / uiImage.size.width
+        let dispH = geo.size.width * imgAspect
+        let tags = visibleTags(for: entry.side)
+        return ZStack(alignment: .topLeading) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: geo.size.width)
+            ForEach(tags) { tag in
+                itemTagDot(
+                    item: postItems.indices.contains(tag.item_index) ? postItems[tag.item_index] : nil,
+                    position: CGPoint(
+                        x: CGFloat(tag.x_ratio) * geo.size.width,
+                        y: CGFloat(tag.y_ratio) * dispH
+                    )
+                )
+            }
+        }
+        .frame(width: geo.size.width, height: max(dispH, geo.size.width - 32))
+        .clipped()
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !itemsLoaded { loadItems() }
+            withAnimation(.easeInOut(duration: 0.2)) { showItemTags.toggle() }
+        }
+    }
+
     // 計算プロパティ: 現在表示中の画像面（front/back）に対応するタグのみを抽出
-    private var visibleItemTags: [PostItemTag] {
+    private func visibleTags(for side: String) -> [PostItemTag] {
         guard showItemTags && itemsLoaded else { return [] }
-        let side = currentImageIndex == 0 ? "front" : "back"
-        return (post.item_tags ?? []).filter { $0.image_side == side }
+        let tags = (post.item_tags ?? []).filter { $0.image_side == side }
+        print("[DEBUG] visibleTags for \(side): found \(tags.count) tags")
+        for tag in tags {
+            print("[DEBUG]   - item_index=\(tag.item_index), side=\(tag.image_side)")
+        }
+        return tags
     }
 
     // =============================================================================
     // 【Viewサマリー】photoCarousel
     // 目的: 投稿写真をTabViewでカルーセル表示し、アイテムタグをオーバーレイする
-    // 戻り値: some View
-    // 構成:
-    //   - 画像URLがない場合: photoPlaceholder
-    //   - ある場合: TabView（.pageスタイル）+ CachedAsyncImageで画像表示
-    //   - タップでshowItemTags.toggle()
-    //   - GeometryReader上にvisibleItemTagsをドット＋ラベルでオーバーレイ
     // =============================================================================
     private var photoCarousel: some View {
-        ZStack(alignment: .topLeading) {
-            if imageURLs.isEmpty {
+        Group {
+            if imageEntries.isEmpty {
                 photoPlaceholder
             } else {
                 TabView(selection: $currentImageIndex) {
-                    ForEach(imageURLs.indices, id: \.self) { idx in
-                        CachedAsyncImage(url: imageURLs[idx]) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Color(.systemGray5).overlay(ProgressView())
+                    ForEach(Array(imageEntries.enumerated()), id: \.offset) { idx, entry in
+                        GeometryReader { geo in
+                            CachedAsyncImageWithSize(url: entry.url) { uiImage in
+                                imageSlide(uiImage: uiImage, entry: entry, geo: geo)
+                            } placeholder: {
+                                Color(.systemGray5).overlay(ProgressView())
+                                    .frame(width: geo.size.width, height: geo.size.width - 32)
+                            }
                         }
-                        .clipped()
+                        .frame(height: UIScreen.main.bounds.width - 32)
                         .tag(idx)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: imageURLs.count > 1 ? .always : .never))
+                .tabViewStyle(.page(indexDisplayMode: imageEntries.count > 1 ? .always : .never))
                 .frame(height: UIScreen.main.bounds.width - 32)
-                .onTapGesture {
-                    if !itemsLoaded { loadItems() }
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showItemTags.toggle()
-                    }
-                }
-                .onAppear {
-                    if !itemsLoaded {
-                        loadItems()
-                    }
-                }
-
-                GeometryReader { geo in
-                    ForEach(visibleItemTags) { tag in
-                        itemTagDot(
-                            item: postItems.indices.contains(tag.item_index)
-                                ? postItems[tag.item_index] : nil,
-                            position: CGPoint(
-                                x: CGFloat(tag.x_ratio) * geo.size.width,
-                                y: CGFloat(tag.y_ratio) * geo.size.height
-                            )
-                        )
-                    }
-                }
-                .allowsHitTesting(false)
-                .frame(height: UIScreen.main.bounds.width - 32)
+                .onAppear { if !itemsLoaded { loadItems() } }
             }
         }
         .cornerRadius(16)
@@ -303,7 +343,7 @@ struct PostCardView: View {
                 .shadow(color: .black.opacity(0.3), radius: 2)
             }
         }
-        .position(x: position.x, y: position.y)
+        .offset(x: position.x - 9, y: position.y - 9)
         .transition(.opacity)
     }
 
@@ -324,9 +364,11 @@ struct PostCardView: View {
         let db = Firestore.firestore()
         Task {
             do {
-                let snap = try await db.collection("posts").document(postId).collection("items").getDocuments()
+                let snap = try await db.collection("posts").document(postId).collection("items")
+                    .order(by: "item_id")
+                    .getDocuments()
                 let loaded = snap.documents.compactMap { try? $0.data(as: PostItem.self) }
-                await MainActor.run { 
+                await MainActor.run {
                     postItems = loaded
                     itemsLoaded = true
                 }
@@ -377,6 +419,15 @@ struct PostCardView: View {
     //   - months: Int - 月数
     // 戻り値: String - 人間が読める年齢表記
     // =============================================================================
+    private func genderLabel(_ gender: Int?) -> String {
+        switch gender {
+        case 1: return "男の子"
+        case 2: return "女の子"
+        case 3: return "その他"
+        default: return ""
+        }
+    }
+
     private func ageLabel(months: Int) -> String {
         if months < 12 { return "生後\(months)ヶ月" }
         let y = months / 12
@@ -392,7 +443,7 @@ struct PostCardView: View {
     // 戻り値: String - 都道府県名（例: "東京都"）
     // =============================================================================
     private func regionLabel(code: String) -> String {
-        guard let idx = Int(code), idx >= 1, idx <= prefectures.count else { return code }
+        guard let idx = Int(code), idx >= 1, idx <= prefectures.count else { return "非公表" }
         return prefectures[idx - 1]
     }
 

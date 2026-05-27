@@ -64,18 +64,28 @@ actor WeatherService {
     // 備考: API通信に失敗したり、対象地域がマッピングにない場合はnilを返す。
     // =============================================================================
     func fetch(regionCode: String) async -> WeatherResult? {
-        guard let coord = prefectureCoordinates[regionCode] else { return nil }
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=Asia%2FTokyo&forecast_days=1"
+        guard let coord = prefectureCoordinates[regionCode] else {
+            print("[WeatherService] regionCode not found: \(regionCode)")
+            return nil
+        }
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&forecast_days=1"
         guard let url = URL(string: urlString) else { return nil }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
+            if let raw = String(data: data, encoding: .utf8) {
+                print("[WeatherService] response: \(raw.prefix(300))")
+            }
             let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
             guard let tempMax = json.daily.temperature_2m_max.first,
                   let tempMin = json.daily.temperature_2m_min.first,
-                  let code = json.daily.weathercode.first else { return nil }
+                  let code = json.daily.weather_code.first else {
+                print("[WeatherService] missing fields in response")
+                return nil
+            }
             let weatherType = mapWeatherCode(code)
             return WeatherResult(tempMax: tempMax, tempMin: tempMin, weatherType: weatherType)
         } catch {
+            print("[WeatherService] error: \(error)")
             return nil
         }
     }
@@ -113,6 +123,6 @@ private struct OpenMeteoResponse: Decodable {
     struct DailyData: Decodable {
         let temperature_2m_max: [Double]  // 日次の最高気温配列（forecast_days=1なので1要素）
         let temperature_2m_min: [Double]  // 日次の最低気温配列
-        let weathercode: [Int]           // 日次の天気コード配列
+        let weather_code: [Int]           // 日次の天気コード配列（旧: weathercode）
     }
 }

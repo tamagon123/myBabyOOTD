@@ -17,6 +17,10 @@ struct HomeView: View {
 
     // ロゴタップ時にトップへスクロールさせるためのトリガー変数
     @State private var scrollToTopFlag = false
+    
+    // 表示モード: リスト表示 / グリッド表示
+    @State private var isGridMode: Bool = false
+    @State private var selectedPost: Post? = nil  // グリッド表示時の詳細画面用
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -41,10 +45,28 @@ struct HomeView: View {
                     showSearchButton: true
                 )
 
-                // タブセレクター: 新着 / おすすめ / フォロー中
-                TimelineTabBar(selected: $postsViewModel.currentTab)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                // タブセレクター: 新着 / おすすめ / フォロー中 + 表示モード切り替え
+                HStack(spacing: 12) {
+                    TimelineTabBar(selected: $postsViewModel.currentTab)
+                    
+                    // 表示モード切り替えボタン
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isGridMode.toggle()
+                        }
+                    } label: {
+                        Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
+                            .font(.system(size: 18))
+                            .foregroundColor(.accentRed)
+                            .frame(width: 36, height: 36)
+                            .background(Color.white)
+                            .cornerRadius(10)
+                            .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
 
                 // フィード表示エリア
                 if postsViewModel.isLoading {
@@ -64,48 +86,11 @@ struct HomeView: View {
                     }
                     Spacer()
                 } else {
-                    // 投稿リスト（無限スクロール対応）
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                // トップスクロール用の目印
-                                Color.clear.frame(height: 0).id("homeTop")
-                                ForEach(postsViewModel.posts, id: \.post_id) { post in
-                                    PostCardView(
-                                        post: post,
-                                        isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
-                                        onLike: {
-                                            Task { await postsViewModel.toggleLike(post: post) }
-                                        },
-                                        onReport: {
-                                            Task { await postsViewModel.report(post: post) }
-                                        }
-                                    )
-                                    // 最後の要素が表示されたら次ページを取得（無限スクロール）
-                                    .onAppear {
-                                        if post.post_id == postsViewModel.posts.last?.post_id {
-                                            Task { await postsViewModel.fetchMorePosts(user: authViewModel.currentUser) }
-                                        }
-                                    }
-                                }
-                                // さらに読み込める場合は下部にProgressView
-                                if postsViewModel.hasMorePosts {
-                                    HStack { Spacer(); ProgressView(); Spacer() }
-                                        .padding(.vertical, 12)
-                                }
-                            }
-                            .padding(.top, 8)
-                            .padding(.bottom, 16)
-                        }
-                        // Pull-to-refresh: 画面を下に引っ張って更新
-                        .refreshable {
-                            await postsViewModel.fetchPosts(user: authViewModel.currentUser)
-                            await postsViewModel.fetchLikedPosts()
-                        }
-                        // ロゴタップでトップへスクロール
-                        .onChange(of: scrollToTopFlag) { _ in
-                            withAnimation { proxy.scrollTo("homeTop") }
-                        }
+                    // 投稿表示（リスト or グリッド）
+                    if isGridMode {
+                        gridPostsView
+                    } else {
+                        listPostsView
                     }
                 }
             }
@@ -122,6 +107,124 @@ struct HomeView: View {
                     await postsViewModel.fetchPosts(user: authViewModel.currentUser)
                 }
             }
+            // 投稿詳細シート（グリッド表示時）
+            .sheet(item: $selectedPost) { post in
+                PostDetailView(
+                    post: post,
+                    isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                    onLike: { Task { await postsViewModel.toggleLike(post: post) } },
+                    onDeleted: { _ in }
+                )
+                .environmentObject(authViewModel)
+                .environmentObject(postsViewModel)
+            }
+        }
+    }
+    
+    // MARK: - List View
+    
+    private var listPostsView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // トップスクロール用の目印
+                    Color.clear.frame(height: 0).id("homeTop")
+                    ForEach(postsViewModel.posts, id: \.post_id) { post in
+                        PostCardView(
+                            post: post,
+                            isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                            onLike: {
+                                Task { await postsViewModel.toggleLike(post: post) }
+                            },
+                            onReport: {
+                                Task { await postsViewModel.report(post: post) }
+                            }
+                        )
+                        // 最後の要素が表示されたら次ページを取得（無限スクロール）
+                        .onAppear {
+                            if post.post_id == postsViewModel.posts.last?.post_id {
+                                Task { await postsViewModel.fetchMorePosts(user: authViewModel.currentUser) }
+                            }
+                        }
+                    }
+                    // さらに読み込める場合は下部にProgressView
+                    if postsViewModel.hasMorePosts {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                            .padding(.vertical, 12)
+                    }
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            }
+            // Pull-to-refresh: 画面を下に引っ張って更新
+            .refreshable {
+                await postsViewModel.fetchPosts(user: authViewModel.currentUser)
+                await postsViewModel.fetchLikedPosts()
+            }
+            // ロゴタップでトップへスクロール
+            .onChange(of: scrollToTopFlag) { _ in
+                withAnimation { proxy.scrollTo("homeTop") }
+            }
+        }
+    }
+    
+    // MARK: - Grid View (3 columns)
+    
+    private var gridPostsView: some View {
+        let cellSize = (UIScreen.main.bounds.width - 32 - 16) / 3 // 左右16px padding + 間隔8px
+        let columns = [
+            GridItem(.fixed(cellSize), spacing: 8),
+            GridItem(.fixed(cellSize), spacing: 8),
+            GridItem(.fixed(cellSize), spacing: 8)
+        ]
+        
+        return ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    // トップスクロール用の目印
+                    Color.clear.frame(height: 0).id("homeTop")
+                    
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(postsViewModel.posts, id: \.post_id) { post in
+                            MiniPostCardView(
+                                post: post,
+                                isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                                onLike: {
+                                    Task { await postsViewModel.toggleLike(post: post) }
+                                },
+                                onTap: {
+                                    selectedPost = post
+                                }
+                            )
+                            .frame(width: cellSize, height: cellSize * 1.3)
+                            // 最後の要素が表示されたら次ページを取得（無限スクロール）
+                            .onAppear {
+                                if post.post_id == postsViewModel.posts.last?.post_id {
+                                    Task { await postsViewModel.fetchMorePosts(user: authViewModel.currentUser) }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // さらに読み込める場合は下部にProgressView
+                    if postsViewModel.hasMorePosts {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                            .padding(.vertical, 12)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            }
+            // Pull-to-refresh: 画面を下に引っ張って更新
+            .refreshable {
+                await postsViewModel.fetchPosts(user: authViewModel.currentUser)
+                await postsViewModel.fetchLikedPosts()
+            }
+            // ロゴタップでトップへスクロール
+            .onChange(of: scrollToTopFlag) { _ in
+                withAnimation { proxy.scrollTo("homeTop") }
+            }
         }
     }
 }
@@ -137,13 +240,14 @@ struct AppHeaderView: View {
 
     var body: some View {
         ZStack {
-            // 中央: アプリ名「Nanikiru」（タップ可能）
+            // 中央: ロゴ画像（タップ可能）
             Button {
                 onLogoTap?()
             } label: {
-                Text("Nanikiru")
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundColor(.accentRed)
+                Image("logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 24)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)

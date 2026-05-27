@@ -15,6 +15,8 @@ import FirebaseAuth
 struct PostDetailView: View {
     // === 入力パラメータ ===
     let post: Post                              // 表示対象の投稿データ
+    var isLiked: Bool = false                   // いいね済みかどうか
+    var onLike: (() -> Void)? = nil             // いいね押下時のコールバック
     var onDeleted: ((Post) -> Void)? = nil      // 削除完了後のコールバック（オプション）
 
     // === 環境オブジェクト ===
@@ -29,6 +31,7 @@ struct PostDetailView: View {
     @State private var postItems: [PostItem] = []   // Firestoreから取得した投稿アイテム
     @State private var itemsLoaded = false          // アイテムロード済みフラグ
     @State private var showItemTags = false         // アイテムタグの表示/非表示
+    @State private var imageHeights: [Int: CGFloat] = [:]  // 各画像インデックス→実際の表示高さ
 
     // 計算プロパティ: 現在表示中の画像面に対応するタグのみ抽出
     private var visibleItemTags: [PostItemTag] {
@@ -40,6 +43,33 @@ struct PostDetailView: View {
     // 計算プロパティ: frontとbackの画像URLを配列化
     private var imageURLs: [String] {
         [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
+    }
+
+    private let screenW: CGFloat = UIScreen.main.bounds.width
+
+    private var carouselH: CGFloat {
+        imageHeights[currentImageIndex] ?? UIScreen.main.bounds.width
+    }
+
+    private var imageCarousel: some View {
+        TabView(selection: $currentImageIndex) {
+            ForEach(imageURLs.indices, id: \.self) { idx in
+                CachedAsyncImageWithSize(url: imageURLs[idx]) { uiImage in
+                    detailImageSlide(uiImage: uiImage, idx: idx, screenW: screenW)
+                        .onAppear {
+                            let h = screenW * uiImage.size.height / uiImage.size.width
+                            if imageHeights[idx] != h { imageHeights[idx] = h }
+                        }
+                } placeholder: {
+                    Color(.systemGray5).overlay(ProgressView())
+                        .frame(width: screenW, height: screenW)
+                }
+                .tag(idx)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: imageURLs.count > 1 ? .always : .never))
+        .frame(width: screenW, height: carouselH)
+        .animation(.easeInOut(duration: 0.2), value: carouselH)
     }
 
     // =============================================================================
@@ -69,74 +99,44 @@ struct PostDetailView: View {
                                     .foregroundColor(.secondary.opacity(0.4))
                             )
                     } else {
-                        ZStack(alignment: .topLeading) {
-                            TabView(selection: $currentImageIndex) {
-                                ForEach(imageURLs.indices, id: \.self) { idx in
-                                    CachedAsyncImage(url: imageURLs[idx]) { image in
-                                            image.resizable().scaledToFill()
-                                        } placeholder: {
-                                            Color(.systemGray5).overlay(ProgressView())
-                                        }
-                                    .clipped()
-                                    .tag(idx)
-                                }
-                            }
-                            .tabViewStyle(.page(indexDisplayMode: imageURLs.count > 1 ? .always : .never))
-                            .frame(height: UIScreen.main.bounds.width)
-                            .onTapGesture {
-                                if !itemsLoaded { Task { await loadItems() } }
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    showItemTags.toggle()
-                                }
-                            }
-
-                            GeometryReader { geo in
-                                ForEach(visibleItemTags) { tag in
-                                    itemTagDot(
-                                        item: postItems.indices.contains(tag.item_index)
-                                            ? postItems[tag.item_index] : nil,
-                                        position: CGPoint(
-                                            x: CGFloat(tag.x_ratio) * geo.size.width,
-                                            y: CGFloat(tag.y_ratio) * geo.size.height
-                                        )
-                                    )
-                                }
-                            }
-                            .allowsHitTesting(false)
-                            .frame(height: UIScreen.main.bounds.width)
-                        }
+                        imageCarousel
                     }
 
                     VStack(alignment: .leading, spacing: 20) {
-                        // Poster info
-                        HStack(spacing: 12) {
-                            let avatarId = post.posterAvatarId ?? "bear"
-                            let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
-                            Group {
-                                if avatarId.hasPrefix("https://") {
-                                    AsyncImage(url: URL(string: avatarId)) { img in
-                                        img.resizable().scaledToFill()
-                                    } placeholder: { Color.ecruBackground }
-                                } else if avatarImageNames.contains(avatarId) {
-                                    Image(avatarId).resizable().scaledToFill()
-                                } else {
-                                    Image(systemName: "person.fill")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(avatarBg)
-                            .clipShape(Circle())
-
+                        // Poster info + Like button
+                        HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(post.posterDisplayName ?? "名前未設定")
                                     .font(.system(size: 15, weight: .bold))
-                                Text(ageLabel(months: post.child_age_months))
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
+                                HStack(spacing: 6) {
+                                    if let childName = post.posterChildAgeName, !childName.isEmpty {
+                                        Text(childName)
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                        Text("・")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Text(ageLabel(months: post.child_age_months))
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             Spacer()
+                            // Like button
+                            Button {
+                                onLike?()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(isLiked ? .red : .gray)
+                                    Text("\(post.likes_count)")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         // Weather / Temp
@@ -156,7 +156,7 @@ struct PostDetailView: View {
 
                         // Region
                         let region: String = {
-                            guard let idx = Int(post.region_code), idx >= 1, idx <= prefectures.count else { return post.region_code }
+                            guard let idx = Int(post.region_code), idx >= 1, idx <= prefectures.count else { return "非公表" }
                             return prefectures[idx - 1]
                         }()
                         Label(region, systemImage: "mappin.and.ellipse")
@@ -285,7 +285,9 @@ struct PostDetailView: View {
         }
         let db = Firestore.firestore()
         do {
-            let snap = try await db.collection("posts").document(postId).collection("items").getDocuments()
+            let snap = try await db.collection("posts").document(postId).collection("items")
+                .order(by: "item_id")
+                .getDocuments()
             postItems = snap.documents.compactMap { try? $0.data(as: PostItem.self) }
         } catch {}
         itemsLoaded = true
@@ -298,12 +300,43 @@ struct PostDetailView: View {
         return m == 0 ? "\(y)歳" : "\(y)歳\(m)ヶ月"
     }
 
+    // MARK: - Detail Image Slide
+
+    private func detailImageSlide(uiImage: UIImage, idx: Int, screenW: CGFloat) -> some View {
+        let dispH = screenW * uiImage.size.height / uiImage.size.width
+        let side = idx == 0 ? "front" : "back"
+        let tags: [PostItemTag] = showItemTags ? (post.item_tags ?? []).filter { $0.image_side == side } : []
+        return ZStack(alignment: .topLeading) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: screenW, height: dispH)
+            ForEach(tags) { tag in
+                itemTagDot(
+                    item: postItems.indices.contains(tag.item_index) ? postItems[tag.item_index] : nil,
+                    position: CGPoint(
+                        x: CGFloat(tag.x_ratio) * screenW,
+                        y: CGFloat(tag.y_ratio) * dispH
+                    )
+                )
+            }
+        }
+        .frame(width: screenW, height: dispH)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !itemsLoaded { Task { await loadItems() } }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showItemTags.toggle()
+            }
+        }
+    }
+
     // MARK: - Item Tag Dot
 
     @ViewBuilder
     private func itemTagDot(item: PostItem?, position: CGPoint) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            // White dot
+            // White dot（この中心がposition座標に一致する）
             ZStack {
                 Circle()
                     .fill(Color.white)
@@ -314,7 +347,7 @@ struct PostDetailView: View {
                     .frame(width: 18, height: 18)
             }
 
-            // Label with brand and size
+            // Label with brand and size（ドットの下に表示）
             if let item = item {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.custom_name)
@@ -332,7 +365,7 @@ struct PostDetailView: View {
                 .shadow(color: .black.opacity(0.3), radius: 2)
             }
         }
-        .position(x: position.x, y: position.y)
+        .offset(x: position.x - 9, y: position.y - 9)
         .transition(.opacity)
     }
 }

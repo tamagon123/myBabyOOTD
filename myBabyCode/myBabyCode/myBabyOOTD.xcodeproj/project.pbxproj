@@ -295,6 +295,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = myBabyCode/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Nanikiru;
 				INFOPLIST_KEY_NSCameraUsageDescription = "コーディネートの写真を撮影するためにカメラを使用します。";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "コーディネートの写真を選択するためにフォトライブラリへのアクセスが必要です。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -331,6 +332,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = myBabyCode/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Nanikiru;
 				INFOPLIST_KEY_NSCameraUsageDescription = "コーディネートの写真を撮影するためにカメラを使用します。";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "コーディネートの写真を選択するためにフォトライブラリへのアクセスが必要です。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

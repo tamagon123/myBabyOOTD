@@ -66,6 +66,15 @@ struct SettingsView: View {
                     Text("投稿")
                 }
 
+                // --- アプリについてセクション ---
+                Section {
+                    NavigationLink(destination: AppGuideView()) {
+                        Label("アプリの使い方", systemImage: "book.fill")
+                    }
+                } header: {
+                    Text("アプリについて")
+                }
+
                 // --- 法的情報セクション ---
                 Section {
                     NavigationLink(destination: TermsOfServiceView()) {

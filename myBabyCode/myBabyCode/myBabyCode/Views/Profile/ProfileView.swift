@@ -34,6 +34,8 @@ struct ProfileView: View {
     @State private var selectedTab: ProfileTab = .posts  // 選択中のタブ（投稿/いいね）
     @State private var showFollowingList = false       // フォロー一覧表示フラグ
     @State private var followingUsers: [AppUser] = [] // フォロー中のユーザーリスト
+    @State private var followingCount: Int = 0         // フォロー中の件数
+    @State private var isGridMode: Bool = false        // グリッド/リスト表示モード
 
     // ProfileTab: マイページ内の「投稿」/「いいね」タブ
     enum ProfileTab: String, CaseIterable {
@@ -105,7 +107,10 @@ struct ProfileView: View {
         .task {
             await loadProfile()
             await loadUserPosts()
-            if isOwnProfile { await loadLikedPosts() }
+            if isOwnProfile {
+                await loadLikedPosts()
+                await loadFollowingUsers()
+            }
             if !isOwnProfile { await checkFollowing() }
         }
         .sheet(isPresented: $showEditProfile) {
@@ -122,9 +127,14 @@ struct ProfileView: View {
                 .environmentObject(authViewModel)
         }
         .sheet(item: $selectedPost) { post in
-            PostDetailView(post: post, onDeleted: { deletedPost in
-                userPosts.removeAll { $0.id == deletedPost.id }
-            })
+            PostDetailView(
+                post: post,
+                isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                onLike: { Task { await postsViewModel.toggleLike(post: post) } },
+                onDeleted: { deletedPost in
+                    userPosts.removeAll { $0.id == deletedPost.id }
+                }
+            )
                 .environmentObject(authViewModel)
                 .environmentObject(postsViewModel)
         }
@@ -175,29 +185,25 @@ struct ProfileView: View {
             }
 
             // Stats
-            HStack(spacing: 32) {
+            HStack(spacing: 24) {
                 statView(count: userPosts.count, label: "投稿")
                 statView(count: profileUser?.followers_count ?? 0, label: "フォロワー")
-            }
-
-            // Following button (only for own profile)
-            if isOwnProfile {
-                Button {
-                    Task {
-                        await loadFollowingUsers()
-                        showFollowingList = true
+                if isOwnProfile {
+                    Button {
+                        Task {
+                            await loadFollowingUsers()
+                            showFollowingList = true
+                        }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text("\(followingCount)")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(.primary)
+                            Text("フォロー")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "person.2")
-                        Text("フォロー中のアカウント")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    .foregroundColor(.accentRed)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Color.accentRed.opacity(0.1))
-                    .cornerRadius(12)
                 }
             }
 
@@ -233,61 +239,68 @@ struct ProfileView: View {
 
     private var tabSelector: some View {
         HStack(spacing: 0) {
-            ForEach(ProfileTab.allCases, id: \.self) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    VStack(spacing: 8) {
-                        Text(tab.rawValue)
-                            .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .medium))
-                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
-                        Rectangle()
-                            .fill(selectedTab == tab ? Color.accentRed : Color.clear)
-                            .frame(height: 2)
+            HStack(spacing: 0) {
+                ForEach(ProfileTab.allCases, id: \.self) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        VStack(spacing: 8) {
+                            Text(tab.rawValue)
+                                .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .medium))
+                                .foregroundColor(selectedTab == tab ? .primary : .secondary)
+                            Rectangle()
+                                .fill(selectedTab == tab ? Color.accentRed : Color.clear)
+                                .frame(height: 2)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
             }
+            // グリッド/リスト切り替えボタン
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isGridMode.toggle()
+                }
+            } label: {
+                Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
+                    .font(.system(size: 18))
+                    .foregroundColor(.accentRed)
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 8)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 12)
         .padding(.top, 16)
         .padding(.bottom, 8)
     }
 
-    // MARK: - Posts Grid
+    // MARK: - Posts List / Grid
 
     private var postsGrid: some View {
-        let cellSize = (UIScreen.main.bounds.width - 4) / 3
-        let columns = [
-            GridItem(.fixed(cellSize), spacing: 2),
-            GridItem(.fixed(cellSize), spacing: 2),
-            GridItem(.fixed(cellSize), spacing: 2)
-        ]
-        return LazyVGrid(columns: columns, spacing: 2) {
-            ForEach(userPosts, id: \.post_id) { post in
-                let url = post.image_url_front ?? post.image_url_back
-                Button {
-                    selectedPost = post
-                } label: {
-                    CachedAsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: cellSize, height: cellSize)
-                                .clipped()
-                        } placeholder: {
-                            Color.ecruBackground
-                                .frame(width: cellSize, height: cellSize)
-                                .overlay(
-                                    Image(systemName: "photo")
-                                        .font(.title)
-                                        .foregroundColor(.secondary.opacity(0.4))
-                                )
-                        }
-                    .frame(width: cellSize, height: cellSize)
-                    .clipped()
+        Group {
+            if isGridMode {
+                profileMiniGrid(posts: userPosts)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(userPosts, id: \.post_id) { post in
+                        CompactPostCardView(
+                            post: post,
+                            isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                            onLike: {
+                                Task { await postsViewModel.toggleLike(post: post) }
+                            },
+                            onTap: {
+                                selectedPost = post
+                            },
+                            onReport: isOwnProfile ? nil : {
+                                Task { await postsViewModel.report(post: post) }
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 8)
             }
         }
     }
@@ -312,7 +325,25 @@ struct ProfileView: View {
                 .whereField("is_hidden", isEqualTo: false)
                 .order(by: "created_at", descending: true)
                 .getDocuments()
-            userPosts = try snap.documents.map { try $0.data(as: Post.self) }
+            var posts = try snap.documents.map { try $0.data(as: Post.self) }
+            // 投稿者情報（表示名・子供名）を付加
+            if let userData = try? await db.collection("users").document(userId).getDocument(),
+               let data = userData.data() {
+                let displayName = (data["display_name"] as? String) ?? (data["unique_user_id"] as? String)
+                let avatarId = data["avatar_id"] as? String ?? "bear"
+                let avatarBgColor = data["avatar_bg_color"] as? String
+                let children = data["children"] as? [[String: Any]]
+                let childName = children?.first?["name"] as? String
+                posts = posts.map { post in
+                    var p = post
+                    p.posterDisplayName = displayName
+                    p.posterAvatarId = avatarId
+                    p.posterAvatarBgColor = avatarBgColor
+                    p.posterChildAgeName = childName
+                    return p
+                }
+            }
+            userPosts = posts
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -347,42 +378,60 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Liked Posts Grid
+    // MARK: - Liked Posts List / Grid
 
     private var likedPostsGrid: some View {
-        let cellSize = (UIScreen.main.bounds.width - 4) / 3
-        let columns = [
-            GridItem(.fixed(cellSize), spacing: 2),
-            GridItem(.fixed(cellSize), spacing: 2),
-            GridItem(.fixed(cellSize), spacing: 2)
-        ]
-        return LazyVGrid(columns: columns, spacing: 2) {
-            ForEach(likedPosts, id: \.post_id) { post in
-                let url = post.image_url_front ?? post.image_url_back
-                Button {
-                    selectedPost = post
-                } label: {
-                    CachedAsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: cellSize, height: cellSize)
-                                .clipped()
-                        } placeholder: {
-                            Color.ecruBackground
-                                .frame(width: cellSize, height: cellSize)
-                                .overlay(
-                                    Image(systemName: "photo")
-                                        .font(.title)
-                                        .foregroundColor(.secondary.opacity(0.4))
-                                )
-                        }
-                    .frame(width: cellSize, height: cellSize)
-                    .clipped()
+        Group {
+            if isGridMode {
+                profileMiniGrid(posts: likedPosts)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(likedPosts, id: \.post_id) { post in
+                        CompactPostCardView(
+                            post: post,
+                            isLiked: true,
+                            onLike: {
+                                Task { await postsViewModel.toggleLike(post: post) }
+                            },
+                            onTap: {
+                                selectedPost = post
+                            },
+                            onReport: {
+                                Task { await postsViewModel.report(post: post) }
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 8)
             }
         }
+    }
+
+    private func profileMiniGrid(posts: [Post]) -> some View {
+        let cellSize = (UIScreen.main.bounds.width - 32 - 16) / 3
+        let columns = [
+            GridItem(.fixed(cellSize), spacing: 8),
+            GridItem(.fixed(cellSize), spacing: 8),
+            GridItem(.fixed(cellSize), spacing: 8)
+        ]
+        return LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(posts, id: \.post_id) { post in
+                MiniPostCardView(
+                    post: post,
+                    isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                    onLike: {
+                        Task { await postsViewModel.toggleLike(post: post) }
+                    },
+                    onTap: {
+                        selectedPost = post
+                    }
+                )
+                .frame(width: cellSize, height: cellSize * 1.3)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     private func checkFollowing() async {
@@ -425,6 +474,7 @@ struct ProfileView: View {
                 .whereField("follower_id", isEqualTo: myId)
                 .getDocuments()
             let followingIds = snap.documents.compactMap { $0.data()["following_id"] as? String }
+            followingCount = followingIds.count
             guard !followingIds.isEmpty else {
                 followingUsers = []
                 return
@@ -448,6 +498,7 @@ struct ProfileView: View {
 struct FollowingListView: View {
     let users: [AppUser]
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var postsViewModel: PostsViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedUserId: String? = nil
     @State private var selectedUserPosts: [Post] = []
@@ -526,6 +577,7 @@ struct FollowingListView: View {
             .sheet(isPresented: $showUserPosts) {
                 UserPostsSheet(userId: selectedUserId ?? "", posts: selectedUserPosts, isLoading: isLoadingPosts)
                     .environmentObject(authViewModel)
+                    .environmentObject(postsViewModel)
             }
         }
     }
@@ -553,6 +605,7 @@ struct UserPostsSheet: View {
     let posts: [Post]
     let isLoading: Bool
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var postsViewModel: PostsViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPost: Post? = nil
 
@@ -567,39 +620,26 @@ struct UserPostsSheet: View {
                         .foregroundColor(.secondary)
                         .padding(.top, 40)
                 } else {
-                    let cellSize = (UIScreen.main.bounds.width - 4) / 3
-                    let columns = [
-                        GridItem(.fixed(cellSize), spacing: 2),
-                        GridItem(.fixed(cellSize), spacing: 2),
-                        GridItem(.fixed(cellSize), spacing: 2)
-                    ]
-                    LazyVGrid(columns: columns, spacing: 2) {
+                    // 縦長カードリスト表示
+                    LazyVStack(spacing: 12) {
                         ForEach(posts, id: \.post_id) { post in
-                            let url = post.image_url_front ?? post.image_url_back
-                            Button {
-                                selectedPost = post
-                            } label: {
-                                CachedAsyncImage(url: url) { image in
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: cellSize, height: cellSize)
-                                        .clipped()
-                                } placeholder: {
-                                    Color.ecruBackground
-                                        .frame(width: cellSize, height: cellSize)
-                                        .overlay(
-                                            Image(systemName: "photo")
-                                                .font(.title)
-                                                .foregroundColor(.secondary.opacity(0.4))
-                                        )
+                            CompactPostCardView(
+                                post: post,
+                                isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                                onLike: {
+                                    Task { await postsViewModel.toggleLike(post: post) }
+                                },
+                                onTap: {
+                                    selectedPost = post
+                                },
+                                onReport: {
+                                    Task { await postsViewModel.report(post: post) }
                                 }
-                                .frame(width: cellSize, height: cellSize)
-                                .clipped()
-                            }
-                            .buttonStyle(.plain)
+                            )
+                            .padding(.horizontal, 16)
                         }
                     }
+                    .padding(.vertical, 8)
                 }
             }
             .background(Color.ecruBackground.ignoresSafeArea())
@@ -611,8 +651,14 @@ struct UserPostsSheet: View {
                 }
             }
             .sheet(item: $selectedPost) { post in
-                PostDetailView(post: post, onDeleted: { _ in })
+                PostDetailView(
+                    post: post,
+                    isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                    onLike: { Task { await postsViewModel.toggleLike(post: post) } },
+                    onDeleted: { _ in }
+                )
                     .environmentObject(authViewModel)
+                    .environmentObject(postsViewModel)
             }
         }
     }

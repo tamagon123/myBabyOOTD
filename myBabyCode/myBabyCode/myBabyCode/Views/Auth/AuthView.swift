@@ -55,18 +55,12 @@ struct AuthView: View {
                 VStack(spacing: 32) {
                     Spacer().frame(height: 20)
 
-                    // App icon
+                    // App logo
                     VStack(spacing: 14) {
-                        Image("icon")
+                        Image("logo")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 100, height: 100)
-                            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                            .shadow(color: .black.opacity(0.08), radius: 20, y: 8)
-
-                        Text("Nanikiru")
-                            .font(.system(size: 34, weight: .heavy))
-                            .foregroundColor(.accentRed)
+                            .frame(height: 160)
 
                         if authMode == .signUp {
                             Text("新規アカウントを作成")
