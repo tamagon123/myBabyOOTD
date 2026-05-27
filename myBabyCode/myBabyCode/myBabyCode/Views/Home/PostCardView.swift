@@ -26,6 +26,7 @@ struct PostCardView: View {
     @State private var showItemTags = false           // アイテムタグの表示/非表示
     @State private var postItems: [PostItem] = []     // Firestoreから取得した投稿アイテム
     @State private var itemsLoaded = false            // アイテムがロード済みか
+    @State private var currentImageHeight: CGFloat = UIScreen.main.bounds.width  // 写真の可変高さ
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
 
@@ -126,34 +127,77 @@ struct PostCardView: View {
             .padding(.top, 20)
             .padding(.bottom, 14)
 
-            // Photo carousel with item tag overlay
-            photoCarousel
+            // Photo carousel with overlays (item tags, weather, actions)
+            ZStack {
+                photoCarousel
 
-            // Tags: weather
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    weatherBadge
-                    if !(post.item_tags ?? []).isEmpty || (itemsLoaded && !postItems.isEmpty) {
-                        Button {
-                            if !itemsLoaded { loadItems() }
-                            withAnimation(.easeInOut(duration: 0.2)) { showItemTags.toggle() }
-                        } label: {
+                // 左上: 天気（天気別うっすらカラー）
+                VStack {
+                    HStack {
+                        weatherOverlayBadge
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    Spacer()
+                }
+
+                // 右下: ♡（ピンク） + アイテム + 通報
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Button(action: onLike) {
                             HStack(spacing: 4) {
-                                Image(systemName: showItemTags ? "tag.fill" : "tag")
-                                Text("アイテム")
+                                Image(systemName: isLiked ? "heart.fill" : "heart")
+                                    .foregroundColor(isLiked ? .pink : .white)
+                                Text("\(post.likes_count)")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(isLiked ? .pink : .white)
                             }
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.accentGreen)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(Color.accentGreen.opacity(0.1))
-                            .cornerRadius(16)
+                            .background(isLiked ? Color.pink.opacity(0.35) : Color.pink.opacity(0.25))
+                            .cornerRadius(20)
+                        }
+                        .buttonStyle(.plain)
+
+                        if !(post.item_tags ?? []).isEmpty || (itemsLoaded && !postItems.isEmpty) {
+                            Button {
+                                if !itemsLoaded { loadItems() }
+                                withAnimation(.easeInOut(duration: 0.2)) { showItemTags.toggle() }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: showItemTags ? "tag.fill" : "tag")
+                                    Text("アイテム")
+                                }
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.35))
+                                .cornerRadius(20)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            showReportAlert = true
+                        } label: {
+                            Label("通報", systemImage: "exclamationmark.triangle")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.35))
+                                .cornerRadius(20)
                         }
                         .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
             }
 
             // Untagged items list (items with no photo tag assigned)
@@ -169,36 +213,17 @@ struct PostCardView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(3)
                     .padding(.horizontal, 16)
+                    .padding(.top, 2)
                     .padding(.bottom, 4)
             }
 
-            // Footer
+            // Footer spacer
             HStack {
-                Button(action: onLike) {
-                    HStack(spacing: 4) {
-                        Image(systemName: isLiked ? "heart.fill" : "heart")
-                            .foregroundColor(isLiked ? .pink : .gray)
-                        Text("\(post.likes_count)")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(isLiked ? .pink : .gray)
-                    }
-                }
                 Spacer()
-                Button {
-                    showReportAlert = true
-                } label: {
-                    Label("通報", systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 11))
-                        .foregroundColor(.gray)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(8)
-                }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
+            .padding(.top, 2)
+            .padding(.bottom, 8)
         }
         .background(Color.white)
         .cornerRadius(24)
@@ -238,6 +263,15 @@ struct PostCardView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: geo.size.width)
+                .onAppear {
+                    // 写真のアスペクト比に応じて枠の高さを調整（上限1.4倍、下限0.5倍）
+                    let clampedH = min(max(dispH, geo.size.width * 0.5), geo.size.width * 1.4)
+                    if abs(currentImageHeight - clampedH) > 1 {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            currentImageHeight = clampedH
+                        }
+                    }
+                }
             ForEach(tags) { tag in
                 itemTagDot(
                     item: postItems.indices.contains(tag.item_index) ? postItems[tag.item_index] : nil,
@@ -248,8 +282,7 @@ struct PostCardView: View {
                 )
             }
         }
-        .frame(width: geo.size.width, height: max(dispH, geo.size.width - 32))
-        .clipped()
+        .frame(width: geo.size.width, height: dispH)
         .contentShape(Rectangle())
         .onTapGesture {
             if !itemsLoaded { loadItems() }
@@ -284,15 +317,15 @@ struct PostCardView: View {
                                 imageSlide(uiImage: uiImage, entry: entry, geo: geo)
                             } placeholder: {
                                 Color(.systemGray5).overlay(ProgressView())
-                                    .frame(width: geo.size.width, height: geo.size.width - 32)
+                                    .frame(width: geo.size.width, height: currentImageHeight)
                             }
                         }
-                        .frame(height: UIScreen.main.bounds.width - 32)
+                        .frame(height: currentImageHeight)
                         .tag(idx)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: imageEntries.count > 1 ? .always : .never))
-                .frame(height: UIScreen.main.bounds.width - 32)
+                .frame(height: currentImageHeight)
                 .onAppear { if !itemsLoaded { loadItems() } }
             }
         }
@@ -389,7 +422,7 @@ struct PostCardView: View {
     private var photoPlaceholder: some View {
         RoundedRectangle(cornerRadius: 16)
             .fill(Color.ecruBackground)
-            .frame(height: UIScreen.main.bounds.width - 32)
+            .frame(height: currentImageHeight)
             .overlay(
                 Image(systemName: "photo")
                     .font(.system(size: 40))
@@ -407,6 +440,27 @@ struct PostCardView: View {
         let wt = WeatherType(rawValue: post.weather_type)
         return Label("\(Int(post.temp_max))℃ / \(Int(post.temp_min))℃", systemImage: wt?.sfSymbol ?? "cloud.sun")
             .tagStyle(bg: Color.blue.opacity(0.1), fg: Color.blue.opacity(0.8))
+    }
+
+    // 写真上に重ねる専用の天気バッジ（白文字+半透明黒背景）
+    private var weatherOverlayBadge: some View {
+        let wt = WeatherType(rawValue: post.weather_type)
+        let bgColor: Color = {
+            switch wt {
+            case .sunny:  return Color.orange.opacity(0.35)
+            case .cloudy: return Color.gray.opacity(0.35)
+            case .rainy:  return Color.blue.opacity(0.35)
+            case .snowy:  return Color.cyan.opacity(0.35)
+            default:      return Color.black.opacity(0.35)
+            }
+        }()
+        return Label("\(Int(post.temp_max))℃ / \(Int(post.temp_min))℃", systemImage: wt?.sfSymbol ?? "cloud.sun")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(bgColor)
+            .cornerRadius(16)
     }
 
     // MARK: - Helpers
@@ -497,6 +551,19 @@ struct PostCardView: View {
                         .padding(.vertical, 3)
                         .background(Color(.systemGray6))
                         .cornerRadius(6)
+                    // 詳細ボタン
+                    Button {
+                        showPostDetail = true
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.accentRed)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.accentRed.opacity(0.1))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

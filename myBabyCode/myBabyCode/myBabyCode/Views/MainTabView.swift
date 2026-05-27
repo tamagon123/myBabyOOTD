@@ -66,9 +66,9 @@ struct MainTabView: View {
             )
         }
         .ignoresSafeArea(edges: .bottom)
-        // 新規投稿シート（+ボタンまたは下書き選択時に表示）
-        .sheet(isPresented: $showNewPost, onDismiss: {
-            // シートを閉じたらプロフィールViewを再描画（投稿件数更新のため）
+        // 新規投稿画面（+ボタンまたは下書き選択時にフルスクリーン表示）
+        .fullScreenCover(isPresented: $showNewPost, onDismiss: {
+            // 閉じたらプロフィールViewを再描画（投稿件数更新のため）
             profileRefreshId = UUID()
         }) {
             NewPostView()
@@ -159,32 +159,6 @@ struct BottomNavBar: View {
             // 選択中のタブは朱色、未選択はグレー
             .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
         }
-    }
-}
-
-// =============================================================================
-// MARK: - AdBannerView
-// 役割: 広告バナー表示領域のプレースホルダー
-// 説明:
-//   将来の広告導入に備えた領域確保Viewです。現在は「広告バナーエリア」という
-//   プレースホルダーテキストを表示しています。Google AdMobなどを導入する場合、
-//   このTextを実際の広告Viewに置き換えてください。
-// =============================================================================
-
-struct AdBannerView: View {
-    var body: some View {
-        ZStack {
-            Color(.systemGray6)
-            Text("広告バナーエリア")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 50)
-        .overlay(
-            Rectangle()
-                .stroke(Color(.systemGray4), lineWidth: 0.5)
-        )
     }
 }
 

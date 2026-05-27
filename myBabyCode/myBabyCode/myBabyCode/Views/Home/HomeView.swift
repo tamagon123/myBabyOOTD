@@ -15,9 +15,15 @@ struct HomeView: View {
     @EnvironmentObject var postsViewModel: PostsViewModel  // 投稿データ・タブ状態
     @EnvironmentObject var authViewModel: AuthViewModel    // ログインユーザー情報（おすすめ絞り込みに使用）
 
+    // === サブスクリプション（広告非表示判定）===
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
+
+    // アフィリエイトカードを何件ごとに挿入するか
+    private let affiliateInsertInterval: Int = 5
+
     // ロゴタップ時にトップへスクロールさせるためのトリガー変数
     @State private var scrollToTopFlag = false
-    
+
     // 表示モード: リスト表示 / グリッド表示
     @State private var isGridMode: Bool = false
     @State private var selectedPost: Post? = nil  // グリッド表示時の詳細画面用
@@ -129,7 +135,9 @@ struct HomeView: View {
                 LazyVStack(spacing: 0) {
                     // トップスクロール用の目印
                     Color.clear.frame(height: 0).id("homeTop")
-                    ForEach(postsViewModel.posts, id: \.post_id) { post in
+                    ForEach(postsViewModel.posts.indices, id: \.self) { idx in
+                        let post = postsViewModel.posts[idx]
+
                         PostCardView(
                             post: post,
                             isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
@@ -145,6 +153,12 @@ struct HomeView: View {
                             if post.post_id == postsViewModel.posts.last?.post_id {
                                 Task { await postsViewModel.fetchMorePosts(user: authViewModel.currentUser) }
                             }
+                        }
+
+                        // N件ごとにアフィリエイトカードを挿入（サブスク未加入時のみ）
+                        // TODO: 楽天・Amazon アフィリエイトID設定後に自動で有効になります
+                        if !subscriptionManager.isAdsRemoved && (idx + 1) % affiliateInsertInterval == 0 {
+                            AffiliateTimelineCard(keyword: post.posterDisplayName ?? "子供服")
                         }
                     }
                     // さらに読み込める場合は下部にProgressView

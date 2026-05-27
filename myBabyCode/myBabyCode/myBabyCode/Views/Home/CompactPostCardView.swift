@@ -85,17 +85,22 @@ struct CompactPostCardView: View {
             // 写真（タップで詳細）
             Button(action: onTap) {
                 let url = post.image_url_front ?? post.image_url_back
-                CachedAsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Color(.systemGray5)
-                        .overlay(
-                            Image(systemName: "photo")
-                                .font(.system(size: 40))
-                                .foregroundColor(.secondary.opacity(0.4))
-                        )
+                GeometryReader { geo in
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                    } placeholder: {
+                        Color(.systemGray5)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.secondary.opacity(0.4))
+                            )
+                    }
                 }
             }
             .buttonStyle(.plain)

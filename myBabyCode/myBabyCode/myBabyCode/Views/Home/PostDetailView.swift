@@ -176,6 +176,9 @@ struct PostDetailView: View {
                         }
                     }
                     .padding(20)
+
+                    // バナー広告（設定画面からサブスク登録で非表示可）
+                    AdBannerView()
                 }
             }
             .task { await loadItems() }
@@ -267,6 +270,9 @@ struct PostDetailView: View {
                             }
                         }
                     }
+
+                    // アフィリエイトリンク（楽天・Amazon）
+                    AffiliateLinkRow(item: item)
                 }
                 .padding(12)
                 .background(Color.white)

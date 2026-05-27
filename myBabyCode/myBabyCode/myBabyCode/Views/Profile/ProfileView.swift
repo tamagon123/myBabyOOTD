@@ -35,7 +35,7 @@ struct ProfileView: View {
     @State private var showFollowingList = false       // フォロー一覧表示フラグ
     @State private var followingUsers: [AppUser] = [] // フォロー中のユーザーリスト
     @State private var followingCount: Int = 0         // フォロー中の件数
-    @State private var isGridMode: Bool = false        // グリッド/リスト表示モード
+    @State private var isGridMode: Bool = true         // グリッド/リスト表示モード（デフォルトはグリッド）
 
     // ProfileTab: マイページ内の「投稿」/「いいね」タブ
     enum ProfileTab: String, CaseIterable {
@@ -67,9 +67,25 @@ struct ProfileView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
 
-                // タブセレクター（自分のプロフィール時のみ）
+                // タブセレクター（自分のプロフィール時のみ）・他アカウントは切り替えボタンのみ
                 if isOwnProfile {
                     tabSelector
+                } else {
+                    // 他アカウント用：グリッド/リスト切り替えボタンのみ
+                    HStack {
+                        Spacer()
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                        } label: {
+                            Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
+                                .font(.system(size: 18))
+                                .foregroundColor(.accentRed)
+                                .frame(width: 36, height: 36)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 20)
+                    }
+                    .padding(.top, 8)
                 }
 
                 // 投稿グリッドまたはいいね一覧
@@ -114,8 +130,10 @@ struct ProfileView: View {
             if !isOwnProfile { await checkFollowing() }
         }
         .sheet(isPresented: $showEditProfile) {
-            EditProfileView()
-                .environmentObject(authViewModel)
+            NavigationView {
+                EditProfileView()
+                    .environmentObject(authViewModel)
+            }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -425,7 +443,8 @@ struct ProfileView: View {
                     },
                     onTap: {
                         selectedPost = post
-                    }
+                    },
+                    showInfo: false
                 )
                 .frame(width: cellSize, height: cellSize * 1.3)
             }
@@ -608,6 +627,7 @@ struct UserPostsSheet: View {
     @EnvironmentObject var postsViewModel: PostsViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedPost: Post? = nil
+    @State private var isGridMode: Bool = true
 
     var body: some View {
         NavigationView {
@@ -619,8 +639,28 @@ struct UserPostsSheet: View {
                     Text("投稿がありません")
                         .foregroundColor(.secondary)
                         .padding(.top, 40)
+                } else if isGridMode {
+                    let cellSize = (UIScreen.main.bounds.width - 32 - 16) / 3
+                    let columns = [
+                        GridItem(.fixed(cellSize), spacing: 8),
+                        GridItem(.fixed(cellSize), spacing: 8),
+                        GridItem(.fixed(cellSize), spacing: 8)
+                    ]
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(posts, id: \.post_id) { post in
+                            MiniPostCardView(
+                                post: post,
+                                isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                                onLike: { Task { await postsViewModel.toggleLike(post: post) } },
+                                onTap: { selectedPost = post },
+                                showInfo: false
+                            )
+                            .frame(width: cellSize, height: cellSize * 1.3)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 } else {
-                    // 縦長カードリスト表示
                     LazyVStack(spacing: 12) {
                         ForEach(posts, id: \.post_id) { post in
                             CompactPostCardView(
@@ -648,6 +688,14 @@ struct UserPostsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("閉じる") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
+                    } label: {
+                        Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
+                            .foregroundColor(.accentRed)
+                    }
                 }
             }
             .sheet(item: $selectedPost) { post in

@@ -15,6 +15,9 @@ struct SettingsView: View {
     @EnvironmentObject var draftManager: DraftManager    // 下書き管理
     @Environment(\.dismiss) private var dismiss            // 画面を閉じる
 
+    // === サブスクリプション ===
+    @StateObject private var subscriptionManager = SubscriptionManager.shared
+
     // === アラート表示フラグ ===
     @State private var showSignOutAlert = false       // ログアウト確認アラート
     @State private var showDeleteAccountAlert = false  // アカウント削除確認アラート
@@ -75,6 +78,59 @@ struct SettingsView: View {
                     Text("アプリについて")
                 }
 
+                // --- プレミアム・広告設定セクション ---
+                Section {
+                    if subscriptionManager.isSubscribed {
+                        HStack {
+                            Label("広告非表示中", systemImage: "checkmark.seal.fill")
+                                .foregroundColor(.accentGreen)
+                            Spacer()
+                            Text("プレミアム")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.accentGreen)
+                                .cornerRadius(10)
+                        }
+                    } else {
+                        Button {
+                            Task { await subscriptionManager.purchase() }
+                        } label: {
+                            HStack {
+                                Label("広告を非表示にする", systemImage: "star.fill")
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if subscriptionManager.isPurchasing {
+                                    ProgressView().scaleEffect(0.8)
+                                } else {
+                                    Text("近日公開")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(Color(.systemGray5))
+                                        .cornerRadius(10)
+                                }
+                            }
+                        }
+                        .disabled(subscriptionManager.isPurchasing)
+
+                        Button {
+                            Task { await subscriptionManager.restorePurchases() }
+                        } label: {
+                            Label("購入を復元する", systemImage: "arrow.clockwise")
+                                .foregroundColor(.secondary)
+                        }
+                        .disabled(subscriptionManager.isPurchasing)
+                    }
+                } header: {
+                    Text("プレミアム")
+                } footer: {
+                    Text("広告を非表示にするプレミアムプランです。購入はApp Store経由で行われます。")
+                        .font(.caption)
+                }
+
                 // --- 法的情報セクション ---
                 Section {
                     NavigationLink(destination: TermsOfServiceView()) {
@@ -109,6 +165,18 @@ struct SettingsView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("閉じる") { dismiss() }
                 }
+            }
+            .safeAreaInset(edge: .bottom) {
+                // バナー広告（プレミアム加入で非表示）
+                AdBannerView()
+            }
+            .alert("エラー", isPresented: Binding(
+                get: { subscriptionManager.errorMessage != nil },
+                set: { if !$0 { subscriptionManager.errorMessage = nil } }
+            )) {
+                Button("OK") { subscriptionManager.errorMessage = nil }
+            } message: {
+                Text(subscriptionManager.errorMessage ?? "")
             }
             .alert("ログアウト", isPresented: $showSignOutAlert) {
                 Button("キャンセル", role: .cancel) {}
@@ -235,5 +303,114 @@ struct DraftListView: View {
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - PremiumBannerCard
+// 設定画面上部に表示するサブスクリプション加入促進バナー
+
+struct PremiumBannerCard: View {
+    let isPurchasing: Bool
+    let onPurchase: () -> Void
+    let onRestore: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // グラデーション背景ヘッダー
+            ZStack {
+                LinearGradient(
+                    colors: [Color.accentRed, Color.accentRed.opacity(0.75)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                VStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(.yellow)
+                        Text("プレミアムプラン")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+
+                    Text("広告を完全に非表示にして\nすっきり快適に使えます")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+
+                    // 特典リスト
+                    VStack(alignment: .leading, spacing: 6) {
+                        PremiumFeatureRow(icon: "nosign", text: "全広告を非表示")
+                        PremiumFeatureRow(icon: "bolt.fill", text: "タイムラインがすっきり表示")
+                        PremiumFeatureRow(icon: "heart.fill", text: "アプリ開発を応援できる")
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
+            }
+
+            // ボタンエリア
+            VStack(spacing: 10) {
+                Button(action: onPurchase) {
+                    HStack(spacing: 8) {
+                        if isPurchasing {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(.white)
+                                .scaleEffect(0.9)
+                        } else {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 15))
+                        }
+                        Text(isPurchasing ? "処理中..." : "プレミアムに登録する")
+                            .font(.system(size: 16, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(isPurchasing ? Color.accentRed.opacity(0.6) : Color.accentRed)
+                    .cornerRadius(12)
+                }
+                .disabled(isPurchasing)
+                .buttonStyle(.plain)
+
+                Button(action: onRestore) {
+                    Text("購入を復元する")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                .disabled(isPurchasing)
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(Color(.systemBackground))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - PremiumFeatureRow
+// プレミアムバナー内の特典1行表示
+
+private struct PremiumFeatureRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.yellow)
+                .frame(width: 20)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundColor(.white)
+        }
     }
 }

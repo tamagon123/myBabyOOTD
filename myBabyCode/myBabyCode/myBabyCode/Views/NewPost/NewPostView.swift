@@ -76,9 +76,15 @@ struct NewPostView: View {
     // === 下書き関連 ===
     @State private var draftSaved = false                  // 下書き保存済みフラグ
     @State private var showDraftSavedBanner = false       // 下書き保存成功バナー表示フラグ
+    @State private var showDiscardAlert = false           // 変更破棄確認アラート
 
     // 計算プロパティ: ログイン中ユーザーの子供リスト（プロフィール設定時に登録）
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
+    
+    // 変更があるかどうか
+    private var hasChanges: Bool {
+        frontImage != nil || backImage != nil || !items.isEmpty || !description.isEmpty
+    }
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -119,9 +125,25 @@ struct NewPostView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("閉じる") {
-                        dismiss()
+                        if hasChanges {
+                            showDiscardAlert = true
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
+            }
+            .alert("下書きを保存しますか？", isPresented: $showDiscardAlert) {
+                Button("保存する") {
+                    saveDraft()
+                    dismiss()
+                }
+                Button("保存しない", role: .destructive) {
+                    dismiss()
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("編集内容を下書きとして保存できます。")
             }
             .onAppear { applyProfileDefaults() }
             .confirmationDialog("写真を選択", isPresented: $showPhotoSourceSheet, titleVisibility: .visible) {
@@ -191,6 +213,20 @@ struct NewPostView: View {
             } message: {
                 Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。")
             }
+            .fullScreenCover(isPresented: Binding(
+                get: { taggingItemIndex != nil },
+                set: { if !$0 { taggingItemIndex = nil } }
+            )) {
+                if let idx = taggingItemIndex {
+                    TagPlacementView(
+                        items: $items,
+                        itemIndex: idx,
+                        taggingSide: $taggingSide,
+                        frontImage: frontImage,
+                        backImage: backImage
+                    )
+                }
+            }
         }
     }
 
@@ -213,9 +249,6 @@ struct NewPostView: View {
                 Divider().padding(.horizontal, 20)
             }
             photoSection
-            if taggingItemIndex != nil {
-                tagPlacementView
-            }
             Divider().padding(.horizontal, 20)
             itemsSection
                 .padding(.horizontal, 20)
@@ -229,6 +262,9 @@ struct NewPostView: View {
                 .padding(.horizontal, 20)
             postButton
                 .padding(.horizontal, 20)
+
+            // バナー広告（サブスク登録で非表示可）
+            AdBannerView()
         }
         .padding(.top, 20)
         .padding(.bottom, 8)
@@ -686,15 +722,38 @@ struct NewPostView: View {
                                 geoWidth: CGFloat, imgH: CGFloat) -> some View {
         if let pos = items[i].tagPosition, items[i].tagSide == side {
             ZStack {
-                Circle()
+                // タグ風の背景
+                RoundedRectangle(cornerRadius: 8)
                     .fill(Color.white)
-                    .frame(width: 20, height: 20)
-                    .shadow(color: .black.opacity(0.4), radius: 3)
-                Circle()
-                    .stroke(Color.accentRed, lineWidth: 2)
-                    .frame(width: 20, height: 20)
+                    .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                
+                HStack(spacing: 2) {
+                    // カテゴリアイコン
+                    Image(systemName: categoryIcon(for: items[i].category))
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.accentRed)
+                    // 番号
+                    Text("\(i + 1)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.primary)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
             }
+            .fixedSize()
             .position(x: pos.x * geoWidth, y: pos.y * imgH)
+        }
+    }
+    
+    private func categoryIcon(for category: ItemCategory) -> String {
+        switch category {
+        case .tops:      return "tshirt.fill"
+        case .bottoms:   return "shorts.fill"
+        case .accessory: return "sparkles"
+        case .outerwear: return "jacket.fill"
+        case .shoes:     return "shoe.fill"
+        case .bib:       return "bib.fill"
+        case .other:     return "tag.fill"
         }
     }
 
@@ -974,13 +1033,24 @@ struct ItemEntryRow: View {
                 // Tag button
                 Button(action: onTag) {
                     HStack(spacing: 4) {
-                        Image(systemName: entry.tagPosition != nil ? "mappin.circle.fill" : "mappin.circle")
-                            .font(.system(size: 16))
-                            .foregroundColor(entry.tagPosition != nil ? .accentBlue : .secondary)
                         if entry.tagPosition != nil {
-                            Text(entry.tagSide == "front" ? "F" : "B")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.accentBlue)
+                            // タグ済み：アクセント背景のタグアイコン
+                            HStack(spacing: 2) {
+                                Image(systemName: "tag.fill")
+                                    .font(.system(size: 10))
+                                Text(entry.tagSide == "front" ? "F" : "B")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.accentBlue)
+                            .cornerRadius(8)
+                        } else {
+                            // 未タグ：グレーのタグアイコン
+                            Image(systemName: "tag")
+                                .font(.system(size: 16))
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -1060,7 +1130,37 @@ struct BrandSearchSheet: View {
 
     private var filteredBrands: [String] {
         if query.isEmpty { return popularBrands }
-        return popularBrands.filter { $0.localizedCaseInsensitiveContains(query) }
+        let normalizedQuery = normalizeForSearch(query)
+        return popularBrands.filter {
+            normalizeForSearch($0).contains(normalizedQuery)
+        }
+    }
+
+    // 検索用文字列正規化：ひらがな→カタカナ、大文字→小文字、記号除去
+    private func normalizeForSearch(_ text: String) -> String {
+        let mutable = NSMutableString(string: text) as CFMutableString
+        CFStringTransform(mutable, nil, kCFStringTransformHiraganaKatakana, false)
+        return (mutable as String)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "　", with: "")
+            .replacingOccurrences(of: "&", with: "and")
+    }
+
+    // 入力されたブランド名をpopularBrands内の正式名称に正規化して返す
+    private func canonicalBrandName(for input: String) -> String {
+        let normalizedInput = normalizeForSearch(input)
+        // マッチする正式名称があればそれを返す
+        if let match = popularBrands.first(where: { normalizeForSearch($0) == normalizedInput }) {
+            return match
+        }
+        // 部分一致も探す（「ユニクロ」→「UNIQLO」など）
+        if let partial = popularBrands.first(where: {
+            normalizeForSearch($0).contains(normalizedInput) || normalizedInput.contains(normalizeForSearch($0))
+        }) {
+            return partial
+        }
+        return input
     }
 
     var body: some View {
@@ -1086,16 +1186,17 @@ struct BrandSearchSheet: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
 
-                // 直接入力ボタン（検索結果にない場合）
+                // 直接入力ボタン（検索結果にない場合）— 正規化して正式名称に統一
                 if !query.isEmpty && !filteredBrands.contains(where: { $0.lowercased() == query.lowercased() }) {
+                    let canonicalBrand = canonicalBrandName(for: query)
                     Button {
-                        selectedBrand = query
+                        selectedBrand = canonicalBrand
                         dismiss()
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.accentBlue)
-                            Text("「\(query)」を使用する")
+                            Text("「\(canonicalBrand)」を使用する")
                                 .font(.system(size: 14))
                                 .foregroundColor(.accentBlue)
                             Spacer()
@@ -1200,7 +1301,7 @@ struct PlacedStamp: Identifiable {
     let id = UUID()
     var kind: StampKind
     var position: CGPoint
-    var scale: CGFloat = 1.8
+    var scale: CGFloat = 2.5
     var rotation: Angle = .zero
 }
 
@@ -1300,27 +1401,8 @@ struct PhotoEditorView: View {
     private var stampPalette: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                // SF Symbol スタンプ
-                ForEach(StampSymbol.allCases) { sym in
-                    let kind = StampKind.symbol(sym)
-                    Button {
-                        selectedKind = kind
-                    } label: {
-                        Image(systemName: sym.rawValue)
-                            .font(.system(size: 24))
-                            .foregroundColor(sym.color)
-                            .frame(width: 44, height: 44)
-                            .background(selectedKind == kind ? Color(UIColor.systemGray4).opacity(0.6) : Color(.systemGray6))
-                            .cornerRadius(10)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(selectedKind == kind ? Color.primary.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                            )
-                    }
-                }
-                // 画像スタンプ — StampImages/ に画像を追加しstampImageNamesに追記すると自動で出現
+                // 画像スタンプ（先に表示）— StampImages/ に画像を追加しstampImageNamesに追記すると自動で出現
                 if !stampImageNames.isEmpty {
-                    Divider().frame(height: 32)
                     ForEach(stampImageNames, id: \.self) { name in
                         let kind = StampKind.image(name)
                         Button {
@@ -1337,6 +1419,25 @@ struct PhotoEditorView: View {
                                         .stroke(selectedKind == kind ? Color.primary.opacity(0.5) : Color.clear, lineWidth: 1.5)
                                 )
                         }
+                    }
+                    Divider().frame(height: 32)
+                }
+                // SF Symbol スタンプ（後に表示）
+                ForEach(StampSymbol.allCases) { sym in
+                    let kind = StampKind.symbol(sym)
+                    Button {
+                        selectedKind = kind
+                    } label: {
+                        Image(systemName: sym.rawValue)
+                            .font(.system(size: 24))
+                            .foregroundColor(sym.color)
+                            .frame(width: 44, height: 44)
+                            .background(selectedKind == kind ? Color(UIColor.systemGray4).opacity(0.6) : Color(.systemGray6))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(selectedKind == kind ? Color.primary.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
                     }
                 }
             }
@@ -1364,11 +1465,10 @@ struct PhotoEditorView: View {
             let offsetX = (geo.size.width - dispW) / 2
             let offsetY = (geo.size.height - dispH) / 2
 
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFit()
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    .frame(width: dispW, height: dispH)
                     .onAppear {
                         canvasSize = CGSize(width: dispW, height: dispH)
                         canvasOffset = CGPoint(x: offsetX, y: offsetY)
@@ -1377,7 +1477,7 @@ struct PhotoEditorView: View {
                         DragGesture(minimumDistance: 0)
                             .onEnded { val in
                                 guard let kind = selectedKind else { return }
-                                // GeometryReader座標 → 実際の画像上の座標に変換
+                                // ZStack(alignment: .topLeft) なので座標をそのまま使う
                                 let stampX = val.location.x - offsetX
                                 let stampY = val.location.y - offsetY
                                 let position = CGPoint(
@@ -1391,6 +1491,7 @@ struct PhotoEditorView: View {
                                 selectedKind = nil
                             }
                     )
+                    .offset(x: offsetX, y: offsetY)
                 ForEach($stampItems) { $stamp in
                     StampView(stamp: $stamp,
                               canvasOffset: canvasOffset,
@@ -1595,6 +1696,142 @@ struct StampView: View {
             TapGesture(count: 2).onEnded { onRemove() }
         )
         .onTapGesture { onTap() }
+    }
+}
+
+// MARK: - TagPlacementView
+// 説明: アイテムの写真上の位置をフルスクリーンで選択する画面
+
+struct TagPlacementView: View {
+    @Binding var items: [NewItemEntry]
+    let itemIndex: Int
+    @Binding var taggingSide: String
+    let frontImage: UIImage?
+    let backImage: UIImage?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // 写真切り替えタブ
+                HStack(spacing: 12) {
+                    ForEach(["front", "back"], id: \.self) { side in
+                        let hasImg = side == "front" ? frontImage != nil : backImage != nil
+                        if hasImg {
+                            Button {
+                                taggingSide = side
+                            } label: {
+                                Text(side == "front" ? "フロント" : "バック")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(taggingSide == side ? Color.accentBlue : Color(.systemGray5))
+                                    .foregroundColor(taggingSide == side ? .white : .primary)
+                                    .cornerRadius(10)
+                            }
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(Color(.systemBackground))
+
+                // 写真表示＋タグ付けエリア
+                GeometryReader { geo in
+                    let uiImg = taggingSide == "front" ? frontImage : backImage
+                    if let uiImg = uiImg {
+                        let imgW = geo.size.width
+                        let imgH = uiImg.size.height / uiImg.size.width * imgW
+                        let maxH = min(imgH, geo.size.height)
+                        let scale = min(1, maxH / imgH)
+                        let dispW = imgW * scale
+                        let dispH = imgH * scale
+                        let offsetX = (geo.size.width - dispW) / 2
+                        let offsetY = (geo.size.height - dispH) / 2
+
+                        ZStack(alignment: .topLeading) {
+                            Image(uiImage: uiImg)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: dispW, height: dispH)
+                                .offset(x: offsetX, y: offsetY)
+                                .contentShape(Rectangle())
+                                .simultaneousGesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onEnded { val in
+                                            guard items.indices.contains(itemIndex) else { return }
+                                            let tapX = val.location.x - offsetX
+                                            let tapY = val.location.y - offsetY
+                                            let ratioX = max(0, min(1, tapX / dispW))
+                                            let ratioY = max(0, min(1, tapY / dispH))
+                                            items[itemIndex].tagPosition = CGPoint(x: ratioX, y: ratioY)
+                                            items[itemIndex].tagSide = taggingSide
+                                            dismiss()
+                                        }
+                                )
+
+                            // 既存タグの表示
+                            ForEach(items.indices, id: \.self) { i in
+                                if let pos = items[i].tagPosition,
+                                   items[i].tagSide == taggingSide {
+                                    tagOverlay(items: items, i: i)
+                                        .position(
+                                            x: offsetX + pos.x * dispW,
+                                            y: offsetY + pos.y * dispH
+                                        )
+                                }
+                            }
+                        }
+                    } else {
+                        Text("写真を先に追加してください")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("タグを付ける場所をタップ")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func tagOverlay(items: [NewItemEntry], i: Int) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(i == itemIndex ? Color.accentBlue : Color.white)
+                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+
+            HStack(spacing: 2) {
+                Image(systemName: categoryIcon(for: items[i].category))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(i == itemIndex ? .white : .accentRed)
+                Text("\(i + 1)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(i == itemIndex ? .white : .primary)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+        }
+        .fixedSize()
+    }
+
+    private func categoryIcon(for category: ItemCategory) -> String {
+        switch category {
+        case .tops:      return "tshirt.fill"
+        case .bottoms:   return "shorts.fill"
+        case .accessory: return "sparkles"
+        case .outerwear: return "jacket.fill"
+        case .shoes:     return "shoe.fill"
+        case .bib:       return "bib.fill"
+        case .other:     return "tag.fill"
+        }
     }
 }
 

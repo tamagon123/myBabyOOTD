@@ -14,6 +14,7 @@ struct MiniPostCardView: View {
     let isLiked: Bool
     let onLike: () -> Void
     let onTap: () -> Void
+    var showInfo: Bool = true  // アバター・名前を表示するか
     
     @State private var showingLikeAnimation = false
     
@@ -53,6 +54,7 @@ struct MiniPostCardView: View {
             
             // 下部情報バー
             HStack(spacing: 8) {
+                if showInfo {
                 // アバター
                 let avatarId = post.posterAvatarId ?? "bear"
                 let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
@@ -80,6 +82,7 @@ struct MiniPostCardView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white)
                     .lineLimit(1)
+                } // showInfo
                 
                 Spacer()
                 

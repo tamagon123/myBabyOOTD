@@ -61,207 +61,237 @@ struct EditProfileView: View {
     //   6. 保存ボタン
     // =============================================================================
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
 
-                    // Unique User ID（変更不可・表示のみ）
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionLabel("ユーザーID")
-                        Text(uniqueUserId.isEmpty ? "未設定" : "@\(uniqueUserId)")
-                            .font(.system(size: 15))
-                            .foregroundColor(.primary)
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.systemGray5))
-                            .cornerRadius(8)
-                        Text("ユーザーIDは登録後に変更できません。")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Divider()
-
-                    // Display name
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionLabel("表示名")
-                        TextField("例: たまごママ", text: $displayName)
-                            .textFieldStyle(.roundedBorder)
-                        Text("アプリ内で表示される名前です。本名は使用しないでください。")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Divider()
-
-                    // Avatar selection
-                    VStack(alignment: .leading, spacing: 12) {
-                        sectionLabel("アバターアイコン")
-
-                        Text("個人が特定できる写真の使用はお控えください")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        // ライブラリから選択ボタン
-                        Button {
-                            showAvatarImagePicker = true
-                        } label: {
-                            Label("ライブラリから写真を選ぶ", systemImage: "photo")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.accentBlue)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(Color.accentBlue.opacity(0.08))
-                                .cornerRadius(10)
-                        }
-                        if let img = pickedAvatarImage {
-                            HStack(spacing: 10) {
-                                Image(uiImage: img)
-                                    .resizable().scaledToFill()
-                                    .frame(width: 52, height: 52)
-                                    .clipShape(Circle())
-                                Text("選択中の写真").font(.caption).foregroundColor(.secondary)
-                                Spacer()
-                                if isUploadingAvatar { ProgressView().scaleEffect(0.8) }
-                                Button {
-                                    pickedAvatarImage = nil
-                                    selectedAvatarId = "bear"
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
-                                }
-                            }
-                        }
-
-                        // アセット画像グリッド
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
-                            ForEach(avatarImageNames, id: \.self) { name in
-                                Button {
-                                    selectedAvatarId = name
-                                    pickedAvatarImage = nil
-                                } label: {
-                                    Image(name)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 52, height: 52)
-                                        .background(selectedAvatarId == name && pickedAvatarImage == nil ? Color.accentBlue.opacity(0.12) : Color(.systemGray6))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 14)
-                                                .stroke(selectedAvatarId == name && pickedAvatarImage == nil ? Color.accentBlue : Color.clear, lineWidth: 2)
-                                        )
-                                        .cornerRadius(14)
-                                }
-                            }
-                        }
-
-                        // 背景色選択
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("アイコン背景色")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 9), spacing: 10) {
-                                ForEach(bgColorOptions, id: \.hex) { opt in
-                                    Button {
-                                        selectedBgColorHex = opt.hex
-                                    } label: {
-                                        Circle()
-                                            .fill(Color(hex: opt.hex))
-                                            .frame(width: 30, height: 30)
-                                            .overlay(
-                                                Circle()
-                                                    .stroke(selectedBgColorHex == opt.hex ? Color.primary : Color.clear, lineWidth: 2)
-                                            )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    // Children management
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            sectionLabel("お子様の情報（複数登録可）")
-                            Spacer()
-                            Button {
-                                children.append(ChildProfile(name: "", birthday: Date(), gender: 0))
-                            } label: {
-                                Label("追加", systemImage: "plus.circle.fill")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.accentGreen)
-                            }
-                        }
-
-                        Text("お子様のニックネームを登録してください。本名は入力しないことをおすすめします。")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        if children.isEmpty {
-                            Text("「追加」ボタンでお子様を登録できます")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 12)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(10)
-                        }
-
-                        ForEach(children.indices, id: \.self) { idx in
-                            ChildProfileRow(
-                                child: $children[idx],
-                                onRemove: { children.remove(at: idx) }
-                            )
-                        }
-                    }
-
-                    Divider()
-
-                    // Region
-                    VStack(alignment: .leading, spacing: 6) {
-                        sectionLabel("お住まいの地域")
-                        Picker("地域", selection: $selectedRegionIndex) {
-                            Text("非公表").tag(-1)
-                            ForEach(prefectures.indices, id: \.self) { i in
-                                Text(prefectures[i]).tag(i)
-                            }
-                        }
-                        .pickerStyle(.menu)
+                // Unique User ID（変更不可・表示のみ）
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionLabel("ユーザーID")
+                    Text(uniqueUserId.isEmpty ? "未設定" : "@\(uniqueUserId)")
+                        .font(.system(size: 15))
+                        .foregroundColor(.primary)
+                        .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(8)
+                    Text("ユーザーIDは登録後に変更できません。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Divider()
+
+                // Display name
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionLabel("表示名")
+                    TextField("例: たまごママ", text: $displayName)
+                        .textFieldStyle(.roundedBorder)
+                    Text("アプリ内で表示される名前です。本名は使用しないでください。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Divider()
+
+                // Avatar selection
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("アバターアイコン")
+
+                    Text("個人が特定できる写真の使用はお控えください")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    // プレビュー表示
+                    VStack(spacing: 6) {
+                        ZStack {
+                            if let img = pickedAvatarImage {
+                                Image(uiImage: img)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else if selectedAvatarId.hasPrefix("https://") {
+                                AsyncImage(url: URL(string: selectedAvatarId)) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    Color.ecruBackground
+                                }
+                            } else if avatarImageNames.contains(selectedAvatarId) {
+                                Image(selectedAvatarId)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(12)
+                            } else {
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 48))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(width: 120, height: 120)
+                        .background(Color(hex: selectedBgColorHex))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.white, lineWidth: 3))
+                        .shadow(radius: 4)
+
+                        Text("プレビュー")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    // ライブラリから選択ボタン
+                    Button {
+                        showAvatarImagePicker = true
+                    } label: {
+                        Label("ライブラリから写真を選ぶ", systemImage: "photo")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.accentBlue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.accentBlue.opacity(0.08))
+                            .cornerRadius(10)
+                    }
+                    if let img = pickedAvatarImage {
+                        HStack(spacing: 10) {
+                            Image(uiImage: img)
+                                .resizable().scaledToFill()
+                                .frame(width: 52, height: 52)
+                                .clipShape(Circle())
+                            Text("選択中の写真").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            if isUploadingAvatar { ProgressView().scaleEffect(0.8) }
+                            Button {
+                                pickedAvatarImage = nil
+                                selectedAvatarId = "bear"
+                            } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                            }
+                        }
                     }
 
-                    // Save
-                    Button {
-                        Task { await save() }
-                    } label: {
-                        Text(isSaving ? "保存中..." : "保存する")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.accentRed)
-                            .cornerRadius(16)
+                    // アセット画像グリッド
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                        ForEach(avatarImageNames, id: \.self) { name in
+                            Button {
+                                selectedAvatarId = name
+                                pickedAvatarImage = nil
+                            } label: {
+                                Image(name)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(6)
+                                    .frame(width: 60, height: 60)
+                                    .background(selectedAvatarId == name && pickedAvatarImage == nil ? Color.accentBlue.opacity(0.12) : Color(.systemGray6))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .stroke(selectedAvatarId == name && pickedAvatarImage == nil ? Color.accentBlue : Color.clear, lineWidth: 2)
+                                    )
+                                    .cornerRadius(14)
+                            }
+                        }
                     }
-                    .disabled(isSaving)
-                    .padding(.bottom, 32)
+
+                    // 背景色選択
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("アイコン背景色")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 9), spacing: 10) {
+                            ForEach(bgColorOptions, id: \.hex) { opt in
+                                Button {
+                                    selectedBgColorHex = opt.hex
+                                } label: {
+                                    Circle()
+                                        .fill(Color(hex: opt.hex))
+                                        .frame(width: 30, height: 30)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(selectedBgColorHex == opt.hex ? Color.primary : Color.clear, lineWidth: 2)
+                                        )
+                                }
+                            }
+                        }
+                    }
                 }
-                .padding(.horizontal)
-                .padding(.top, 20)
+
+                Divider()
+
+                // Children management
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        sectionLabel("お子様の情報（複数登録可）")
+                        Spacer()
+                        Button {
+                            children.append(ChildProfile(name: "", birthday: Date(), gender: 0))
+                        } label: {
+                            Label("追加", systemImage: "plus.circle.fill")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.accentGreen)
+                        }
+                    }
+
+                    Text("お子様のニックネームを登録してください。本名は入力しないことをおすすめします。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if children.isEmpty {
+                        Text("「追加」ボタンでお子様を登録できます")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 12)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                    }
+
+                    ForEach(children.indices, id: \.self) { idx in
+                        ChildProfileRow(
+                            child: $children[idx],
+                            onRemove: { children.remove(at: idx) }
+                        )
+                    }
+                }
+
+                Divider()
+
+                // Region
+                VStack(alignment: .leading, spacing: 6) {
+                    sectionLabel("お住まいの地域")
+                    Picker("地域", selection: $selectedRegionIndex) {
+                        Text("非公表").tag(-1)
+                        ForEach(prefectures.indices, id: \.self) { i in
+                            Text(prefectures[i]).tag(i)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                }
+
+                // Save
+                Button {
+                    Task { await save() }
+                } label: {
+                    Text(isSaving ? "保存中..." : "保存する")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.accentRed)
+                        .cornerRadius(16)
+                }
+                .disabled(isSaving)
+                .padding(.bottom, 32)
             }
-            .navigationTitle("プロフィール設定")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
-                }
-            }
-            .onAppear { loadExistingData() }
-            .sheet(isPresented: $showAvatarImagePicker) {
-                ImagePickerView(sourceType: .photoLibrary) { img in
-                    pickedAvatarImage = img
-                }
+            .padding(.horizontal)
+            .padding(.top, 20)
+        }
+        .navigationTitle("プロフィール設定")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { loadExistingData() }
+        .sheet(isPresented: $showAvatarImagePicker) {
+            ImagePickerView(sourceType: .photoLibrary) { img in
+                pickedAvatarImage = img
             }
         }
     }

@@ -222,13 +222,22 @@ struct ProfileSetupView: View {
             }
             // 使い方ページ表示（初回登録時）
             .sheet(isPresented: $showAppGuide) {
-                AppGuideView(
-                    isFirstLaunch: true,
-                    onComplete: {
-                        showAppGuide = false
-                        dismiss()
+                NavigationView {
+                    AppGuideView(
+                        isFirstLaunch: true,
+                        onComplete: {
+                            showAppGuide = false
+                            dismiss()
+                        }
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("閉じる") {
+                                showAppGuide = false
+                            }
+                        }
                     }
-                )
+                }
             }
         }
     }
@@ -237,37 +246,46 @@ struct ProfileSetupView: View {
     private var avatarSection: some View {
         VStack(spacing: 16) {
             // Avatar display (preview)
-            ZStack {
-                if let selectedImage = selectedAvatarImage {
-                    Image(uiImage: selectedImage)
-                        .resizable()
-                        .scaledToFill()
-                } else if avatarId.hasPrefix("https://") {
-                    AsyncImage(url: URL(string: avatarId)) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.ecruBackground
+            VStack(spacing: 6) {
+                ZStack {
+                    if let selectedImage = selectedAvatarImage {
+                        Image(uiImage: selectedImage)
+                            .resizable()
+                            .scaledToFill()
+                    } else if avatarId.hasPrefix("https://") {
+                        AsyncImage(url: URL(string: avatarId)) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Color.ecruBackground
+                        }
+                    } else if avatarImageNames.contains(avatarId) {
+                        Image(avatarId)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(12)
+                    } else {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary)
                     }
-                } else if avatarImageNames.contains(avatarId) {
-                    Image(avatarId).resizable().scaledToFill()
-                } else {
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary)
                 }
+                .frame(width: 120, height: 120)
+                .background(Color(hex: avatarBgColor))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white, lineWidth: 3))
+                .shadow(radius: 4)
+
+                Text("プレビュー")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
-            .frame(width: 90, height: 90)
-            .background(Color(hex: avatarBgColor))
-            .clipShape(Circle())
-            .overlay(Circle().stroke(Color.white, lineWidth: 3))
-            .shadow(radius: 4)
 
             // キャラクターアバターのインライングリッド
             VStack(alignment: .leading, spacing: 8) {
                 Text("アバターを選択")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 70))], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 10) {
                     ForEach(avatarImageNames, id: \.self) { name in
                         Button {
                             selectedAvatarImage = nil
@@ -277,7 +295,7 @@ struct ProfileSetupView: View {
                                 .resizable()
                                 .scaledToFit()
                                 .padding(6)
-                                .frame(width: 70, height: 70)
+                                .frame(width: 80, height: 80)
                                 .background(Color.white)
                                 .cornerRadius(12)
                                 .overlay(

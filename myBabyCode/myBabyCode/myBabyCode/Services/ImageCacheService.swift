@@ -1,25 +1,27 @@
 // =============================================================================
 // ファイル名: ImageCacheService.swift
-// 役割: 画像のメモリキャッシュ管理と、キャッシュ付き非同期画像表示Viewを提供
+// 役割: 画像のメモリ・ディスクキャッシュ管理と、キャッシュ付き非同期画像表示Viewを提供
 // 説明:
 //   アプリ内で多用されるFirebase Storageの画像URLを、毎回ネットワークから
-//   ダウンロードするのではなくメモリにキャッシュすることで、スクロールの
+//   ダウンロードするのではなくメモリ＋ディスクにキャッシュすることで、スクロールの
 //   カクつきを解消し通信量を節約します。
-//   ImageCacheServiceはシングルトン（shared）で、NSCacheを利用して
-//   最大200枚・100MBまで画像を保持します。
+//   ImageCacheServiceはシングルトン（shared）で、NSCache（メモリ）と
+//   FileManager（ディスク）を利用して最大200枚・100MBまで画像を保持します。
 //   CachedAsyncImageはSwiftUIのViewで、URLを指定すると自動で
 //   キャッシュを確認→未ヒットならダウンロード→表示、という一連の処理を行います。
 // =============================================================================
 
 import SwiftUI
 
-// MARK: - ImageCacheService（メモリキャッシュ管理）
+// MARK: - ImageCacheService（メモリ＋ディスクキャッシュ管理）
 
 final class ImageCacheService {
     // シングルトンインスタンス。アプリ全体で唯一のキャッシュを共有する。
     static let shared = ImageCacheService()
     // NSCache: iOSが自動でメモリ管理する辞書型キャッシュ。キーはNSString、値はUIImage。
     private let cache = NSCache<NSString, UIImage>()
+    // ディスクキャッシュ保存先のディレクトリ
+    private let diskCacheDir: URL
 
     // =============================================================================
     // 【関数サマリー】init
@@ -29,39 +31,64 @@ final class ImageCacheService {
     // 処理の流れ:
     //   1. 保持枚数上限を200枚に設定（古いものから自動削除）
     //   2. 総容量上限を100MBに設定（画像ピクセル数でコスト計算）
+    //   3. ディスクキャッシュ用ディレクトリを作成
     // 備考: private initなので外部からはshared経由でしかアクセスできない。
     // =============================================================================
     private init() {
         cache.countLimit = 200
         cache.totalCostLimit = 100 * 1024 * 1024  // 100 MB
+        // ディスクキャッシュディレクトリ初期化
+        let fm = FileManager.default
+        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        diskCacheDir = caches.appendingPathComponent("ImageDiskCache", isDirectory: true)
+        try? fm.createDirectory(at: diskCacheDir, withIntermediateDirectories: true)
     }
 
-    // =============================================================================
-    // 【関数サマリー】get
-    // 目的: 指定したURL文字列に対応するキャッシュ済みUIImageを取得する
-    // 引数:
-    //   - url: String - 画像のURL文字列（キャッシュキーとして使用）
-    // 戻り値: UIImage? - キャッシュヒット時は画像、未ヒット時はnil
-    // 呼び出し元: CachedAsyncImage.load(), PostCardView, ProfileViewなど画像表示箇所
-    // =============================================================================
+    // MARK: - メモリキャッシュ
+
     func get(_ url: String) -> UIImage? {
-        cache.object(forKey: url as NSString)
+        // 1. メモリキャッシュを先に確認（最も高速）
+        if let mem = cache.object(forKey: url as NSString) { return mem }
+        // 2. メモリ未ヒット → ディスクキャッシュを確認
+        if let disk = loadFromDisk(url: url) {
+            // ディスクヒット → メモリにも乗せて次回以降高速化
+            setMemory(image: disk, for: url)
+            return disk
+        }
+        return nil
     }
 
-    // =============================================================================
-    // 【関数サマリー】set
-    // 目的: ダウンロードした画像をメモリキャッシュに保存する
-    // 引数:
-    //   - image: UIImage - 保存する画像データ
-    //   - url: String - 画像を識別するURL文字列（キャッシュキー）
-    // 戻り値: なし
-    // 処理の流れ:
-    //   1. 画像のコストを「幅×高さ×4バイト（RGBA）」で計算
-    //   2. コスト付きでキャッシュに登録（totalCostLimit超過時に優先削除対象になる）
-    // =============================================================================
     func set(_ image: UIImage, for url: String) {
+        setMemory(image: image, for: url)
+        saveToDisk(image: image, url: url)
+    }
+
+    private func setMemory(image: UIImage, for url: String) {
         let cost = Int(image.size.width * image.size.height * 4)
         cache.setObject(image, forKey: url as NSString, cost: cost)
+    }
+
+    // MARK: - ディスクキャッシュ
+
+    private func diskPath(for url: String) -> URL {
+        let fileName = url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url
+        return diskCacheDir.appendingPathComponent(fileName)
+    }
+
+    private func loadFromDisk(url: String) -> UIImage? {
+        let path = diskPath(for: url)
+        guard FileManager.default.fileExists(atPath: path.path),
+              let data = try? Data(contentsOf: path),
+              let image = UIImage(data: data) else { return nil }
+        return image
+    }
+
+    private func saveToDisk(image: UIImage, url: String) {
+        let path = diskPath(for: url)
+        // PNGで保存（透過情報も保持）
+        if let data = image.pngData() {
+            try? data.write(to: path)
+        }
     }
 }
 
