@@ -14,14 +14,21 @@ import FirebaseFirestore
 struct SearchView: View {
     // === 環境 ===
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var postsViewModel: PostsViewModel
+    @Environment(\.dismiss) private var dismiss
 
     // === 検索条件 ===
-    @State private var selectedRegionIndex: Int = -1       // 都道府県インデックス（-1=全国）
-    @State private var selectedGender: ChildGender = .unselected  // 子供の性別
-    @State private var selectedWeather: WeatherType? = nil  // 天気（nil=未選択）
-    @State private var selectedTempCategory: String = ""   // 気温帯（例: "15-20"）
-    @State private var brandQuery: String = ""             // ブランド名検索キーワード
-    @State private var selectedSizeIndex: Int = -1         // サイズインデックス（-1=全サイズ）
+    @State private var selectedRegionIndices: Set<Int> = []    // 選択された都道府県
+    @State private var tempRegionIndex: Int = -1               // Picker一時選択値
+    @State private var selectedGenders: Set<Int> = []        // 選択された性別
+    @State private var selectedWeathers: Set<String> = []      // 選択された天気
+    @State private var selectedTempMaxCategories: Set<String> = []  // 選択された最高気温
+    @State private var selectedTempMinCategories: Set<String> = []    // 選択された最低気温
+    @State private var selectedBrandNames: Set<String> = []    // 選択されたブランド
+    @State private var freeBrandQuery: String = ""             // ブランド自由入力
+    @State private var sheetSelectedBrand: String = ""        // シート選択一時値
+    @State private var showBrandSearch = false                // ブランド検索シート表示フラグ
+    @State private var selectedSizeIndices: Set<Int> = []     // 選択されたサイズ
 
     // === 検索結果 ===
     @State private var results: [Post] = []        // 検索結果の投稿リスト
@@ -80,6 +87,14 @@ struct SearchView: View {
                 }
             }
             .navigationBarHidden(true)
+            .sheet(isPresented: $showBrandSearch, onDismiss: {
+                if !sheetSelectedBrand.isEmpty && !selectedBrandNames.contains(sheetSelectedBrand) {
+                    selectedBrandNames.insert(sheetSelectedBrand)
+                }
+                sheetSelectedBrand = ""
+            }) {
+                BrandSearchSheet(selectedBrand: $sheetSelectedBrand)
+            }
         }
     }
 
@@ -99,21 +114,56 @@ struct SearchView: View {
 
             // Region
             filterRow(label: "地域") {
-                Picker("地域", selection: $selectedRegionIndex) {
-                    Text("全国").tag(-1)
-                    ForEach(prefectures.indices, id: \.self) { i in
-                        Text(prefectures[i]).tag(i)
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("地域", selection: $tempRegionIndex) {
+                        Text("都道府県を追加").tag(-1)
+                        ForEach(prefectures.indices, id: \.self) { i in
+                            Text(prefectures[i]).tag(i)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: tempRegionIndex) { newValue in
+                        if newValue >= 0 {
+                            selectedRegionIndices.insert(newValue)
+                            tempRegionIndex = -1
+                        }
+                    }
+                    if !selectedRegionIndices.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(Array(selectedRegionIndices).sorted(), id: \.self) { idx in
+                                    HStack(spacing: 4) {
+                                        Text(prefectures[idx])
+                                            .font(.system(size: 12))
+                                        Button {
+                                            selectedRegionIndices.remove(idx)
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 12))
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.accentRed.opacity(0.15))
+                                    .foregroundColor(.accentRed)
+                                    .cornerRadius(14)
+                                }
+                            }
+                        }
                     }
                 }
-                .pickerStyle(.menu)
             }
 
             // Gender
             filterRow(label: "性別") {
                 HStack(spacing: 6) {
                     ForEach(ChildGender.allCases) { g in
-                        chipButton(label: g.label, active: selectedGender == g) {
-                            selectedGender = (selectedGender == g) ? .unselected : g
+                        chipButton(label: g.label, active: selectedGenders.contains(g.rawValue)) {
+                            if selectedGenders.contains(g.rawValue) {
+                                selectedGenders.remove(g.rawValue)
+                            } else {
+                                selectedGenders.insert(g.rawValue)
+                            }
                         }
                     }
                 }
@@ -122,35 +172,63 @@ struct SearchView: View {
             // Weather
             filterRow(label: "天気") {
                 HStack(spacing: 6) {
-                    chipButton(label: "すべて", active: selectedWeather == nil) {
-                        selectedWeather = nil
+                    chipButton(label: "すべて", active: selectedWeathers.isEmpty) {
+                        selectedWeathers.removeAll()
                     }
                     ForEach(WeatherType.allCases) { w in
                         Button {
-                            selectedWeather = (selectedWeather == w) ? nil : w
+                            if selectedWeathers.contains(w.rawValue) {
+                                selectedWeathers.remove(w.rawValue)
+                            } else {
+                                selectedWeathers.insert(w.rawValue)
+                            }
                         } label: {
                             Label(w.label, systemImage: w.sfSymbol)
                                 .font(.system(size: 12, weight: .medium))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
-                                .background(selectedWeather == w ? Color.accentRed : Color(.systemGray6))
-                                .foregroundColor(selectedWeather == w ? .white : .primary)
+                                .background(selectedWeathers.contains(w.rawValue) ? Color.accentRed : Color(.systemGray6))
+                                .foregroundColor(selectedWeathers.contains(w.rawValue) ? .white : .primary)
                                 .cornerRadius(16)
                         }
                     }
                 }
             }
 
-            // Temp Category
-            filterRow(label: "気温帯") {
+            // 最高気温
+            filterRow(label: "最高気温") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        chipButton(label: "すべて", active: selectedTempCategory.isEmpty) {
-                            selectedTempCategory = ""
+                        chipButton(label: "すべて", active: selectedTempMaxCategories.isEmpty) {
+                            selectedTempMaxCategories.removeAll()
                         }
                         ForEach(tempCategories, id: \.key) { cat in
-                            chipButton(label: cat.label, active: selectedTempCategory == cat.key) {
-                                selectedTempCategory = (selectedTempCategory == cat.key) ? "" : cat.key
+                            chipButton(label: cat.label, active: selectedTempMaxCategories.contains(cat.key)) {
+                                if selectedTempMaxCategories.contains(cat.key) {
+                                    selectedTempMaxCategories.remove(cat.key)
+                                } else {
+                                    selectedTempMaxCategories.insert(cat.key)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 最低気温
+            filterRow(label: "最低気温") {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        chipButton(label: "すべて", active: selectedTempMinCategories.isEmpty) {
+                            selectedTempMinCategories.removeAll()
+                        }
+                        ForEach(tempCategories, id: \.key) { cat in
+                            chipButton(label: cat.label, active: selectedTempMinCategories.contains(cat.key)) {
+                                if selectedTempMinCategories.contains(cat.key) {
+                                    selectedTempMinCategories.remove(cat.key)
+                                } else {
+                                    selectedTempMinCategories.insert(cat.key)
+                                }
                             }
                         }
                     }
@@ -159,19 +237,70 @@ struct SearchView: View {
 
             // Brand
             filterRow(label: "ブランド") {
-                TextField("例：UNIQLO", text: $brandQuery)
-                    .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        TextField("ブランド名を入力", text: $freeBrandQuery)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                let trimmed = freeBrandQuery.trimmingCharacters(in: .whitespaces)
+                                if !trimmed.isEmpty {
+                                    selectedBrandNames.insert(trimmed)
+                                    freeBrandQuery = ""
+                                }
+                            }
+                        Button {
+                            showBrandSearch = true
+                        } label: {
+                            Text("検索")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.accentRed)
+                                .cornerRadius(8)
+                        }
+                    }
+                    if !selectedBrandNames.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(Array(selectedBrandNames), id: \.self) { name in
+                                    HStack(spacing: 4) {
+                                        Text(name)
+                                            .font(.system(size: 12))
+                                        Button {
+                                            selectedBrandNames.remove(name)
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 12))
+                                        }
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.accentRed.opacity(0.15))
+                                    .foregroundColor(.accentRed)
+                                    .cornerRadius(14)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Size
             filterRow(label: "サイズ") {
-                Picker("サイズ", selection: $selectedSizeIndex) {
-                    Text("全サイズ").tag(-1)
-                    ForEach(clothingSizes.indices, id: \.self) { i in
-                        Text(sizeLabel(clothingSizes[i])).tag(i)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(clothingSizes.indices, id: \.self) { i in
+                            chipButton(label: sizeLabel(clothingSizes[i]), active: selectedSizeIndices.contains(i)) {
+                                if selectedSizeIndices.contains(i) {
+                                    selectedSizeIndices.remove(i)
+                                } else {
+                                    selectedSizeIndices.insert(i)
+                                }
+                            }
+                        }
                     }
                 }
-                .pickerStyle(.menu)
             }
         }
     }
@@ -216,40 +345,92 @@ struct SearchView: View {
         }
     }
 
+    // MARK: - Helpers
+
+    /// 気温帯キー（"0-9", "10-14", "15-19", "20-24", "25-"）と気温値を照合
+    private func tempMatches(_ temp: Double, category: String) -> Bool {
+        switch category {
+        case "0-9":   return temp >= 0 && temp <= 9
+        case "10-14": return temp >= 10 && temp <= 14
+        case "15-19": return temp >= 15 && temp <= 19
+        case "20-24": return temp >= 20 && temp <= 24
+        case "25-":   return temp >= 25
+        default:      return false
+        }
+    }
+
     // MARK: - Search
 
     private func executeSearch() async {
         isLoading = true
         do {
-            var query: Query = db.collection("posts")
+            // Firestoreから非表示でない投稿を新着順に取得（複合インデックス不要）
+            let query: Query = db.collection("posts")
                 .whereField("is_hidden", isEqualTo: false)
                 .order(by: "created_at", descending: true)
                 .limit(to: 50)
 
-            if selectedRegionIndex >= 0 {
-                let code = String(format: "%02d", selectedRegionIndex + 1)
-                query = query.whereField("region_code", isEqualTo: code)
-            }
-            if selectedGender != .unselected {
-                query = query.whereField("gender_id", isEqualTo: selectedGender.rawValue)
-            }
-            if let w = selectedWeather {
-                query = query.whereField("weather_type", isEqualTo: w.rawValue)
-            }
-            if !selectedTempCategory.isEmpty {
-                query = query.whereField("temp_category", isEqualTo: selectedTempCategory)
-            }
-
             let snapshot = try await query.getDocuments()
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
 
-            let q = brandQuery.trimmingCharacters(in: .whitespaces).lowercased()
-            if !q.isEmpty {
-                fetched = fetched.filter { $0.description.lowercased().contains(q) }
+            // クライアント側で各種条件をフィルタリング（複合インデックス不要）
+            if !selectedRegionIndices.isEmpty {
+                fetched = fetched.filter { post in
+                    selectedRegionIndices.contains { idx in
+                        String(format: "%02d", idx + 1) == post.region_code
+                    }
+                }
+            }
+            if !selectedGenders.isEmpty {
+                fetched = fetched.filter { selectedGenders.contains($0.gender_id) }
+            }
+            if !selectedWeathers.isEmpty {
+                fetched = fetched.filter { selectedWeathers.contains($0.weather_type) }
+            }
+            if !selectedTempMaxCategories.isEmpty {
+                fetched = fetched.filter { post in
+                    selectedTempMaxCategories.contains { tempMatches(post.temp_max, category: $0) }
+                }
+            }
+            if !selectedTempMinCategories.isEmpty {
+                fetched = fetched.filter { post in
+                    selectedTempMinCategories.contains { tempMatches(post.temp_min, category: $0) }
+                }
+            }
+
+            // ブランド検索：説明文またはアイテムのcustom_nameにマッチ（複数ブランド OR）
+            let allBrandQueries = selectedBrandNames.union(freeBrandQuery.isEmpty ? [] : [freeBrandQuery])
+            if !allBrandQueries.isEmpty {
+                let brandLowers = allBrandQueries.map { $0.lowercased() }
+                var matchedIds = Set(fetched
+                    .filter { post in brandLowers.contains(where: { post.description.lowercased().contains($0) }) }
+                    .map { $0.post_id })
+                let postsNeedingCheck = fetched.filter { !matchedIds.contains($0.post_id) }
+                if !postsNeedingCheck.isEmpty {
+                    for post in postsNeedingCheck {
+                        let postId = post.id ?? post.post_id
+                        if let itemsSnap = try? await db.collection("posts").document(postId)
+                            .collection("items").getDocuments() {
+                            let itemNames = itemsSnap.documents.compactMap { $0.data()["custom_name"] as? String }
+                            let itemNamesLower = itemNames.map { $0.lowercased() }
+                            if brandLowers.contains(where: { brand in
+                                itemNamesLower.contains(where: { $0.contains(brand) })
+                            }) {
+                                matchedIds.insert(post.post_id)
+                            }
+                        }
+                    }
+                }
+                fetched = fetched.filter { matchedIds.contains($0.post_id) }
             }
 
             results = fetched
             errorMessage = nil
+
+            // タイムラインに検索結果を反映して戻る
+            postsViewModel.searchResults = fetched
+            postsViewModel.isSearchActive = true
+            dismiss()
         } catch {
             errorMessage = "検索中にエラーが発生しました。再度お試しください。"
         }

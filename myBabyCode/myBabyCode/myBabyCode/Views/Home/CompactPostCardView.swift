@@ -82,30 +82,59 @@ struct CompactPostCardView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             
-            // 写真（タップで詳細）
-            Button(action: onTap) {
-                let url = post.image_url_front ?? post.image_url_back
-                GeometryReader { geo in
-                    CachedAsyncImage(url: url) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .clipped()
-                    } placeholder: {
-                        Color(.systemGray5)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .overlay(
-                                Image(systemName: "photo")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(.secondary.opacity(0.4))
-                            )
+            // 写真（タップで詳細・横スクロール対応）
+            let imageUrls = [post.image_url_front, post.image_url_back].compactMap { $0 }
+            if imageUrls.count > 1 {
+                TabView {
+                    ForEach(imageUrls.indices, id: \.self) { idx in
+                        Button(action: onTap) {
+                            GeometryReader { geo in
+                                CachedAsyncImage(url: imageUrls[idx]) { image in
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: geo.size.width, height: geo.size.height)
+                                        .clipped()
+                                } placeholder: {
+                                    Color(.systemGray5)
+                                        .frame(width: geo.size.width, height: geo.size.height)
+                                        .overlay(
+                                            Image(systemName: "photo")
+                                                .font(.system(size: 40))
+                                                .foregroundColor(.secondary.opacity(0.4))
+                                        )
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+                .frame(height: 320)
+            } else if let url = imageUrls.first {
+                Button(action: onTap) {
+                    GeometryReader { geo in
+                        CachedAsyncImage(url: url) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
+                        } placeholder: {
+                            Color(.systemGray5)
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .overlay(
+                                    Image(systemName: "photo")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.secondary.opacity(0.4))
+                                )
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .frame(height: 320)
+                .clipped()
             }
-            .buttonStyle(.plain)
-            .frame(height: 320)
-            .clipped()
             
             // アクションバー
             HStack(spacing: 16) {

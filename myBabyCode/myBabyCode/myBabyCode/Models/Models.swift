@@ -223,6 +223,7 @@ let tempCategories: [(label: String, key: String)] = [
 //       画像はファイルパス文字列で参照し、実体はアプリのDocumentsフォルダに保存されます。
 
 struct PostDraft: Codable {
+    var id: String = UUID().uuidString   // 下書きの一意ID（上書き保存に使用）
     var description: String = ""
     var regionIndex: Int = 12            // デフォルトは東京都（prefecturesの12番目）
     var weatherType: String = WeatherType.sunny.rawValue
@@ -232,6 +233,46 @@ struct PostDraft: Codable {
     var savedAt: Date = Date()           // 保存日時（下書き一覧の並び順に使用）
     var frontImagePath: String? = nil    // Documentsフォルダ内の画像ファイルパス
     var backImagePath: String? = nil     // Documentsフォルダ内の画像ファイルパス
+
+    // 既存データ（idフィールドなし）との互換性のためのカスタムデコード
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = (try? container.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        self.description = (try? container.decode(String.self, forKey: .description)) ?? ""
+        self.regionIndex = (try? container.decode(Int.self, forKey: .regionIndex)) ?? 12
+        self.weatherType = (try? container.decode(String.self, forKey: .weatherType)) ?? WeatherType.sunny.rawValue
+        self.tempMax = (try? container.decode(String.self, forKey: .tempMax)) ?? ""
+        self.tempMin = (try? container.decode(String.self, forKey: .tempMin)) ?? ""
+        self.items = (try? container.decode([DraftItem].self, forKey: .items)) ?? []
+        self.savedAt = (try? container.decode(Date.self, forKey: .savedAt)) ?? Date()
+        self.frontImagePath = try? container.decode(String.self, forKey: .frontImagePath)
+        self.backImagePath = try? container.decode(String.self, forKey: .backImagePath)
+    }
+
+    // 明示的なメンバーイニシャライザ（カスタムinit(from decoder)を追加したため自動生成されなくなった）
+    init(
+        id: String = UUID().uuidString,
+        description: String = "",
+        regionIndex: Int = 12,
+        weatherType: String = WeatherType.sunny.rawValue,
+        tempMax: String = "",
+        tempMin: String = "",
+        items: [DraftItem] = [],
+        savedAt: Date = Date(),
+        frontImagePath: String? = nil,
+        backImagePath: String? = nil
+    ) {
+        self.id = id
+        self.description = description
+        self.regionIndex = regionIndex
+        self.weatherType = weatherType
+        self.tempMax = tempMax
+        self.tempMin = tempMin
+        self.items = items
+        self.savedAt = savedAt
+        self.frontImagePath = frontImagePath
+        self.backImagePath = backImagePath
+    }
 }
 
 struct DraftItem: Codable, Identifiable {

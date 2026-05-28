@@ -28,6 +28,11 @@ struct HomeView: View {
     @State private var isGridMode: Bool = false
     @State private var selectedPost: Post? = nil  // グリッド表示時の詳細画面用
 
+    // 検索結果表示中かどうかで表示データを切り替え
+    private var displayPosts: [Post] {
+        postsViewModel.isSearchActive ? postsViewModel.searchResults : postsViewModel.posts
+    }
+
     // =============================================================================
     // 【Viewサマリー】body
     // 目的: ホーム画面の全体レイアウトを定義
@@ -48,8 +53,31 @@ struct HomeView: View {
                 // ヘッダー: アプリロゴ＋検索アイコン
                 AppHeaderView(
                     onLogoTap: { scrollToTopFlag.toggle() },
-                    showSearchButton: true
+                    showSearchButton: true,
+                    isSearchActive: postsViewModel.isSearchActive
                 )
+
+                // 検索結果表示中バナー
+                if postsViewModel.isSearchActive {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12))
+                            .foregroundColor(.accentRed)
+                        Text("検索結果を表示中")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Button {
+                            postsViewModel.clearSearch()
+                        } label: {
+                            Text("クリア")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.accentRed)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.accentRed.opacity(0.1))
+                }
 
                 // タブセレクター: 新着 / おすすめ / フォロー中 + 表示モード切り替え
                 HStack(spacing: 12) {
@@ -80,7 +108,7 @@ struct HomeView: View {
                     Spacer()
                     ProgressView()
                     Spacer()
-                } else if postsViewModel.posts.isEmpty {
+                } else if displayPosts.isEmpty {
                     // 投稿がない場合の空状態
                     Spacer()
                     VStack(spacing: 12) {
@@ -135,8 +163,8 @@ struct HomeView: View {
                 LazyVStack(spacing: 0) {
                     // トップスクロール用の目印
                     Color.clear.frame(height: 0).id("homeTop")
-                    ForEach(postsViewModel.posts.indices, id: \.self) { idx in
-                        let post = postsViewModel.posts[idx]
+                    ForEach(displayPosts.indices, id: \.self) { idx in
+                        let post = displayPosts[idx]
 
                         PostCardView(
                             post: post,
@@ -150,7 +178,8 @@ struct HomeView: View {
                         )
                         // 最後の要素が表示されたら次ページを取得（無限スクロール）
                         .onAppear {
-                            if post.post_id == postsViewModel.posts.last?.post_id {
+                            if !postsViewModel.isSearchActive,
+                               post.post_id == postsViewModel.posts.last?.post_id {
                                 Task { await postsViewModel.fetchMorePosts(user: authViewModel.currentUser) }
                             }
                         }
@@ -199,7 +228,7 @@ struct HomeView: View {
                     Color.clear.frame(height: 0).id("homeTop")
                     
                     LazyVGrid(columns: columns, spacing: 8) {
-                        ForEach(postsViewModel.posts, id: \.post_id) { post in
+                        ForEach(displayPosts, id: \.post_id) { post in
                             MiniPostCardView(
                                 post: post,
                                 isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
@@ -213,7 +242,8 @@ struct HomeView: View {
                             .frame(width: cellSize, height: cellSize * 1.3)
                             // 最後の要素が表示されたら次ページを取得（無限スクロール）
                             .onAppear {
-                                if post.post_id == postsViewModel.posts.last?.post_id {
+                                if !postsViewModel.isSearchActive,
+                                   post.post_id == postsViewModel.posts.last?.post_id {
                                     Task { await postsViewModel.fetchMorePosts(user: authViewModel.currentUser) }
                                 }
                             }
@@ -251,6 +281,7 @@ struct HomeView: View {
 struct AppHeaderView: View {
     var onLogoTap: (() -> Void)? = nil   // ロゴタップ時のコールバック（オプション）
     var showSearchButton: Bool = true     // 検索アイコンの表示フラグ
+    var isSearchActive: Bool = false      // 検索絞り込み中フラグ（アイコン変更用）
 
     var body: some View {
         ZStack {
@@ -271,7 +302,7 @@ struct AppHeaderView: View {
                 HStack {
                     Spacer()
                     NavigationLink(destination: SearchView()) {
-                        Image(systemName: "magnifyingglass")
+                        Image(systemName: isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
                             .font(.system(size: 20))
                             .foregroundColor(.accentRed)
                     }

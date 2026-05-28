@@ -26,7 +26,8 @@ struct PostCardView: View {
     @State private var showItemTags = false           // アイテムタグの表示/非表示
     @State private var postItems: [PostItem] = []     // Firestoreから取得した投稿アイテム
     @State private var itemsLoaded = false            // アイテムがロード済みか
-    @State private var currentImageHeight: CGFloat = UIScreen.main.bounds.width  // 写真の可変高さ
+    @State private var currentImageHeight: CGFloat = UIScreen.main.bounds.width  // 写真の可変高さ（初期値は画面幅でぺちゃんこ防止）
+    @State private var isFirstImageLoaded: Bool = false  // 初回画像読み込み済みフラグ
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
 
@@ -257,33 +258,43 @@ struct PostCardView: View {
     private func imageSlide(uiImage: UIImage, entry: (url: String, side: String), geo: GeometryProxy) -> some View {
         let imgAspect = uiImage.size.height / uiImage.size.width
         let dispH = geo.size.width * imgAspect
+        let clampedH = min(max(dispH, geo.size.width * 0.5), geo.size.width * 1.4)
         let tags = visibleTags(for: entry.side)
+        // 枠が写真より大きい時の中央揃えオフセット
+        let yOffset = max(0, (currentImageHeight - dispH) / 2)
+
         return ZStack(alignment: .topLeading) {
+            // レターボックス用の薄めグレー背景
+            Color(.systemGray5)
+
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFit()
-                .frame(width: geo.size.width)
-                .onAppear {
-                    // 写真のアスペクト比に応じて枠の高さを調整（上限1.4倍、下限0.5倍）
-                    let clampedH = min(max(dispH, geo.size.width * 0.5), geo.size.width * 1.4)
-                    if abs(currentImageHeight - clampedH) > 1 {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            currentImageHeight = clampedH
-                        }
-                    }
-                }
+                .frame(width: geo.size.width, height: currentImageHeight)
+
             ForEach(tags) { tag in
                 itemTagDot(
                     item: postItems.indices.contains(tag.item_index) ? postItems[tag.item_index] : nil,
                     position: CGPoint(
                         x: CGFloat(tag.x_ratio) * geo.size.width,
-                        y: CGFloat(tag.y_ratio) * dispH
+                        y: yOffset + CGFloat(tag.y_ratio) * dispH
                     )
                 )
             }
         }
-        .frame(width: geo.size.width, height: dispH)
+        .frame(width: geo.size.width, height: currentImageHeight)
         .contentShape(Rectangle())
+        .onAppear {
+            // 初回は常に写真サイズに設定、それ以降は大きい方にのみ拡張（縮小はしない）
+            if !isFirstImageLoaded {
+                currentImageHeight = clampedH
+                isFirstImageLoaded = true
+            } else if clampedH > currentImageHeight {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    currentImageHeight = clampedH
+                }
+            }
+        }
         .onTapGesture {
             if !itemsLoaded { loadItems() }
             withAnimation(.easeInOut(duration: 0.2)) { showItemTags.toggle() }

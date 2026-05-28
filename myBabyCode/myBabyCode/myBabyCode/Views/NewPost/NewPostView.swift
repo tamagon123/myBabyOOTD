@@ -48,6 +48,7 @@ struct NewPostView: View {
     // === アイテムタグ関連 ===
     @State private var taggingItemIndex: Int? = nil      // タグ付け中のアイテムインデックス
     @State private var taggingSide: String = "front"    // タグ付け対象の画像面
+    @State private var showNoPhotoAlert = false          // 写真未選択時タグ付けアラート
 
     // === 投稿情報 ===
     @State private var description: String = ""            // 投稿の説明文
@@ -77,6 +78,7 @@ struct NewPostView: View {
     @State private var draftSaved = false                  // 下書き保存済みフラグ
     @State private var showDraftSavedBanner = false       // 下書き保存成功バナー表示フラグ
     @State private var showDiscardAlert = false           // 変更破棄確認アラート
+    @State private var editingDraftId: String? = nil      // 現在編集中の下書きID（上書き保存用）
 
     // 計算プロパティ: ログイン中ユーザーの子供リスト（プロフィール設定時に登録）
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
@@ -100,6 +102,7 @@ struct NewPostView: View {
             ScrollView {
                 mainForm
             }
+            .background(Color(.systemBackground))
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -212,6 +215,11 @@ struct NewPostView: View {
                 Button("OK") {}
             } message: {
                 Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。")
+            }
+            .alert("写真を選択してください", isPresented: $showNoPhotoAlert) {
+                Button("OK") {}
+            } message: {
+                Text("タグ付けを行う前に、コーディネートの写真を撮影または選択してください。")
             }
             .fullScreenCover(isPresented: Binding(
                 get: { taggingItemIndex != nil },
@@ -617,6 +625,10 @@ struct NewPostView: View {
                 ItemEntryRow(entry: $items[idx], onRemove: {
                     items.remove(at: idx)
                 }, onTag: {
+                    guard frontImage != nil || backImage != nil else {
+                        showNoPhotoAlert = true
+                        return
+                    }
                     taggingSide = frontImage != nil ? "front" : "back"
                     taggingItemIndex = idx
                 })
@@ -807,7 +819,7 @@ struct NewPostView: View {
     //   4. 保存成功バナーを表示
     // =============================================================================
     private func saveDraft() {
-        let draftId = UUID().uuidString
+        let draftId = editingDraftId ?? UUID().uuidString
         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var frontPath: String? = nil
         var backPath: String? = nil
@@ -830,16 +842,19 @@ struct NewPostView: View {
             )
         }
         let draft = PostDraft(
+            id: draftId,
             description: description,
             regionIndex: selectedRegionIndex,
             weatherType: weatherType.rawValue,
             tempMax: tempMax,
             tempMin: tempMin,
             items: draftItems,
+            savedAt: Date(),
             frontImagePath: frontPath,
             backImagePath: backPath
         )
         draftManager.saveDraft(draft)
+        editingDraftId = draftId
         draftSaved = true
         withAnimation { showDraftSavedBanner = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -857,6 +872,7 @@ struct NewPostView: View {
     //   2. 保存済み画像ファイルをUIImageとして読み込む
     // =============================================================================
     private func applyDraft(_ draft: PostDraft) {
+        editingDraftId = draft.id
         description = draft.description
         selectedRegionIndex = draft.regionIndex
         weatherType = WeatherType(rawValue: draft.weatherType) ?? .sunny
@@ -1033,26 +1049,20 @@ struct ItemEntryRow: View {
                 // Tag button
                 Button(action: onTag) {
                     HStack(spacing: 4) {
+                        Image(systemName: entry.tagPosition != nil ? "tag.fill" : "tag")
+                            .font(.system(size: 11, weight: .medium))
+                        Text("タグ付け")
+                            .font(.system(size: 12, weight: .medium))
                         if entry.tagPosition != nil {
-                            // タグ済み：アクセント背景のタグアイコン
-                            HStack(spacing: 2) {
-                                Image(systemName: "tag.fill")
-                                    .font(.system(size: 10))
-                                Text(entry.tagSide == "front" ? "F" : "B")
-                                    .font(.system(size: 10, weight: .bold))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.accentBlue)
-                            .cornerRadius(8)
-                        } else {
-                            // 未タグ：グレーのタグアイコン
-                            Image(systemName: "tag")
-                                .font(.system(size: 16))
-                                .foregroundColor(.secondary)
+                            Text(entry.tagSide == "front" ? "F" : "B")
+                                .font(.system(size: 10, weight: .bold))
                         }
                     }
+                    .foregroundColor(entry.tagPosition != nil ? .white : .accentBlue)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(entry.tagPosition != nil ? Color.accentBlue : Color.accentBlue.opacity(0.08))
+                    .cornerRadius(10)
                 }
                 Button(action: onRemove) {
                     Image(systemName: "minus.circle.fill")
@@ -1069,10 +1079,11 @@ struct ItemEntryRow: View {
                     Button {
                         showBrandSearch = true
                     } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 14, weight: .medium))
+                        Text("検索")
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.white)
-                            .frame(width: 34, height: 34)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 8)
                             .background(Color.accentBlue)
                             .cornerRadius(8)
                     }
@@ -1112,53 +1123,29 @@ struct BrandSearchSheet: View {
     @State private var query: String = ""
     @FocusState private var isSearchFocused: Bool
 
-    private let popularBrands: [String] = [
-        "UNIQLO", "無印良品", "GU", "H&M", "Zara", "GAP",
-        "babyGAP", "Old Navy", "Carter's", "西松屋", "しまむら",
-        "mikihouse", "COMME CA ISM", "F.O.KIDS", "Petit Bateau",
-        "Boden", "Gymboree", "The Children's Place", "next",
-        "ZARA KIDS", "H&M Kids", "Mothercare", "Frugi",
-        "Boboli", "Mexx", "Oilily", "Jacadi", "Bonpoint",
-        "POLO Ralph Lauren Kids", "Tommy Hilfiger Kids",
-        "Nike Kids", "adidas Kids", "New Balance Kids",
-        "CONVERSE KIDS", "VANS Kids", "Reebok Kids",
-        "familiar", "セラフ", "コムサイズム", "ナルミヤ",
-        "BREEZE", "BREEZE BRONCO", "BONJOUR DIARY",
-        "earth music&ecology Kids", "Ribbon Tribe",
-        "ALGY", "COMME CA DU MODE", "SHIPS Kids", "EDIFICE Kids"
-    ]
-
-    private var filteredBrands: [String] {
-        if query.isEmpty { return popularBrands }
-        let normalizedQuery = normalizeForSearch(query)
-        return popularBrands.filter {
-            normalizeForSearch($0).contains(normalizedQuery)
-        }
+    private var filteredBrands: [BrandEntry] {
+        filterBrands(allBrands, query: query)
     }
 
-    // 検索用文字列正規化：ひらがな→カタカナ、大文字→小文字、記号除去
-    private func normalizeForSearch(_ text: String) -> String {
-        let mutable = NSMutableString(string: text) as CFMutableString
-        CFStringTransform(mutable, nil, kCFStringTransformHiraganaKatakana, false)
-        return (mutable as String)
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "　", with: "")
-            .replacingOccurrences(of: "&", with: "and")
-    }
-
-    // 入力されたブランド名をpopularBrands内の正式名称に正規化して返す
+    // 入力されたブランド名をallBrands内の正式名称に正規化して返す
     private func canonicalBrandName(for input: String) -> String {
         let normalizedInput = normalizeForSearch(input)
         // マッチする正式名称があればそれを返す
-        if let match = popularBrands.first(where: { normalizeForSearch($0) == normalizedInput }) {
-            return match
+        if let match = allBrands.first(where: { normalizeForSearch($0.name) == normalizedInput }) {
+            return match.name
+        }
+        // 読み仮名完全一致も探す
+        if let readingMatch = allBrands.first(where: { $0.reading == normalizedInput }) {
+            return readingMatch.name
         }
         // 部分一致も探す（「ユニクロ」→「UNIQLO」など）
-        if let partial = popularBrands.first(where: {
-            normalizeForSearch($0).contains(normalizedInput) || normalizedInput.contains(normalizeForSearch($0))
+        if let partial = allBrands.first(where: {
+            normalizeForSearch($0.name).contains(normalizedInput) ||
+            $0.reading.contains(normalizedInput) ||
+            normalizedInput.contains(normalizeForSearch($0.name)) ||
+            normalizedInput.contains($0.reading)
         }) {
-            return partial
+            return partial.name
         }
         return input
     }
@@ -1170,7 +1157,7 @@ struct BrandSearchSheet: View {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
-                    TextField("ブランド名を検索", text: $query)
+                    TextField("ブランド名を検索（ふりがな可）", text: $query)
                         .focused($isSearchFocused)
                         .submitLabel(.search)
                     if !query.isEmpty {
@@ -1187,7 +1174,7 @@ struct BrandSearchSheet: View {
                 .padding(.vertical, 12)
 
                 // 直接入力ボタン（検索結果にない場合）— 正規化して正式名称に統一
-                if !query.isEmpty && !filteredBrands.contains(where: { $0.lowercased() == query.lowercased() }) {
+                if !query.isEmpty && !filteredBrands.contains(where: { $0.name.lowercased() == query.lowercased() }) {
                     let canonicalBrand = canonicalBrandName(for: query)
                     Button {
                         selectedBrand = canonicalBrand
@@ -1220,17 +1207,21 @@ struct BrandSearchSheet: View {
                             .listRowBackground(Color.clear)
                     } else {
                         Section(header: Text(query.isEmpty ? "人気ブランド" : "検索結果").font(.caption)) {
-                            ForEach(filteredBrands, id: \.self) { brand in
+                            ForEach(filteredBrands) { brand in
                                 Button {
-                                    selectedBrand = brand
+                                    selectedBrand = brand.name
                                     dismiss()
                                 } label: {
                                     HStack {
-                                        Text(brand)
+                                        Text(brand.name)
                                             .font(.system(size: 15))
                                             .foregroundColor(.primary)
+                                        Text(brand.reading)
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                            .padding(.leading, 4)
                                         Spacer()
-                                        if selectedBrand == brand {
+                                        if selectedBrand == brand.name {
                                             Image(systemName: "checkmark")
                                                 .foregroundColor(.accentBlue)
                                         }

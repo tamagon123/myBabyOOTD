@@ -63,9 +63,9 @@ struct ProfileView: View {
 
                 // プロフィールヘッダー
                 profileHeader
-                    .padding(.top, 20)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
+                    .padding(.top, 12)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
 
                 // タブセレクター（自分のプロフィール時のみ）・他アカウントは切り替えボタンのみ
                 if isOwnProfile {
@@ -81,6 +81,9 @@ struct ProfileView: View {
                                 .font(.system(size: 18))
                                 .foregroundColor(.accentRed)
                                 .frame(width: 36, height: 36)
+                                .background(Color.white)
+                                .clipShape(Circle())
+                                .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
                         }
                         .buttonStyle(.plain)
                         .padding(.trailing, 20)
@@ -101,17 +104,7 @@ struct ProfileView: View {
             }
         }
         .background(Color.ecruBackground.ignoresSafeArea())
-        // 右上に設定ボタン（自分のプロフィール時のみ）
-        .overlay(alignment: .topTrailing) {
-            if isOwnProfile {
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 20))
-                        .foregroundColor(.secondary)
-                        .padding(16)
-                }
-            }
-        }
+        // 設定ボタンはヘッダーカード内に統合済み
         // Pull-to-refresh
         .refreshable {
             await loadProfile()
@@ -166,114 +159,266 @@ struct ProfileView: View {
     // MARK: - Header
 
     private var profileHeader: some View {
-        VStack(spacing: 16) {
-            // Avatar
-            let avatarId = profileUser?.avatar_id ?? "bear"
-            let bgColor = Color(hex: profileUser?.avatar_bg_color ?? "#FFEEBA")
-            Group {
-                if avatarId.hasPrefix("https://") {
-                    AsyncImage(url: URL(string: avatarId)) { img in
-                        img.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.ecruBackground
+        VStack(spacing: 0) {
+            // ── 上部: アバター・名前・ID・設定ボタン ──
+            VStack(spacing: 12) {
+                ZStack(alignment: .topTrailing) {
+                    VStack(spacing: 12) {
+                        // Avatar (大きく、枠線・影付き)
+                        let avatarId = profileUser?.avatar_id ?? "bear"
+                        let bgColor = Color(hex: profileUser?.avatar_bg_color ?? "#FFEEBA")
+                        Group {
+                            if avatarId.hasPrefix("https://") {
+                                AsyncImage(url: URL(string: avatarId)) { img in
+                                    img.resizable().scaledToFill()
+                                } placeholder: {
+                                    Color.ecruBackground
+                                }
+                            } else if avatarImageNames.contains(avatarId) {
+                                Image(avatarId)
+                                    .resizable()
+                                    .scaledToFill()
+                            } else {
+                                Text(avatarId)
+                                    .font(.system(size: 72))
+                            }
+                        }
+                        .frame(width: 100, height: 100)
+                        .background(bgColor)
+                        .clipShape(Circle())
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white, lineWidth: 4)
+                        )
+                        .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
+
+                        // Display name
+                        if let name = profileUser?.display_name, !name.isEmpty {
+                            Text(name)
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(.primary)
+                        }
+                        // Unique user ID
+                        if let uid = profileUser?.unique_user_id, !uid.isEmpty {
+                            Text("@\(uid)")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
+                        }
                     }
-                } else if avatarImageNames.contains(avatarId) {
-                    Image(avatarId)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Text(avatarId)
-                        .font(.system(size: 56))
+                    .frame(maxWidth: .infinity)
+
+                    // 設定ボタン（自分のプロフィール時のみ、右上）
+                    if isOwnProfile {
+                        HStack(spacing: 12) {
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color(.systemGray6))
+                                    .clipShape(Circle())
+                            }
+                        }
+                        .padding(.trailing, 4)
+                    }
+                }
+
+                // 子供情報チップ
+                if let children = profileUser?.children, !children.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(children.indices, id: \.self) { idx in
+                                let child = children[idx]
+                                let name = child.name
+                                let ageText = childAgeText(child)
+                                HStack(spacing: 4) {
+                                    Image(systemName: "figure.child")
+                                        .font(.system(size: 12))
+                                    Text("\(name) \(ageText)")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.accentRed.opacity(0.10))
+                                .foregroundColor(.accentRed)
+                                .clipShape(Capsule())
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
+
+                // プロフィール編集ボタン（自分のプロフィール時のみ）
+                if isOwnProfile {
+                    Button {
+                        showEditProfile = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("プロフィールを編集")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                    }
+                }
+
+                // フォローボタン（他ユーザーの場合）
+                if !isOwnProfile {
+                    Button {
+                        Task { await toggleFollow() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isFollowing ? "checkmark" : "person.badge.plus")
+                                .font(.system(size: 13, weight: .medium))
+                            Text(isFollowing ? "フォロー中" : "フォローする")
+                                .font(.system(size: 14, weight: .bold))
+                        }
+                        .foregroundColor(isFollowing ? .secondary : .white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(isFollowing ? Color(.systemGray5) : Color.accentBlue)
+                        .cornerRadius(12)
+                    }
                 }
             }
-            .frame(width: 80, height: 80)
-            .background(bgColor)
-            .clipShape(Circle())
+            .padding(.top, 20)
+            .padding(.horizontal, 20)
 
-            // Display name
-            if let name = profileUser?.display_name, !name.isEmpty {
-                Text(name)
-                    .font(.system(size: 16, weight: .semibold))
-            }
-            // Unique user ID
-            if let uid = profileUser?.unique_user_id, !uid.isEmpty {
-                Text("@\(uid)")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-            }
+            Divider()
+                .padding(.top, 16)
+                .padding(.horizontal, 20)
 
-            // Stats
-            HStack(spacing: 24) {
-                statView(count: userPosts.count, label: "投稿")
-                statView(count: profileUser?.followers_count ?? 0, label: "フォロワー")
+            // ── 統計カード横並び ──
+            HStack(spacing: 0) {
+                statCard(count: userPosts.count, label: "投稿", icon: "photo.on.rectangle")
+                Divider().frame(height: 40)
+                statCard(count: profileUser?.followers_count ?? 0, label: "フォロワー", icon: "person.2")
                 if isOwnProfile {
+                    Divider().frame(height: 40)
                     Button {
                         Task {
                             await loadFollowingUsers()
                             showFollowingList = true
                         }
                     } label: {
-                        VStack(spacing: 4) {
-                            Text("\(followingCount)")
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundColor(.primary)
-                            Text("フォロー")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        statCardContent(count: followingCount, label: "フォロー", icon: "person.2.fill")
                     }
+                    .buttonStyle(.plain)
+                } else {
+                    Divider().frame(height: 40)
+                    statCardContent(count: followingCount, label: "フォロー", icon: "person.2.fill")
                 }
             }
-
-            // Action button
-            if !isOwnProfile {
-                Button {
-                    Task { await toggleFollow() }
-                } label: {
-                    Text(isFollowing ? "フォロー中" : "フォローする")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(isFollowing ? .secondary : .white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(isFollowing ? Color(.systemGray5) : Color.accentBlue)
-                        .cornerRadius(12)
-                }
-            }
+            .padding(.vertical, 12)
         }
+        .background(Color.white)
+        .cornerRadius(20)
+        .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
     }
 
+    /// 統計カード（タップ不可）
     @ViewBuilder
-    private func statView(count: Int, label: String) -> some View {
-        VStack(spacing: 4) {
+    private func statCard(count: Int, label: String, icon: String) -> some View {
+        statCardContent(count: count, label: label, icon: icon)
+            .frame(maxWidth: .infinity)
+    }
+
+    /// 統計カードの中身
+    @ViewBuilder
+    private func statCardContent(count: Int, label: String, icon: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(.accentRed)
             Text("\(count)")
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.primary)
             Text(label)
-                .font(.caption)
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// 空の状態表示（Empty State）
+    @ViewBuilder
+    private func emptyStateView(icon: String, title: String, message: String?) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 48))
+                .foregroundColor(Color(.systemGray4))
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.secondary)
+            if let message = message {
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(.systemGray3))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+        .padding(.bottom, 40)
+    }
+
+    /// 子供の年齢テキストを生成
+    private func childAgeText(_ child: ChildProfile) -> String {
+        let birth = child.birthday
+        let now = Date()
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: birth, to: now)
+        if let year = components.year, year > 0 {
+            if let month = components.month, month > 0 {
+                return "(\(year)歳\(month)ヶ月)"
+            }
+            return "(\(year)歳)"
+        } else if let month = components.month, month > 0 {
+            return "(\(month)ヶ月)"
+        }
+        return ""
     }
 
     // MARK: - Tab Selector
 
     private var tabSelector: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 0) {
+            // ピル型セグメントタブ
+            HStack(spacing: 4) {
                 ForEach(ProfileTab.allCases, id: \.self) { tab in
                     Button {
-                        selectedTab = tab
-                    } label: {
-                        VStack(spacing: 8) {
-                            Text(tab.rawValue)
-                                .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .medium))
-                                .foregroundColor(selectedTab == tab ? .primary : .secondary)
-                            Rectangle()
-                                .fill(selectedTab == tab ? Color.accentRed : Color.clear)
-                                .frame(height: 2)
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedTab = tab
                         }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: tab == .posts ? "photo.on.rectangle" : "heart.fill")
+                                .font(.system(size: 14))
+                            Text(tab.rawValue)
+                                .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium))
+                        }
+                        .foregroundColor(selectedTab == tab ? .white : .secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(selectedTab == tab ? Color.accentRed : Color.clear)
+                        .clipShape(Capsule())
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
                 }
             }
+            .padding(4)
+            .background(Color(.systemGray6))
+            .clipShape(Capsule())
+
+            Spacer()
+
             // グリッド/リスト切り替えボタン
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -284,12 +429,14 @@ struct ProfileView: View {
                     .font(.system(size: 18))
                     .foregroundColor(.accentRed)
                     .frame(width: 36, height: 36)
+                    .background(Color.white)
+                    .clipShape(Circle())
+                    .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
             }
             .buttonStyle(.plain)
-            .padding(.trailing, 8)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 16)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
         .padding(.bottom, 8)
     }
 
@@ -297,7 +444,13 @@ struct ProfileView: View {
 
     private var postsGrid: some View {
         Group {
-            if isGridMode {
+            if userPosts.isEmpty {
+                emptyStateView(
+                    icon: "photo.on.rectangle.angled",
+                    title: isOwnProfile ? "まだ投稿がありません" : "投稿がありません",
+                    message: isOwnProfile ? "子供のコーデを投稿してシェアしよう" : nil
+                )
+            } else if isGridMode {
                 profileMiniGrid(posts: userPosts)
             } else {
                 LazyVStack(spacing: 12) {
@@ -400,7 +553,13 @@ struct ProfileView: View {
 
     private var likedPostsGrid: some View {
         Group {
-            if isGridMode {
+            if likedPosts.isEmpty {
+                emptyStateView(
+                    icon: "heart.slash",
+                    title: "いいねした投稿がありません",
+                    message: "気に入ったコーデにいいねしてみよう"
+                )
+            } else if isGridMode {
                 profileMiniGrid(posts: likedPosts)
             } else {
                 LazyVStack(spacing: 12) {

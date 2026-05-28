@@ -55,6 +55,8 @@ class PostsViewModel: ObservableObject {
     @Published var likedPostIds: Set<String> = []     // 自分がいいねした投稿IDの集合
     @Published var pendingItemTags: [PostItemTag] = [] // 新規投稿時に一時保持されるタグ位置
     @Published var hasMorePosts: Bool = false        // さらに読み込める投稿があるか
+    @Published var searchResults: [Post] = []        // 検索結果の投稿リスト
+    @Published var isSearchActive: Bool = false       // 検索結果表示中フラグ
 
     // === プライベート状態 ===
     private let db = Firestore.firestore()          // Firestoreデータベース参照
@@ -63,6 +65,15 @@ class PostsViewModel: ObservableObject {
     private var followingCursor: Timestamp? = nil     // フォロータブのページネーション用
     private var cachedFollowingIds: [String] = []   // フォロー中ユーザーIDのキャッシュ
     private let pageSize: Int = 20                  // 1ページあたりの取得件数
+
+    // =============================================================================
+    // 【関数サマリー】clearSearch
+    // 目的: 検索結果をクリアして通常のタイムライン表示に戻す
+    // =============================================================================
+    func clearSearch() {
+        isSearchActive = false
+        searchResults = []
+    }
 
     // MARK: - Fetch
     // 説明: タイムライン投稿の取得系処理
@@ -684,19 +695,23 @@ class DraftManager: ObservableObject {
 
     // =============================================================================
     // 【関数サマリー】saveDraft
-    // 目的: 新しい下書きをリストの先頭に追加し、UserDefaultsに保存する
+    // 目的: 下書きを保存する。同じIDがあれば上書き、なければリスト先頭に追加
     // 引数:
     //   - draft: PostDraft - 保存する下書きデータ
     // 戻り値: なし
     // 処理の流れ:
-    //   1. 既存リストの先頭に新規下書きを挿入
+    //   1. 同じIDの下書きがあれば置き換え、なければ先頭に追加
     //   2. 20件を超える場合は古いものを切り捨て
     //   3. JSONエンコードしてUserDefaultsに保存
     // 呼び出し元: NewPostView.saveDraft()
     // =============================================================================
     func saveDraft(_ draft: PostDraft) {
         var current = drafts
-        current.insert(draft, at: 0)
+        if let idx = current.firstIndex(where: { $0.id == draft.id }) {
+            current[idx] = draft
+        } else {
+            current.insert(draft, at: 0)
+        }
         if current.count > 20 { current = Array(current.prefix(20)) }
         if let data = try? JSONEncoder().encode(current) {
             UserDefaults.standard.set(data, forKey: draftsKey)

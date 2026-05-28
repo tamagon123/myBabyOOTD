@@ -21,27 +21,54 @@ struct MiniPostCardView: View {
     var body: some View {
         GeometryReader { geo in
         ZStack(alignment: .bottomLeading) {
-            // メイン画像（親サイズに確実に収める）
-            Button(action: onTap) {
-                let url = post.image_url_front ?? post.image_url_back
-                CachedAsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                } placeholder: {
-                    Color(.systemGray5)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .overlay(
-                            Image(systemName: "photo")
-                                .foregroundColor(.secondary)
-                        )
+            // メイン画像（横スクロール対応）
+            let imageUrls = [post.image_url_front, post.image_url_back].compactMap { $0 }
+            if imageUrls.count > 1 {
+                TabView {
+                    ForEach(imageUrls.indices, id: \.self) { idx in
+                        Button(action: onTap) {
+                            CachedAsyncImage(url: imageUrls[idx]) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                                    .clipped()
+                            } placeholder: {
+                                Color(.systemGray5)
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                                    .overlay(
+                                        Image(systemName: "photo")
+                                            .foregroundColor(.secondary)
+                                    )
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+            } else if let url = imageUrls.first {
+                Button(action: onTap) {
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                    } placeholder: {
+                        Color(.systemGray5)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundColor(.secondary)
+                            )
+                    }
+                }
+                .buttonStyle(.plain)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
             }
-            .buttonStyle(.plain)
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
             
             // グラデーションオーバーレイ（下部情報表示用）
             LinearGradient(

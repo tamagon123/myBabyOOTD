@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var showDeleteAccountAlert = false  // アカウント削除確認アラート
     @State private var showReauthAlert = false        // 再認証（パスワード入力）アラート
     @State private var reauthPassword = ""           // 再認証用パスワード入力
+    @State private var showUnsubscribeAlert = false   // プレミアム解除確認アラート
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -92,6 +93,12 @@ struct SettingsView: View {
                                 .padding(.vertical, 4)
                                 .background(Color.accentGreen)
                                 .cornerRadius(10)
+                        }
+
+                        Button(role: .destructive) {
+                            showUnsubscribeAlert = true
+                        } label: {
+                            Label("プレミアムを解除", systemImage: "xmark.circle")
                         }
                     } else {
                         Button {
@@ -227,6 +234,14 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("セキュリティのため、パスワードを再度入力してください。")
+            }
+            .alert("プレミアムを解除", isPresented: $showUnsubscribeAlert) {
+                Button("キャンセル", role: .cancel) {}
+                Button("解除する", role: .destructive) {
+                    subscriptionManager.setSubscribed(false)
+                }
+            } message: {
+                Text("プレミアム状態を解除すると、広告が表示されるようになります。よろしいですか？")
             }
         }
     }
