@@ -26,5 +26,16 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-1810074247562384~7190264881</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>あなたに最適な広告を表示するために、広告識別子の使用を許可してください。</string>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
 </dict>
 </plist>

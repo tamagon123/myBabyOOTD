@@ -372,18 +372,40 @@ class PostsViewModel: ObservableObject {
         let postRef = db.collection("posts").document(postId)
 
         if likedPostIds.contains(postId) {
+            // 楽観的UI更新（即時反映）
             likedPostIds.remove(postId)
-            try? await likeRef.delete()
-            try? await postRef.updateData(["likes_count": FieldValue.increment(Int64(-1))])
             if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
                 posts[idx].likes_count = max(0, posts[idx].likes_count - 1)
             }
+            // バックグラウンドでFirestore更新、エラー時は復元
+            do {
+                try await likeRef.delete()
+                try await postRef.updateData(["likes_count": FieldValue.increment(Int64(-1))])
+            } catch {
+                // エラー時はUIを元に戻す
+                likedPostIds.insert(postId)
+                if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
+                    posts[idx].likes_count += 1
+                }
+                errorMessage = "いいね解除に失敗しました: \(error.localizedDescription)"
+            }
         } else {
+            // 楽観的UI更新（即時反映）
             likedPostIds.insert(postId)
-            try? await likeRef.setData(["user_id": uid, "post_id": postId])
-            try? await postRef.updateData(["likes_count": FieldValue.increment(Int64(1))])
             if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
                 posts[idx].likes_count += 1
+            }
+            // バックグラウンドでFirestore更新、エラー時は復元
+            do {
+                try await likeRef.setData(["user_id": uid, "post_id": postId])
+                try await postRef.updateData(["likes_count": FieldValue.increment(Int64(1))])
+            } catch {
+                // エラー時はUIを元に戻す
+                likedPostIds.remove(postId)
+                if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
+                    posts[idx].likes_count = max(0, posts[idx].likes_count - 1)
+                }
+                errorMessage = "いいねに失敗しました: \(error.localizedDescription)"
             }
         }
     }
@@ -411,17 +433,27 @@ class PostsViewModel: ObservableObject {
         guard !postId.isEmpty else { return }
 
         let reportRef = db.collection("reports").document("\(uid)_\(postId)")
-        let snapshot = try? await reportRef.getDocument()
-        guard snapshot?.exists != true else { return }
+        do {
+            let snapshot = try await reportRef.getDocument()
+            guard !snapshot.exists else {
+                errorMessage = "すでに通報済みです"
+                return
+            }
 
-        let postRef = db.collection("posts").document(postId)
-        try? await reportRef.setData(["user_id": uid, "post_id": postId])
-        try? await postRef.updateData(["reports_count": FieldValue.increment(Int64(1))])
+            let postRef = db.collection("posts").document(postId)
+            try await reportRef.setData(["user_id": uid, "post_id": postId])
+            try await postRef.updateData(["reports_count": FieldValue.increment(Int64(1))])
 
-        let postSnap = try? await postRef.getDocument()
-        if let count = postSnap?.data()?["reports_count"] as? Int, count >= 5 {
-            try? await postRef.updateData(["is_hidden": true])
-            posts.removeAll { $0.id == postId }
+            // 通報後のカウント確認と非表示化
+            let postSnap = try await postRef.getDocument()
+            if let count = postSnap.data()?["reports_count"] as? Int, count >= 5 {
+                try await postRef.updateData(["is_hidden": true])
+                await MainActor.run {
+                    posts.removeAll { $0.id == postId }
+                }
+            }
+        } catch {
+            errorMessage = "通報に失敗しました: \(error.localizedDescription)"
         }
     }
 
@@ -642,14 +674,15 @@ class PostsViewModel: ObservableObject {
             let storageRef = storage.reference()
             let frontRef = storageRef.child("posts/\(postId)/front.jpg")
             let backRef = storageRef.child("posts/\(postId)/back.jpg")
-            try? await frontRef.delete()
-            try? await backRef.delete()
+            // Storage画像削除は失敗しても続行（既に削除済みの場合等）
+            do { try await frontRef.delete() } catch { print("Front image delete failed or already deleted: \(error)") }
+            do { try await backRef.delete() } catch { print("Back image delete failed or already deleted: \(error)") }
 
             // Delete subcollection items
             let postRef = db.collection("posts").document(postId)
-            let itemsSnap = try? await postRef.collection("items").getDocuments()
-            if let docs = itemsSnap?.documents {
-                for doc in docs { try? await doc.reference.delete() }
+            let itemsSnap = try await postRef.collection("items").getDocuments()
+            for doc in itemsSnap.documents {
+                try await doc.reference.delete()
             }
 
             // Delete the post document
@@ -662,7 +695,7 @@ class PostsViewModel: ObservableObject {
             }
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "投稿削除に失敗しました: \(error.localizedDescription)"
             return false
         }
     }
@@ -773,5 +806,61 @@ class DraftManager: ObservableObject {
     // =============================================================================
     func clearPendingDraft() {
         pendingDraft = nil
+    }
+
+    // =============================================================================
+    // 【関数サマリー】cleanupDraftImages
+    // 目的: 指定した下書きIDに紐づく画像ファイルのみを削除する（下書きデータ自体は残す）
+    // 引数:
+    //   - draftId: String - 画像を削除する下書きのID
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. 下書きリストから該当IDの下書きを検索
+    //   2. frontImagePath / backImagePath に対応する画像ファイルを削除
+    //   3. 下書きデータ自体は削除しない（呼び出し側で別途削除する）
+    // 呼び出し元: NewPostView（投稿成功後に下書き画像をクリーンアップ）
+    // =============================================================================
+    func cleanupDraftImages(draftId: String) {
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        if let draft = drafts.first(where: { $0.id == draftId }) {
+            if let path = draft.frontImagePath {
+                try? FileManager.default.removeItem(at: docsURL.appendingPathComponent(path))
+                print("Cleaned up draft front image: \(path)")
+            }
+            if let path = draft.backImagePath {
+                try? FileManager.default.removeItem(at: docsURL.appendingPathComponent(path))
+                print("Cleaned up draft back image: \(path)")
+            }
+        }
+    }
+
+    // =============================================================================
+    // 【関数サマリー】deleteDraftById
+    // 目的: 指定したIDの下書きを削除し、関連する画像ファイルも破棄する
+    // 引数:
+    //   - draftId: String - 削除する下書きのID
+    // 戻り値: Bool - true=削除成功、false=該当下書きなし
+    // 呼び出し元: NewPostView（投稿成功後に下書きを完全削除）
+    // =============================================================================
+    @discardableResult
+    func deleteDraftById(_ draftId: String) -> Bool {
+        var current = drafts
+        guard let idx = current.firstIndex(where: { $0.id == draftId }) else { return false }
+
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let draft = current[idx]
+        if let path = draft.frontImagePath {
+            try? FileManager.default.removeItem(at: docsURL.appendingPathComponent(path))
+        }
+        if let path = draft.backImagePath {
+            try? FileManager.default.removeItem(at: docsURL.appendingPathComponent(path))
+        }
+
+        current.remove(at: idx)
+        if let data = try? JSONEncoder().encode(current) {
+            UserDefaults.standard.set(data, forKey: draftsKey)
+        }
+        print("Deleted draft with images: \(draftId)")
+        return true
     }
 }

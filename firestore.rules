@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuth() && request.auth.uid == userId;
+    }
+
+    // users: 読み取りは全員可、書き込みは自分のみ
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isOwner(userId);
+    }
+
+    // posts: 非表示でないものを全員に公開。作成/更新/削除は投稿者のみ。
+    // reports_count の更新は誰でも可（通報時の加算）
+    match /posts/{postId} {
+      allow read: if resource.data.is_hidden == false;
+      allow create: if isAuth()
+        && request.auth.uid == request.resource.data.user_id;
+      allow update: if isAuth()
+        && (resource.data.user_id == request.auth.uid
+          || request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['reports_count']));
+      allow delete: if isAuth() && resource.data.user_id == request.auth.uid;
+
+      match /items/{itemId} {
+        allow read: if true;
+        allow write: if isAuth()
+          && get(/databases/$(database)/documents/posts/$(postId)).data.user_id == request.auth.uid;
+      }
+    }
+
+    // likes: 自分のいいねのみ作成・削除
+    match /likes/{likeId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.auth.uid == request.resource.data.user_id;
+      allow delete: if isAuth() && request.auth.uid == resource.data.user_id;
+    }
+
+    // follows: 自分のフォローのみ作成・削除
+    match /follows/{followId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.auth.uid == request.resource.data.follower_id;
+      allow delete: if isAuth() && resource.data.follower_id == request.auth.uid;
+    }
+
+    // reports: 1人1回のみ作成。読み取りは禁止（運営管理画面時に修正）
+    match /reports/{reportId} {
+      allow create: if isAuth()
+        && request.auth.uid == request.resource.data.user_id
+        && !exists(/databases/$(database)/documents/reports/$(reportId));
+      allow read, update, delete: if false;
+    }
+
+    // デフォルト: すべて禁止
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

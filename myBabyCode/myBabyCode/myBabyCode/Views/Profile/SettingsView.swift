@@ -110,8 +110,16 @@ struct SettingsView: View {
                                 Spacer()
                                 if subscriptionManager.isPurchasing {
                                     ProgressView().scaleEffect(0.8)
+                                } else if let price = subscriptionManager.productPrice {
+                                    Text(price)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(Color.accentColor)
+                                        .cornerRadius(10)
                                 } else {
-                                    Text("近日公開")
+                                    Text("購入")
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundColor(.secondary)
                                         .padding(.horizontal, 10)
@@ -176,6 +184,9 @@ struct SettingsView: View {
             .safeAreaInset(edge: .bottom) {
                 // バナー広告（プレミアム加入で非表示）
                 AdBannerView()
+            }
+            .task {
+                await subscriptionManager.loadProduct()
             }
             .alert("エラー", isPresented: Binding(
                 get: { subscriptionManager.errorMessage != nil },

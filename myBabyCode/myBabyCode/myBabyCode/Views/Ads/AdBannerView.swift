@@ -11,19 +11,23 @@
 //   3. バナー広告ユニットを作成し、adUnitId に設定（下記 AdConfig.bannerAdUnitId）
 //   4. Google-Mobile-Ads-SDK を Swift Package Manager で追加
 //      URL: https://github.com/googleads/swift-package-manager-google-mobile-ads
-//   5. このファイル内の「#if ADMOB_ENABLED」ブロックのコメントを外す
+//   5. Google-Mobile-Ads-SDK v11+ を使用（旧版 API とは異なる）
 //
 //   【現在の状態】
-//   AdMob SDK 未導入のため、プレースホルダー（グレー帯）を表示しています。
-//   SDK 導入後に ADMOB_ENABLED フラグを有効にしてください。
+//   AdMob SDK 導入済み。canImport でコンパイル分岐し、未導入時は EmptyView。
+//   子供向けアプリ対応として tagForChildDirectedTreatment を設定済み。
 // =============================================================================
 
 import SwiftUI
+#if canImport(GoogleMobileAds)
+import GoogleMobileAds
+#endif
 
 // MARK: - AdMob 設定
 private enum AdConfig {
-    // テスト用広告ユニットID（本番では実際のIDに差し替えること）
-    // テストID: ca-app-pub-3940256099942544/2934735716
+    // 本番広告ユニットID（テスト時は ca-app-pub-3940256099942544/2934735716 に差し替え）
+    //static let bannerAdUnitId: String = "ca-app-pub-1810074247562384/5573930888"
+    // テスト用
     static let bannerAdUnitId: String = "ca-app-pub-3940256099942544/2934735716"
 
     // バナーの標準高さ
@@ -44,30 +48,15 @@ struct AdBannerView: View {
 
     @ViewBuilder
     private var adContent: some View {
-        // ==========================================================================
-        // TODO: AdMob SDK 導入後にこのプレースホルダーを実際の広告ビューに差し替える
-        //
-        // 【差し替え手順】
-        // 1. Google-Mobile-Ads-SDK を追加（SPM）
-        // 2. 下記コメントアウトを外してプレースホルダーを削除
-        // 3. AdConfig.bannerAdUnitId を本番IDに変更
-        // ==========================================================================
-
-        // --- プレースホルダー（SDK未導入時の表示） ---
-        ZStack {
-            Color(.systemGray5)
-                .frame(height: AdConfig.bannerHeight)
-            Text("広告スペース（AdMob 設定後に表示されます）")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: AdConfig.bannerHeight)
-
-        // --- AdMob 実装例（SDK導入後にコメントを外す） ---
-        // GADBannerViewRepresentable(adUnitId: AdConfig.bannerAdUnitId)
-        //     .frame(maxWidth: .infinity)
-        //     .frame(height: AdConfig.bannerHeight)
+        #if canImport(GoogleMobileAds)
+        //--- AdMob 実装（SDK導入済みの場合のみ表示） ---
+        GADBannerViewRepresentable(adUnitId: AdConfig.bannerAdUnitId)
+            .frame(maxWidth: .infinity)
+            .frame(height: AdConfig.bannerHeight)
+        #else
+        // AdMob SDK が未導入の場合は何も表示しない
+        EmptyView()
+        #endif
     }
 }
 
@@ -77,23 +66,50 @@ struct AdBannerView: View {
 // 使い方: AdMob SDK 導入後にコメントを外して使用
 // =============================================================================
 
-// import GoogleMobileAds
-//
-// struct GADBannerViewRepresentable: UIViewRepresentable {
-//     let adUnitId: String
-//
-//     func makeUIView(context: Context) -> BannerView {
-//         let banner = BannerView(adSize: currentOrientationAnchoredAdaptiveBanner(
-//             width: UIScreen.main.bounds.width
-//         ))
-//         banner.adUnitID = adUnitId
-//         banner.rootViewController = UIApplication.shared
-//             .connectedScenes
-//             .compactMap { $0 as? UIWindowScene }
-//             .first?.windows.first?.rootViewController
-//         banner.load(Request())
-//         return banner
-//     }
-//
-//     func updateUIView(_ uiView: BannerView, context: Context) {}
-// }
+#if canImport(GoogleMobileAds)
+import GoogleMobileAds
+import UIKit
+
+struct GADBannerViewRepresentable: UIViewRepresentable {
+    let adUnitId: String
+
+    func makeUIView(context: Context) -> GADBannerView {
+        // Calculate an adaptive banner size for the current width
+        let screenWidth = UIScreen.main.bounds.width
+        let adSize = GADCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth(screenWidth)
+
+        let banner = GADBannerView(adSize: adSize)
+        banner.adUnitID = adUnitId
+        banner.rootViewController = Self.topViewController()
+
+        // COPPA: child-directed treatment
+        let request = GADRequest()
+        let extras = GADExtras()
+        extras.additionalParameters = ["tag_for_child_directed_treatment": "true"]
+        request.register(extras)
+
+        banner.load(request)
+        return banner
+    }
+
+    func updateUIView(_ uiView: GADBannerView, context: Context) {
+        // If the size class or width changes significantly, you could recalc the adaptive size.
+        // For simplicity, no dynamic updates are performed here.
+    }
+}
+
+private extension GADBannerViewRepresentable {
+    // Safely find the top-most view controller to host the banner
+    static func topViewController(base: UIViewController? = UIApplication.shared
+        .connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap { $0.windows }
+        .first { $0.isKeyWindow }?
+        .rootViewController) -> UIViewController? {
+        if let nav = base as? UINavigationController { return topViewController(base: nav.visibleViewController) }
+        if let tab = base as? UITabBarController { return topViewController(base: tab.selectedViewController) }
+        if let presented = base?.presentedViewController { return topViewController(base: presented) }
+        return base
+    }
+}
+#endif

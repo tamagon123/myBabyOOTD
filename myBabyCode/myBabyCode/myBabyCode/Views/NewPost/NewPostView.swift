@@ -1000,6 +1000,10 @@ struct NewPostView: View {
 
         if success {
             UserDefaults.standard.removeObject(forKey: "postDraft")
+            // 編集中の下書きがあれば、画像ファイルも含めて完全に削除
+            if let draftId = editingDraftId {
+                draftManager.deleteDraftById(draftId)
+            }
             showSuccess = true
         } else { showError = true }
     }

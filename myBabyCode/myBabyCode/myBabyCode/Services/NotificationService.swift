@@ -75,12 +75,22 @@ final class NotificationService {
     func saveFCMTokenIfSignedIn() {
         guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
         Messaging.messaging().token { token, error in
-            guard let token, error == nil else { return }
+            guard let token, error == nil else {
+                if let error {
+                    print("FCM token retrieval failed: \(error.localizedDescription)")
+                }
+                return
+            }
             Task {
-                try? await Firestore.firestore()
-                    .collection("users")
-                    .document(uid)
-                    .updateData(["fcm_token": token])
+                do {
+                    try await Firestore.firestore()
+                        .collection("users")
+                        .document(uid)
+                        .updateData(["fcm_token": token])
+                    print("FCM token saved successfully for user: \(uid)")
+                } catch {
+                    print("FCM token save failed: \(error.localizedDescription)")
+                }
             }
         }
     }

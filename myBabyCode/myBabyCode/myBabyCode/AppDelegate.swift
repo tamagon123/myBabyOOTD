@@ -14,6 +14,8 @@ import FirebaseMessaging
 import FirebaseFirestore
 import FirebaseAuth
 import UserNotifications
+import AppTrackingTransparency
+import GoogleMobileAds
 
 class AppDelegate: NSObject, UIApplicationDelegate {
 
@@ -27,6 +29,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     // 処理の流れ:
     //   1. ユーザー通知センターのデリゲートを自身に設定（通知を受け取る準備）
     //   2. Firebase Messagingのデリゲートを自身に設定（FCMトークンを受け取る準備）
+    //   3. AdMob 初期化と ATT（広告トラッキング）許可要求
     // 呼び出し元: iOSシステム（アプリ起動時に自動呼び出し）
     // 備考: 戻り値trueは「起続行してOK」という意味。
     // =============================================================================
@@ -36,7 +39,59 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Messaging.messaging().delegate = self
+
+        // AdMob 初期化と ATT 許可要求（非同期）
+        requestATTAndInitializeAdMob()
+
         return true
+    }
+
+    // =============================================================================
+    // 【関数サマリー】requestATTAndInitializeAdMob
+    // 目的: iOS 14.5 以降の ATT（App Tracking Transparency）許可を求め、
+    //       レスポンス後に Google Mobile Ads SDK を初期化する
+    // 引数: なし
+    // 戻り値: なし
+    // 処理の流れ:
+    //   1. iOS 14 以上なら ATT 許可ダイアログを表示
+    //   2. ユーザーが許可/拒否しても MobileAds.shared.start() を呼び出し
+    // 備考:
+    //   - ATT 未許可でも広告は表示されるが、ターゲティング精度が低下する
+    //   - 子供向けアプリでは tagForChildDirectedTreatment を設定すべき
+    // =============================================================================
+    private func requestATTAndInitializeAdMob() {
+        if #available(iOS 14, *) {
+            ATTrackingManager.requestTrackingAuthorization { status in
+                DispatchQueue.main.async {
+                    switch status {
+                    case .authorized:
+                        print("[AdMob] ATT authorized")
+                    case .denied:
+                        print("[AdMob] ATT denied")
+                    case .notDetermined:
+                        print("[AdMob] ATT not determined")
+                    case .restricted:
+                        print("[AdMob] ATT restricted")
+                    @unknown default:
+                        break
+                    }
+                    self.startAdMob()
+                }
+            }
+        } else {
+            // iOS 13 以前は ATT 不要
+            startAdMob()
+        }
+    }
+
+    private func startAdMob() {
+        // AdMob SDK 初期化（v11+ API）
+        GADMobileAds.sharedInstance().start { initializationStatus in
+            let adapterStatuses = initializationStatus.adapterStatusesByClassName
+            for (adapter, status) in adapterStatuses {
+                print("[AdMob] \(adapter): \(status.state.rawValue)")
+            }
+        }
     }
 
     // =============================================================================
@@ -147,3 +202,4 @@ extension AppDelegate: MessagingDelegate {
         }
     }
 }
+

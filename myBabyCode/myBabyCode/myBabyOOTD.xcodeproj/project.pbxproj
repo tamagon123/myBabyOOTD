@@ -10,6 +10,7 @@
 		BF1674482FC3FD4B00889299 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = BF1674472FC3FD4B00889299 /* FirebaseMessaging */; };
 		BF283F132FC30E810033705B /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = BF283F122FC30E810033705B /* GoogleSignIn */; };
 		BF283F152FC30E810033705B /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = BF283F142FC30E810033705B /* GoogleSignInSwift */; };
+		BF529B612FC9C3E300B0EFC1 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = BF529B602FC9C3E300B0EFC1 /* GoogleMobileAds */; };
 		BFBD2C512FC09BCE00ECDEDB /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = BFBD2C502FC09BCE00ECDEDB /* FirebaseAuth */; };
 		BFBD2C532FC09BCE00ECDEDB /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = BFBD2C522FC09BCE00ECDEDB /* FirebaseFirestore */; };
 		BFBD2C552FC09BCE00ECDEDB /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = BFBD2C542FC09BCE00ECDEDB /* FirebaseStorage */; };
@@ -51,6 +52,7 @@
 				BF283F132FC30E810033705B /* GoogleSignIn in Frameworks */,
 				BFBD2C532FC09BCE00ECDEDB /* FirebaseFirestore in Frameworks */,
 				BFBD2C552FC09BCE00ECDEDB /* FirebaseStorage in Frameworks */,
+				BF529B612FC9C3E300B0EFC1 /* GoogleMobileAds in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -99,6 +101,7 @@
 				BF283F122FC30E810033705B /* GoogleSignIn */,
 				BF283F142FC30E810033705B /* GoogleSignInSwift */,
 				BF1674472FC3FD4B00889299 /* FirebaseMessaging */,
+				BF529B602FC9C3E300B0EFC1 /* GoogleMobileAds */,
 			);
 			productName = myBabyCode;
 			productReference = BFBD2BF92FC0968800ECDEDB /* myBabyCode.app */;
@@ -131,6 +134,7 @@
 			packageReferences = (
 				BFBD2C4F2FC09BCE00ECDEDB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				BF283F112FC30E810033705B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				BF529B5F2FC9C3E300B0EFC1 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BFBD2BFA2FC0968800ECDEDB /* Products */;
@@ -390,6 +394,14 @@
 				minimumVersion = 7.0.0;
 			};
 		};
+		BF529B5F2FC9C3E300B0EFC1 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
 		BFBD2C4F2FC09BCE00ECDEDB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -415,6 +427,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BF283F112FC30E810033705B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
+		};
+		BF529B602FC9C3E300B0EFC1 /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BF529B5F2FC9C3E300B0EFC1 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
 		};
 		BFBD2C502FC09BCE00ECDEDB /* FirebaseAuth */ = {
 			isa = XCSwiftPackageProductDependency;
