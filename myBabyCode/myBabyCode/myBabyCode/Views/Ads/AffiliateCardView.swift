@@ -16,13 +16,16 @@ import SwiftUI
 
 struct AffiliateLinkRow: View {
     let item: PostItem
+    /// true: ブランド別最適ASPのみ / false: 設定済み全ASP
+    var preferredOnly: Bool = true
     @State private var showPlatformPicker = false
 
     private var affiliateLinks: [AffiliateLink] {
         AffiliateManager.shared.generateLinks(
             brandName: item.custom_name,
             category: item.category,
-            size: item.size_value
+            size: item.size_value,
+            preferredOnly: preferredOnly
         )
     }
 
@@ -34,7 +37,7 @@ struct AffiliateLinkRow: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12))
-                    Text("楽天・Amazonで探す")
+                    Text(linkLabel)
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Image(systemName: "chevron.right")
@@ -54,13 +57,20 @@ struct AffiliateLinkRow: View {
                 titleVisibility: .visible
             ) {
                 ForEach(affiliateLinks) { link in
-                    Button(link.platform.rawValue) {
+                    Button(link.platform.displayName) {
                         UIApplication.shared.open(link.url)
                     }
                 }
                 Button("キャンセル", role: .cancel) {}
             }
         }
+    }
+
+    private var linkLabel: String {
+        if affiliateLinks.count == 1, let first = affiliateLinks.first {
+            return "\(first.platform.displayName)で探す"
+        }
+        return "おすすめのお店で探す"
     }
 }
 
@@ -69,15 +79,13 @@ struct AffiliateLinkRow: View {
 // 特定ブランドや季節キーワードを使った汎用的な誘導カード
 
 struct AffiliateTimelineCard: View {
-    // 表示するキーワード（タイムラインの直前投稿のブランド名などを渡す）
     let keyword: String
-    // カードの種類（楽天のみ・Amazonのみ・両方）
-    var platforms: [AffiliatePlatform] = [.rakuten, .amazon]
+    /// true: ブランド別最適ASPのみ / false: 設定済み全ASP
+    var preferredOnly: Bool = true
     @State private var showPlatformPicker = false
 
     private var affiliateLinks: [AffiliateLink] {
-        AffiliateManager.shared.generateLinks(brandName: keyword)
-            .filter { platforms.contains($0.platform) }
+        AffiliateManager.shared.generateLinks(brandName: keyword, preferredOnly: preferredOnly)
     }
 
     var body: some View {
@@ -106,7 +114,7 @@ struct AffiliateTimelineCard: View {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 13))
-                        Text("楽天・Amazonで探す")
+                        Text(cardLabel)
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
                         Image(systemName: "chevron.right")
@@ -133,12 +141,19 @@ struct AffiliateTimelineCard: View {
                 titleVisibility: .visible
             ) {
                 ForEach(affiliateLinks) { link in
-                    Button(link.platform.rawValue) {
+                    Button(link.platform.displayName) {
                         UIApplication.shared.open(link.url)
                     }
                 }
                 Button("キャンセル", role: .cancel) {}
             }
         }
+    }
+
+    private var cardLabel: String {
+        if affiliateLinks.count == 1, let first = affiliateLinks.first {
+            return "\(first.platform.displayName)で探す"
+        }
+        return "おすすめのお店で探す"
     }
 }

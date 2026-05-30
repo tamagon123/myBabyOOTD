@@ -204,8 +204,8 @@ final class SubscriptionManager: ObservableObject {
                 switch result {
                 case .verified(let transaction):
                     // 対象商品のトランザクションなら状態を更新
-                    if transaction.productID == SubscriptionConfig.removeAdsProductId {
-                        await MainActor.run {
+                    await MainActor.run {
+                        if transaction.productID == SubscriptionConfig.removeAdsProductId {
                             self.setSubscribed(true)
                         }
                     }

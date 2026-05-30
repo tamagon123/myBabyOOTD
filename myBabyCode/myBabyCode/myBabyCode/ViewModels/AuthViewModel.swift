@@ -78,7 +78,7 @@ class AuthViewModel: ObservableObject {
     private func initialize() async {
         await withCheckedContinuation { continuation in
             var resolved = false
-            FirebaseAuth.Auth.auth().addStateDidChangeListener { _, user in
+            _ = FirebaseAuth.Auth.auth().addStateDidChangeListener { _, user in
                 guard !resolved else { return }
                 resolved = true
                 continuation.resume()

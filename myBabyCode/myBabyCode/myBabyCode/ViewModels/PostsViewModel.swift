@@ -248,6 +248,7 @@ class PostsViewModel: ObservableObject {
                             .order(by: "created_at", descending: true)
                             .limit(to: self.pageSize)
                             .getDocuments()
+                        return try await MainActor.run { try snap.documents.map { try $0.data(as: Post.self) } }
                     } else {
                         snap = try await self.db.collection("posts")
                             .whereField("is_hidden", isEqualTo: false)
@@ -255,8 +256,8 @@ class PostsViewModel: ObservableObject {
                             .order(by: "created_at", descending: true)
                             .limit(to: self.pageSize)
                             .getDocuments()
+                        return try await MainActor.run { try snap.documents.map { try $0.data(as: Post.self) } }
                     }
-                    return try snap.documents.map { try $0.data(as: Post.self) }
                 }
             }
             for try await result in group {

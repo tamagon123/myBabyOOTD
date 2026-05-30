@@ -977,7 +977,7 @@ struct NewPostView: View {
             print("[DEBUG] PostItemTag created: item_index=\(tag.item_index), side=\(tag.image_side)")
             return tag
         }
-        var collectedTags: [PostItemTag] = tags
+        let collectedTags: [PostItemTag] = tags
         postsViewModel.setPendingItemTags(collectedTags)
 
         // ageMonths を選択した子供の誕生日から計算

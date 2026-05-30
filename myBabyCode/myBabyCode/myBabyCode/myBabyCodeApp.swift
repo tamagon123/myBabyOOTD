@@ -35,8 +35,7 @@ struct myBabyCodeApp: App {
     init() {
         FirebaseApp.configure()
         let settings = FirestoreSettings()
-        settings.isPersistenceEnabled = true
-        settings.cacheSizeBytes = 100 * 1024 * 1024
+        settings.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: 100 * 1024 * 1024))
         Firestore.firestore().settings = settings
     }
 

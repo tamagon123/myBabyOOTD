@@ -702,7 +702,7 @@ struct FollowingListView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 // Avatar
-                                let avatarId = user.avatar_id ?? "bear"
+                                let avatarId = user.avatar_id
                                 let bgColor = Color(hex: user.avatar_bg_color ?? "#FFEEBA")
                                 Group {
                                     if avatarId.hasPrefix("https://") {

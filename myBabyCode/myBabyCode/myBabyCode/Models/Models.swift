@@ -47,7 +47,7 @@ struct AppUser: Identifiable, Codable {
 //       posterAvatarId〜posterChildAgeNameはFirestoreには保存されず、クライアント側で
 //       投稿者情報を付加する際に使用する一時的なフィールドです。
 
-struct Post: Identifiable, Codable {
+struct Post: Identifiable, Codable, @unchecked Sendable {
     @DocumentID var id: String?
     var post_id: String                // 投稿固有のUUID
     var user_id: String                // 投稿者のFirebase Auth UID
