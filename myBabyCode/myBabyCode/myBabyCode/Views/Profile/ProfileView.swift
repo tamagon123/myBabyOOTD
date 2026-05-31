@@ -36,6 +36,9 @@ struct ProfileView: View {
     @State private var followingUsers: [AppUser] = [] // フォロー中のユーザーリスト
     @State private var followingCount: Int = 0         // フォロー中の件数
     @State private var isGridMode: Bool = true         // グリッド/リスト表示モード（デフォルトはグリッド）
+    @State private var calendarIsPublic: Bool = false   // カレンダー公開設定
+    @State private var showPublicCalendar: Bool = false  // 公開カレンダー表示フラグ
+    @State private var publicCalendarUserId: String? = nil // 公開カレンダーの対象UID
 
     // ProfileTab: マイページ内の「投稿」/「いいね」タブ
     enum ProfileTab: String, CaseIterable {
@@ -136,6 +139,11 @@ struct ProfileView: View {
         .sheet(isPresented: $showFollowingList) {
             FollowingListView(users: followingUsers)
                 .environmentObject(authViewModel)
+        }
+        .sheet(isPresented: $showPublicCalendar) {
+            if let targetUid = publicCalendarUserId {
+                PublicCalendarView(userId: targetUid)
+            }
         }
         .sheet(item: $selectedPost) { post in
             PostDetailView(
@@ -317,6 +325,11 @@ struct ProfileView: View {
                 }
             }
             .padding(.vertical, 12)
+
+            // ── カレンダー設定 / 公開カレンダー閲覧 ──
+            calendarSettingsRow
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
         }
         .background(Color.white)
         .cornerRadius(20)
@@ -345,6 +358,55 @@ struct ProfileView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// カレンダー設定 / 公開カレンダー閲覧行
+    @ViewBuilder
+    private var calendarSettingsRow: some View {
+        Button {
+            if isOwnProfile {
+                showSettings = true
+            } else {
+                publicCalendarUserId = userId
+                showPublicCalendar = true
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 18))
+                    .foregroundColor(.accentRed)
+                    .frame(width: 32, height: 32)
+                    .background(Color.accentRed.opacity(0.1))
+                    .cornerRadius(8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isOwnProfile ? "カレンダー設定" : "カレンダーを見る")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                    if isOwnProfile {
+                        Text(calendarIsPublic ? "公開中：他のユーザーにカレンダーが表示されます" : "非公開：カレンダーは自分だけが見られます")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(.systemGray))
+                    } else if calendarIsPublic {
+                        Text("このユーザーのカレンダーを閲覧できます")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(.systemGray))
+                    } else {
+                        Text("カレンダーは非公開に設定されています")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(.systemGray3))
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(.systemGray3))
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .disabled(!isOwnProfile && !calendarIsPublic)
+        .buttonStyle(.plain)
+        .opacity(!isOwnProfile && !calendarIsPublic ? 0.5 : 1.0)
     }
 
     /// 空の状態表示（Empty State）
@@ -483,6 +545,7 @@ struct ProfileView: View {
         do {
             let doc = try await db.collection("users").document(userId).getDocument()
             profileUser = try doc.data(as: AppUser.self)
+            calendarIsPublic = doc.data()?["calendar_is_public"] as? Bool ?? false
         } catch {
             errorMessage = error.localizedDescription
         }

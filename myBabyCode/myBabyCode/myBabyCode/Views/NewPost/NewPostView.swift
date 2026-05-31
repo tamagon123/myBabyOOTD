@@ -32,6 +32,13 @@ struct NewPostView: View {
     @EnvironmentObject var draftManager: DraftManager      // 下書き保存
     @Environment(\.dismiss) private var dismiss              // シートを閉じる
 
+    // === カレンダー連携 ===
+    var calendarDate: Date? = nil          // カレンダーから開いた場合の指定日付
+    var defaultIsPublic: Bool = true       // デフォルトの公開状態
+
+    // === 投稿公開設定 ===
+    @State private var isPublicPost: Bool = true            // 投稿の公開・非公開
+
     // === 写真関連 ===
     @State private var frontImage: UIImage?              // 正面写真
     @State private var backImage: UIImage?               // 背面写真
@@ -123,7 +130,7 @@ struct NewPostView: View {
                 }
             }
             .animation(.spring(), value: showDraftSavedBanner)
-            .navigationTitle("新しい投稿")
+            .navigationTitle(navigationTitleText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -265,6 +272,8 @@ struct NewPostView: View {
                 .padding(.horizontal, 20)
             Divider().padding(.horizontal, 20)
             weatherSection
+                .padding(.horizontal, 20)
+            publicToggleSection
                 .padding(.horizontal, 20)
             draftSaveButton
                 .padding(.horizontal, 20)
@@ -772,6 +781,36 @@ struct NewPostView: View {
     // 計算プロパティ: 投稿可能かどうか（少なくとも1枚の写真が必要）
     private var canPost: Bool { frontImage != nil || backImage != nil }
 
+    // MARK: - Navigation Title
+    private var navigationTitleText: String {
+        if let date = calendarDate {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "M月d日（E）"
+            fmt.locale = Locale(identifier: "ja_JP")
+            return fmt.string(from: date)
+        }
+        return "新しい投稿"
+    }
+
+    // MARK: - Public Toggle Section
+
+    private var publicToggleSection: some View {
+        Toggle(isOn: $isPublicPost) {
+            HStack(spacing: 8) {
+                Image(systemName: isPublicPost ? "globe" : "lock.fill")
+                    .foregroundColor(isPublicPost ? .accentBlue : Color(.systemGray))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("投稿を公開する")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(isPublicPost ? "タイムラインに表示されます" : "自分のみ閲覧できます")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(.systemGray))
+                }
+            }
+        }
+        .tint(.accentBlue)
+    }
+
     // =============================================================================
     // 【Viewサマリー】sectionLabel
     // 目的: 各セクションのタイトルラベルを統一スタイルで表示するヘルパー
@@ -795,9 +834,8 @@ struct NewPostView: View {
         guard let user = authViewModel.currentUser else { return }
         if let idx = Int(user.region_code), idx >= 1, idx <= 47 {
             selectedRegionIndex = idx - 1
-        } else {
-            selectedRegionIndex = -1
         }
+        isPublicPost = defaultIsPublic
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
         if let draft = draftManager.pendingDraft {
             applyDraft(draft)
@@ -985,6 +1023,10 @@ struct NewPostView: View {
         modUser.child_birthday = effectiveBirthday
         modUser.child_gender = effectiveGender
 
+        // カレンダーからの投稿かどうかを判定（calendarDateが設定されている場合）
+        let isCalendarPost = calendarDate != nil
+        print("[DEBUG] submitPost: calendarDate=\(String(describing: calendarDate)), isCalendarPost=\(isCalendarPost)")
+
         let success = await postsViewModel.uploadPost(
             frontImage: frontImage,
             backImage: backImage,
@@ -995,14 +1037,42 @@ struct NewPostView: View {
             tempMax: tMax,
             tempMin: tMin,
             items: postItems,
-            user: modUser
+            user: modUser,
+            isPublic: isPublicPost,
+            isCalendarPost: isCalendarPost
         )
 
         if success {
             UserDefaults.standard.removeObject(forKey: "postDraft")
-            // 編集中の下書きがあれば、画像ファイルも含めて完全に削除
             if let draftId = editingDraftId {
                 draftManager.deleteDraftById(draftId)
+            }
+
+            // カレンダーからの投稿（calendarDate != nil）の場合のみ、カレンダー日記を作成
+            if let targetDate = calendarDate {
+                let uid = user.user_id
+                let dateKey = CalendarView.dateKey(for: targetDate)
+                print("[DEBUG] Calendar auto-save start: uid=\(uid), dateKey=\(dateKey)")
+                let calVm = CalendarViewModel()
+                await calVm.fetchCalendarPublicSetting(uid: uid)
+                print("[DEBUG] Calendar isPublic: \(calVm.calendarIsPublic)")
+                let saved = await calVm.saveEntry(
+                    uid: uid,
+                    dateKey: dateKey,
+                    comment: description,
+                    image: frontImage,
+                    regionCode: regionCode
+                )
+                print("[DEBUG] Calendar saveEntry result: \(saved)")
+                // 天気情報も保存
+                let weather = WeatherResult(tempMax: tMax, tempMin: tMin, weatherType: weatherType.rawValue)
+                await calVm.updateWeather(uid: uid, dateKey: dateKey, weather: weather)
+                print("[DEBUG] Calendar updateWeather done")
+                // カレンダー画面に通知
+                NotificationCenter.default.post(name: Notification.Name("CalendarEntryUpdated"), object: nil)
+                print("[DEBUG] Calendar notification posted")
+            } else {
+                print("[DEBUG] Skipping calendar entry creation for regular post")
             }
             showSuccess = true
         } else { showError = true }

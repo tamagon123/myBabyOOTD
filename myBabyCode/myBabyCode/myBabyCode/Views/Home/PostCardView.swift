@@ -85,7 +85,7 @@ struct PostCardView: View {
                         .clipShape(Circle())
 
                         VStack(alignment: .leading, spacing: 3) {
-                            // 1行目: 表示名 + グレーのユーザーID
+                            // 1行目: 表示名 + グレーのユーザーID + 日記バッジ
                             HStack(spacing: 4) {
                                 Text(post.posterDisplayName ?? "名前未設定")
                                     .font(.system(size: 14, weight: .bold))
@@ -96,6 +96,20 @@ struct PostCardView: View {
                                         .font(.system(size: 12))
                                         .foregroundColor(.secondary)
                                         .lineLimit(1)
+                                }
+                                // 日記バッジ
+                                if post.is_calendar_post == true {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "book.closed")
+                                            .font(.system(size: 8))
+                                        Text("日記")
+                                            .font(.system(size: 9, weight: .medium))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentRed)
+                                    .cornerRadius(4)
                                 }
                             }
                             // 2行目: 子供名・性別・生後○ヶ月・地域・時刻

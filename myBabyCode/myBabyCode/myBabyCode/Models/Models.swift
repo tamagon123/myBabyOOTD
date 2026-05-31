@@ -64,6 +64,7 @@ struct Post: Identifiable, Codable, @unchecked Sendable {
     var likes_count: Int               // いいねの総数
     var reports_count: Int             // 通報の総数（5件以上で非表示化）
     var is_hidden: Bool                // 運営側・通報により非表示になったか
+    var is_calendar_post: Bool?        // カレンダー（日記）からの投稿かどうか
     var created_at: Timestamp          // 投稿日時（Firestoreのサーバータイムスタンプ）
 
     var item_tags: [PostItemTag]?      // 写真上に配置されたアイテムタグの位置情報
@@ -86,6 +87,7 @@ struct Post: Identifiable, Codable, @unchecked Sendable {
         case description, weather_type
         case temp_max, temp_min, temp_category
         case likes_count, reports_count, is_hidden
+        case is_calendar_post
         case created_at, item_tags
     }
 }
@@ -217,6 +219,33 @@ let tempCategories: [(label: String, key: String)] = [
     ("20〜24℃", "20-24"),
     ("25℃〜", "25-")
 ]
+
+// MARK: - CalendarEntry
+// 説明: カレンダーに記録する1日分の日記エントリー。
+//       Firestoreの calendar_entries/{uid}/entries/{dateKey} に保存されます。
+//       dateKeyは "yyyy-MM-dd" 形式の文字列です。
+
+struct CalendarEntry: Identifiable, Codable {
+    @DocumentID var id: String?
+    var date_key: String          // "yyyy-MM-dd" 形式の日付キー
+    var user_id: String           // 作成者のFirebase Auth UID
+    var comment: String           // 日記コメント
+    var photo_url: String?        // 添付写真のFirebase StorageダウンロードURL
+    var weather_type: String?     // "sunny"/"cloudy"/"rainy"/"snowy"（当日の天気）
+    var temp_max: Double?         // 最高気温
+    var temp_min: Double?         // 最低気温
+    var is_public: Bool           // 公開=true / 非公開=false
+    var created_at: Timestamp     // 作成日時
+    var updated_at: Timestamp     // 最終更新日時
+}
+
+// MARK: - CalendarSettings
+// 説明: ユーザーのカレンダー設定。Firestoreの users/{uid} ドキュメントに
+//       calendar_is_public フィールドとして保存される。
+
+struct CalendarSettings: Codable {
+    var is_public: Bool = false   // デフォルトは非公開
+}
 
 // MARK: - Draft
 // 説明: 新規投稿の下書き情報。UserDefaultsにJSON形式でローカル保存されます。

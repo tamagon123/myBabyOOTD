@@ -16,10 +16,10 @@ service cloud.firestore {
       allow create, update, delete: if isOwner(userId);
     }
 
-    // posts: 非表示でないものを全員に公開。作成/更新/削除は投稿者のみ。
+    // posts: 非表示でないものを全員に公開。自分の投稿は常に読める。作成/更新/削除は投稿者のみ。
     // reports_count の更新は誰でも可（通報時の加算）
     match /posts/{postId} {
-      allow read: if resource.data.is_hidden == false;
+      allow read: if resource.data.is_hidden == false || resource.data.user_id == request.auth.uid;
       allow create: if isAuth()
         && request.auth.uid == request.resource.data.user_id;
       allow update: if isAuth()

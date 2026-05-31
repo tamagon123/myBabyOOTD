@@ -8,6 +8,8 @@
 // =============================================================================
 
 import SwiftUI
+import FirebaseFirestore
+import FirebaseAuth
 
 struct SettingsView: View {
     // === 環境 ===
@@ -68,6 +70,13 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("投稿")
+                }
+
+                // --- カレンダー設定セクション ---
+                Section {
+                    CalendarPublicToggle()
+                } header: {
+                    Text("カレンダー")
                 }
 
                 // --- アプリについてセクション ---
@@ -418,6 +427,55 @@ struct PremiumBannerCard: View {
         .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+}
+
+// MARK: - CalendarPublicToggle
+// カレンダー公開設定のToggle
+
+struct CalendarPublicToggle: View {
+    @State private var isPublic: Bool = false
+    @State private var isLoading = false
+    private let db = Firestore.firestore()
+    private var uid: String { FirebaseAuth.Auth.auth().currentUser?.uid ?? "" }
+
+    var body: some View {
+        Toggle(isOn: $isPublic) {
+            HStack(spacing: 8) {
+                Image(systemName: isPublic ? "globe" : "lock.fill")
+                    .foregroundColor(isPublic ? .accentBlue : Color(.systemGray))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("カレンダーを公開する")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(isPublic ? "フォロワーがあなたのカレンダーを見られます" : "自分だけがカレンダーを見られます")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(.systemGray))
+                }
+            }
+        }
+        .tint(.accentBlue)
+        .onChange(of: isPublic) { newValue in
+            Task { await saveSetting(isPublic: newValue) }
+        }
+        .task { await loadSetting() }
+        .disabled(isLoading)
+    }
+
+    private func loadSetting() async {
+        isLoading = true
+        do {
+            let doc = try await db.collection("users").document(uid).getDocument()
+            isPublic = doc.data()?["calendar_is_public"] as? Bool ?? false
+        } catch {}
+        isLoading = false
+    }
+
+    private func saveSetting(isPublic: Bool) async {
+        isLoading = true
+        try? await db.collection("users").document(uid).updateData([
+            "calendar_is_public": isPublic
+        ])
+        isLoading = false
     }
 }
 

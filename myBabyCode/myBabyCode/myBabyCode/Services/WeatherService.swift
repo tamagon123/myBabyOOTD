@@ -114,13 +114,135 @@ actor WeatherService {
         }
     }
 
+    // =============================================================================
+    // 【関数サマリー】fetchHistorical
+    // 目的: 指定した日付（過去）の天気・気温データをOpen-Meteo Historical APIから取得する
+    // 引数:
+    //   - regionCode: String - JIS X 0401の2桁都道府県コード
+    //   - date: Date - 取得対象の日付（当日または過去日付）
+    // 戻り値: WeatherResult? - 取得成功時は天気情報、失敗時はnil
+    // 備考: 当日の場合はforecast API、過去日付はhistorical APIを使用
+    // =============================================================================
+    func fetchHistorical(regionCode: String, date: Date) async -> WeatherResult? {
+        guard let coord = prefectureCoordinates[regionCode] else { return nil }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "Asia/Tokyo")
+        let dateStr = fmt.string(from: date)
+        let today = fmt.string(from: Date())
+        let urlString: String
+        if dateStr == today {
+            urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&forecast_days=1"
+        } else {
+            urlString = "https://archive-api.open-meteo.com/v1/archive?latitude=\(coord.lat)&longitude=\(coord.lon)&start_date=\(dateStr)&end_date=\(dateStr)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo"
+        }
+        guard let url = URL(string: urlString) else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
+            guard let tempMax = json.daily.temperature_2m_max.first,
+                  let tempMin = json.daily.temperature_2m_min.first,
+                  let code = json.daily.weather_code.first else { return nil }
+            return WeatherResult(tempMax: tempMax, tempMin: tempMin, weatherType: mapWeatherCode(code))
+        } catch {
+            print("[WeatherService] fetchHistorical error: \(error)")
+            return nil
+        }
+    }
+
+    // カレンダー表示用：過去実績と未来予報を組み合わせて取得
+    // - 過去（昨日まで）: archive API
+    // - 未来（今日以降）: forecast API（最大16日先まで）
+    func fetchMonthly(regionCode: String, startDate: Date, endDate: Date) async -> [String: WeatherResult] {
+        guard let coord = prefectureCoordinates[regionCode] else {
+            print("[WeatherService] regionCode not found: \(regionCode)")
+            return [:]
+        }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "Asia/Tokyo")
+        let calendar = Calendar.current
+        
+        let today = calendar.startOfDay(for: Date())
+        let startDay = calendar.startOfDay(for: startDate)
+        let endDay = calendar.startOfDay(for: endDate)
+        
+        // 過去データの範囲（昨日まで）
+        let archiveStart = startDay
+        let archiveEnd = min(endDay, calendar.date(byAdding: .day, value: -1, to: today) ?? today)
+        
+        // 未来予報の範囲（今日から最大16日先）
+        let forecastStart = max(startDay, today)
+        let forecastEnd = min(endDay, calendar.date(byAdding: .day, value: 16, to: today) ?? today)
+        
+        var results: [String: WeatherResult] = [:]
+        
+        // 1. 過去データを取得（archive API）
+        if archiveStart <= archiveEnd {
+            let startStr = fmt.string(from: archiveStart)
+            let endStr = fmt.string(from: archiveEnd)
+            let urlString = "https://archive-api.open-meteo.com/v1/archive?latitude=\(coord.lat)&longitude=\(coord.lon)&start_date=\(startStr)&end_date=\(endStr)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo"
+            print("[WeatherService] fetchMonthly archive: \(startStr) to \(endStr)")
+            
+            if let url = URL(string: urlString) {
+                do {
+                    let (data, _) = try await URLSession.shared.data(from: url)
+                    let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
+                    var currentDate = archiveStart
+                    for i in 0..<json.daily.temperature_2m_max.count {
+                        let dateKey = fmt.string(from: currentDate)
+                        results[dateKey] = WeatherResult(
+                            tempMax: json.daily.temperature_2m_max[i],
+                            tempMin: json.daily.temperature_2m_min[i],
+                            weatherType: mapWeatherCode(json.daily.weather_code[i])
+                        )
+                        currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+                    }
+                    print("[WeatherService] fetchMonthly archive: got \(json.daily.temperature_2m_max.count) days")
+                } catch {
+                    print("[WeatherService] fetchMonthly archive error: \(error)")
+                }
+            }
+        }
+        
+        // 2. 未来予報を取得（forecast API、最大16日）
+        if forecastStart <= forecastEnd {
+            let days = calendar.dateComponents([.day], from: forecastStart, to: forecastEnd).day ?? 0
+            let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&forecast_days=\(days + 1)&start_date=\(fmt.string(from: forecastStart))"
+            print("[WeatherService] fetchMonthly forecast: \(days+1) days from \(fmt.string(from: forecastStart))")
+            
+            if let url = URL(string: urlString) {
+                do {
+                    let (data, _) = try await URLSession.shared.data(from: url)
+                    let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
+                    var currentDate = forecastStart
+                    for i in 0..<json.daily.temperature_2m_max.count {
+                        let dateKey = fmt.string(from: currentDate)
+                        results[dateKey] = WeatherResult(
+                            tempMax: json.daily.temperature_2m_max[i],
+                            tempMin: json.daily.temperature_2m_min[i],
+                            weatherType: mapWeatherCode(json.daily.weather_code[i])
+                        )
+                        currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+                    }
+                    print("[WeatherService] fetchMonthly forecast: got \(json.daily.temperature_2m_max.count) days")
+                } catch {
+                    print("[WeatherService] fetchMonthly forecast error: \(error)")
+                }
+            }
+        }
+        
+        print("[WeatherService] fetchMonthly total: \(results.count) days")
+        return results
+    }
+
     // OpenMeteoResponse: Open-Meteo APIから返されるJSONの構造をSwiftの型にマッピングしたもの。
     private struct OpenMeteoResponse: Decodable {
         let daily: DailyData
         struct DailyData: Decodable {
-            let temperature_2m_max: [Double]  // 日次の最高気温配列（forecast_days=1なので1要素）
+            let temperature_2m_max: [Double]  // 日次の最高気温配列
             let temperature_2m_min: [Double]  // 日次の最低気温配列
-            let weather_code: [Int]           // 日次の天気コード配列（旧: weathercode）
+            let weather_code: [Int]           // 日次の天気コード配列
         }
     }
 }

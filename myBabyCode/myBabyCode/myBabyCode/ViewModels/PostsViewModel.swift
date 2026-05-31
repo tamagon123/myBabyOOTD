@@ -95,6 +95,11 @@ class PostsViewModel: ObservableObject {
     // 呼び出し元: HomeView.task, HomeView.refreshable, HomeView.onChange(currentTab)
     // =============================================================================
     func fetchPosts(user: AppUser?) async {
+        guard !isLoading else {
+            print("[DEBUG] fetchPosts skipped: already loading")
+            return
+        }
+        print("[DEBUG] fetchPosts started, current posts count: \(posts.count)")
         isLoading = true
         do {
             lastDocument = nil
@@ -147,6 +152,12 @@ class PostsViewModel: ObservableObject {
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
             fetched = await enrichWithPosterInfo(fetched)
             posts = fetched
+            let postIds = fetched.map { $0.post_id }
+            let uniqueIds = Set(postIds)
+            print("[DEBUG] fetchPosts completed: fetched=\(fetched.count), uniqueIDs=\(uniqueIds.count), posts=\(posts.count)")
+            if uniqueIds.count != fetched.count {
+                print("[DEBUG] WARNING: Duplicate post IDs detected!")
+            }
             lastDocument = snapshot.documents.last
             hasMorePosts = snapshot.documents.count == pageSize
         } catch {
@@ -169,6 +180,7 @@ class PostsViewModel: ObservableObject {
     // =============================================================================
     func fetchMorePosts(user: AppUser?) async {
         guard hasMorePosts, !isLoading, let lastDoc = lastDocument else { return }
+        print("[DEBUG] fetchMorePosts started, current posts count: \(posts.count)")
         isLoading = true
         defer { isLoading = false }
         do {
@@ -199,6 +211,7 @@ class PostsViewModel: ObservableObject {
                 guard !cachedFollowingIds.isEmpty, let cursor = followingCursor else { return }
                 let followPage = try await fetchFollowingPosts(ids: cachedFollowingIds, before: cursor)
                 let enrichedFollow = await enrichWithPosterInfo(followPage)
+                print("[DEBUG] fetchMorePosts (following): appending \(enrichedFollow.count) posts")
                 posts.append(contentsOf: enrichedFollow)
                 followingCursor = enrichedFollow.last?.created_at
                 hasMorePosts = followPage.count == pageSize
@@ -207,6 +220,7 @@ class PostsViewModel: ObservableObject {
             let snapshot = try await query.getDocuments()
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
             fetched = await enrichWithPosterInfo(fetched)
+            print("[DEBUG] fetchMorePosts: appending \(fetched.count) posts, lastDoc=\(lastDoc.documentID)")
             posts.append(contentsOf: fetched)
             lastDocument = snapshot.documents.last
             hasMorePosts = snapshot.documents.count == pageSize
@@ -496,8 +510,11 @@ class PostsViewModel: ObservableObject {
         tempMax: Double,
         tempMin: Double,
         items: [PostItem],
-        user: AppUser
+        user: AppUser,
+        isPublic: Bool = true,
+        isCalendarPost: Bool = false
     ) async -> Bool {
+        print("[DEBUG] uploadPost: isCalendarPost=\(isCalendarPost)")
         let itemTags = pendingItemTags
         pendingItemTags = []
         guard frontImage != nil || backImage != nil else {
@@ -544,7 +561,8 @@ class PostsViewModel: ObservableObject {
                 temp_category: tempCat,
                 likes_count: 0,
                 reports_count: 0,
-                is_hidden: false,
+                is_hidden: !isPublic,
+                is_calendar_post: isCalendarPost,
                 created_at: Timestamp(date: Date()),
                 item_tags: nil,
                 posterAvatarId: nil,
@@ -555,6 +573,7 @@ class PostsViewModel: ObservableObject {
 
             let postRef = db.collection("posts").document(postId)
             try postRef.setData(from: post)
+            print("[DEBUG] Post created: post_id=\(postId), is_calendar_post=\(post.is_calendar_post)")
 
             for item in items {
                 let itemRef = postRef.collection("items").document(item.item_id)

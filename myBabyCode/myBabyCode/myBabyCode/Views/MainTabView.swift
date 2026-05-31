@@ -18,7 +18,8 @@ struct MainTabView: View {
     @EnvironmentObject var authViewModel: AuthViewModel        // 認証状態（親から受け取る）
     @StateObject private var postsViewModel = PostsViewModel() // 投稿管理（自身で生成・保持）
     @StateObject private var draftManager = DraftManager()       // 下書き管理（自身で生成・保持）
-    @State private var selectedTab: Int = 0                    // 選択中のタブ（0=ホーム,1=検索,2=マイページ）
+    @State private var selectedTab: Int = 0                    // 選択中のタブ（0=ホーム,1=カレンダー,2=検索,3=マイページ）
+    @StateObject private var calendarViewModel = CalendarViewModel()
     @State private var showNewPost = false                     // 新規投稿シートの表示状態
     @State private var profileRefreshId = UUID()               // プロフィールViewの強制再描画用ID
 
@@ -42,14 +43,19 @@ struct MainTabView: View {
                         .environmentObject(postsViewModel)
                         .environmentObject(authViewModel)
                 case 1:
+                    CalendarView()
+                        .environmentObject(authViewModel)
+                        .environmentObject(calendarViewModel)
+                        .environmentObject(postsViewModel)
+                case 2:
                     SearchView()
                         .environmentObject(authViewModel)
-                case 2:
+                case 3:
                     ProfileView(userId: Auth.currentUID)
                         .environmentObject(authViewModel)
                         .environmentObject(postsViewModel)
                         .environmentObject(draftManager)
-                        .id(profileRefreshId)  // このIDを変えるとViewが再構築されリフレッシュされる
+                        .id(profileRefreshId)
                 default:
                     EmptyView()
                 }
@@ -107,8 +113,11 @@ struct BottomNavBar: View {
 
     var body: some View {
         HStack {
-            // 左: ホームボタン（タブ0）
+            // ホームボタン（タブ0）
             navItem(icon: "house.fill",   label: "ホーム",  tab: 0)
+            Spacer()
+            // カレンダーボタン（タブ1）
+            navItem(icon: "calendar", label: "カレンダー", tab: 1)
             Spacer()
             // 中央: 新規投稿ボタン（赤い浮き出し円）
             Button(action: onPostTap) {
@@ -122,12 +131,15 @@ struct BottomNavBar: View {
                         .font(.system(size: 24, weight: .bold))
                 }
             }
-            .offset(y: -12)  // ナビバーから少し上に浮かせる
+            .offset(y: -12)
             Spacer()
-            // 右: マイページボタン（タブ2）
-            navItem(icon: "person.fill",  label: "マイページ", tab: 2)
+            // 検索ボタン（タブ2）
+            navItem(icon: "magnifyingglass", label: "検索", tab: 2)
+            Spacer()
+            // マイページボタン（タブ3）
+            navItem(icon: "person.fill",  label: "マイページ", tab: 3)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 20)
         .background(
