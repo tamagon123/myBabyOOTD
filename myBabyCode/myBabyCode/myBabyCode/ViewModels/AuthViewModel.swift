@@ -297,6 +297,65 @@ class AuthViewModel: ObservableObject {
         return user.providerData.contains { $0.providerID == "password" }
     }
 
+    // 計算プロパティ: 現在のユーザーがApple認証かどうか
+    var isAppleUser: Bool {
+        guard let user = FirebaseAuth.Auth.auth().currentUser else { return false }
+        return user.providerData.contains { $0.providerID == "apple.com" }
+    }
+
+    // =============================================================================
+    // 【関数サマリー】reauthenticateWithApple
+    // 目的: Apple認証ユーザーの再認証を、Sign in with Appleフローで実行する
+    // 引数: なし
+    // 戻り値: Bool - true=再認証成功、false=失敗
+    // 処理の流れ:
+    //   1. prepareSignInWithApple()でnonceを生成
+    //   2. SignInWithAppleButtonと同じ認証フローを内部で実行
+    //   3. 取得したidTokenとrawNonceからOAuthProvider.credentialを作成
+    //   4. user.reauthenticate()でFirebaseに再認証
+    // 呼び出し元: SettingsView（Apple認証ユーザーのアカウント削除前）
+    // 備考: handleSignInWithAppleと同じ認証ロジックを使用し、reauthenticateを行う。
+    // =============================================================================
+    func reauthenticateWithApple() async -> Bool {
+        let nonce = randomNonceString()
+        currentNonce = nonce
+        let hashedNonce = sha256(nonce)
+
+        do {
+            let appleIDProvider = ASAuthorizationAppleIDProvider()
+            let request = appleIDProvider.createRequest()
+            request.requestedScopes = [.fullName, .email]
+            request.nonce = hashedNonce
+
+            let authController = ASAuthorizationController(authorizationRequests: [request])
+            let delegate = AppleSignInDelegate()
+            authController.delegate = delegate
+            authController.presentationContextProvider = delegate
+
+            let auth = try await delegate.performRequest(authController)
+            guard
+                let appleIDCredential = auth.credential as? ASAuthorizationAppleIDCredential,
+                let appleIDToken = appleIDCredential.identityToken,
+                let idTokenString = String(data: appleIDToken, encoding: .utf8)
+            else {
+                errorMessage = "Appleログイン情報の取得に失敗しました"
+                return false
+            }
+
+            let credential = OAuthProvider.appleCredential(
+                withIDToken: idTokenString,
+                rawNonce: nonce,
+                fullName: appleIDCredential.fullName
+            )
+            guard let user = FirebaseAuth.Auth.auth().currentUser else { return false }
+            try await user.reauthenticate(with: credential)
+            return true
+        } catch {
+            errorMessage = "Appleログインに失敗しました"
+            return false
+        }
+    }
+
     // =============================================================================
     // 【関数サマリー】completeProfile
     // 目的: 初回プロフィール設定画面で入力された情報をFirestoreに保存し、登録を完了させる
@@ -802,6 +861,49 @@ class AuthViewModel: ObservableObject {
         let inputData = Data(input.utf8)
         let hashedData = SHA256.hash(data: inputData)
         return hashedData.compactMap { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// =============================================================================
+// クラス名: AppleSignInDelegate
+// 役割: Sign in with Apple の認証コントローラーのデリゲート
+// 説明:
+//   ASAuthorizationController のデリゲートとして、Apple認証フローの結果を
+//   Swift Concurrency（CheckedContinuation）で非同期に受け取るためのクラスです。
+//   reauthenticateWithApple() など、内部的に Apple Sign In を実行する際に使用。
+// =============================================================================
+
+class AppleSignInDelegate: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+
+    private var continuation: CheckedContinuation<ASAuthorization, Error>?
+
+    /// Apple認証を非同期で実行し、結果を返す
+    func performRequest(_ controller: ASAuthorizationController) async throws -> ASAuthorization {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            controller.performRequests()
+        }
+    }
+
+    // MARK: - ASAuthorizationControllerDelegate
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        continuation?.resume(returning: authorization)
+        continuation = nil
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    // MARK: - ASAuthorizationControllerPresentationContextProviding
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            fatalError("No UIWindowScene found")
+        }
+        return windowScene.windows.first { $0.isKeyWindow } ?? windowScene.windows.first!
     }
 }
 

@@ -10,6 +10,7 @@
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
+import AuthenticationServices
 
 struct SettingsView: View {
     // === 環境 ===
@@ -25,7 +26,16 @@ struct SettingsView: View {
     @State private var showDeleteAccountAlert = false  // アカウント削除確認アラート
     @State private var showReauthAlert = false        // 再認証（パスワード入力）アラート
     @State private var reauthPassword = ""           // 再認証用パスワード入力
+    @State private var showAppleReauthSheet = false  // Apple Sign In再認証シート
     @State private var showUnsubscribeAlert = false   // プレミアム解除確認アラート
+    @State private var reminderEnabled: Bool = false  // 日記リマインダー ON/OFF
+    @State private var reminderTime: Date = {         // 日記リマインダー時刻
+        var cal = Calendar.current
+        var comps = DateComponents()
+        comps.hour = 21
+        comps.minute = 0
+        return cal.date(from: comps) ?? Date()
+    }()
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -51,6 +61,9 @@ struct SettingsView: View {
 
                 // --- 投稿セクション ---
                 Section {
+                    // 投稿公開設定（カレンダーのみ公開は不可）
+                    PostPublicToggle()
+                    
                     NavigationLink(destination: DraftListView(onDraftSelected: { dismiss() })
                         .environmentObject(draftManager)) {
                         HStack {
@@ -75,8 +88,26 @@ struct SettingsView: View {
                 // --- カレンダー設定セクション ---
                 Section {
                     CalendarPublicToggle()
+                    Toggle(isOn: $reminderEnabled) {
+                        Label("日記リマインダー", systemImage: "bell.badge")
+                    }
+                    .onChange(of: reminderEnabled) { enabled in
+                        saveReminderSettings(enabled: enabled, time: reminderTime)
+                    }
+                    if reminderEnabled {
+                        DatePicker(
+                            "通知時刻",
+                            selection: $reminderTime,
+                            displayedComponents: .hourAndMinute
+                        )
+                        .onChange(of: reminderTime) { time in
+                            saveReminderSettings(enabled: reminderEnabled, time: time)
+                        }
+                    }
                 } header: {
                     Text("カレンダー")
+                } footer: {
+                    Text("カレンダーを公開すると日記がタイムラインに表示されます。カレンダーのみ公開はできません。日記リマインダーをオンにすると、その日に日記を書いていない場合にお知らせします。")
                 }
 
                 // --- アプリについてセクション ---
@@ -196,6 +227,7 @@ struct SettingsView: View {
             }
             .task {
                 await subscriptionManager.loadProduct()
+                loadReminderSettings()
             }
             .alert("エラー", isPresented: Binding(
                 get: { subscriptionManager.errorMessage != nil },
@@ -226,11 +258,14 @@ struct SettingsView: View {
                                 dismiss()
                             }
                         }
+                    } else if authViewModel.isAppleUser {
+                        // AppleユーザーはSign in with Appleで再認証
+                        showAppleReauthSheet = true
                     } else if authViewModel.isEmailUser {
                         // Emailユーザーはパスワード入力
                         showReauthAlert = true
                     } else {
-                        // その他（Apple等）は再ログインを促す
+                        // その他は再ログインを促す
                         showReauthAlert = true
                     }
                 }
@@ -263,7 +298,70 @@ struct SettingsView: View {
             } message: {
                 Text("プレミアム状態を解除すると、広告が表示されるようになります。よろしいですか？")
             }
+            // Apple Sign In 再認証シート（アカウント削除前）
+            .sheet(isPresented: $showAppleReauthSheet) {
+                VStack(spacing: 32) {
+                    Text("セキュリティのため\n再度Appleでサインインしてください")
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 40)
+
+                    SignInWithAppleButton(.signIn) { request in
+                        request.requestedScopes = [.fullName, .email]
+                        request.nonce = authViewModel.prepareSignInWithApple()
+                    } onCompletion: { result in
+                        authViewModel.handleSignInWithApple(result: result)
+                        Task {
+                            let reauthSuccess = await authViewModel.reauthenticateWithApple()
+                            showAppleReauthSheet = false
+                            if reauthSuccess {
+                                await authViewModel.deleteAccount()
+                                dismiss()
+                            }
+                        }
+                    }
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 52)
+                    .cornerRadius(14)
+                    .padding(.horizontal, 28)
+
+                    Button("キャンセル") {
+                        showAppleReauthSheet = false
+                    }
+                    .foregroundColor(.secondary)
+
+                    Spacer()
+                }
+            }
         }
+    }
+
+    // MARK: - リマインダー設定の保存・読み込み
+
+    private func saveReminderSettings(enabled: Bool, time: Date) {
+        guard let uid = FirebaseAuth.Auth.auth().currentUser?.uid else { return }
+        let cal = Calendar.current
+        let hour = cal.component(.hour, from: time)
+        let minute = cal.component(.minute, from: time)
+        Task {
+            try? await Firestore.firestore().collection("users").document(uid).updateData([
+                "diary_reminder_enabled": enabled,
+                "diary_reminder_hour": hour,
+                "diary_reminder_minute": minute
+            ])
+        }
+    }
+
+    private func loadReminderSettings() {
+        guard let user = authViewModel.currentUser else { return }
+        reminderEnabled = user.diary_reminder_enabled ?? false
+        let hour = user.diary_reminder_hour ?? 21
+        let minute = user.diary_reminder_minute ?? 0
+        var cal = Calendar.current
+        var comps = DateComponents()
+        comps.hour = hour
+        comps.minute = minute
+        reminderTime = cal.date(from: comps) ?? reminderTime
     }
 }
 
@@ -436,6 +534,7 @@ struct PremiumBannerCard: View {
 struct CalendarPublicToggle: View {
     @State private var isPublic: Bool = false
     @State private var isLoading = false
+    @State private var postsArePublic: Bool = true  // 投稿公開設定を監視
     private let db = Firestore.firestore()
     private var uid: String { FirebaseAuth.Auth.auth().currentUser?.uid ?? "" }
 
@@ -457,21 +556,27 @@ struct CalendarPublicToggle: View {
         .onChange(of: isPublic) { newValue in
             Task { await saveSetting(isPublic: newValue) }
         }
-        .task { await loadSetting() }
-        .disabled(isLoading)
+        .task { await loadBothSettings() }
+        .disabled(isLoading || !postsArePublic)  // 投稿非公開時はカレンダー公開不可
     }
 
-    private func loadSetting() async {
+    private func loadBothSettings() async {
         isLoading = true
         do {
             let doc = try await db.collection("users").document(uid).getDocument()
             isPublic = doc.data()?["calendar_is_public"] as? Bool ?? false
+            postsArePublic = doc.data()?["posts_are_public"] as? Bool ?? true
         } catch {}
         isLoading = false
     }
 
     private func saveSetting(isPublic: Bool) async {
         isLoading = true
+        // 投稿非公開の場合はカレンダー公開不可（カレンダーのみ公開は不可）
+        guard postsArePublic else {
+            isLoading = false
+            return
+        }
         try? await db.collection("users").document(uid).updateData([
             "calendar_is_public": isPublic
         ])
@@ -496,5 +601,65 @@ private struct PremiumFeatureRow: View {
                 .font(.system(size: 13))
                 .foregroundColor(.white)
         }
+    }
+}
+
+// MARK: - PostPublicToggle
+// 投稿公開設定のToggle（カレンダーのみ公開は不可）
+
+struct PostPublicToggle: View {
+    @State private var isPublic: Bool = true  // デフォルト公開
+    @State private var isLoading: Bool = false
+    private let db = Firestore.firestore()
+    private var uid: String { FirebaseAuth.Auth.auth().currentUser?.uid ?? "" }
+
+    var body: some View {
+        Toggle(isOn: $isPublic) {
+            HStack(spacing: 8) {
+                Image(systemName: isPublic ? "globe" : "lock.fill")
+                    .foregroundColor(isPublic ? .accentBlue : Color(.systemGray))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("投稿を公開する")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(isPublic ? "タイムラインに表示されます" : "投稿は非公開です")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(.systemGray))
+                }
+            }
+        }
+        .tint(.accentBlue)
+        .onChange(of: isPublic) { newValue in
+            Task { await saveSetting(isPublic: newValue) }
+        }
+        .task { await loadSetting() }
+        .disabled(isLoading)
+    }
+
+    private func loadSetting() async {
+        isLoading = true
+        do {
+            let doc = try await db.collection("users").document(uid).getDocument()
+            // デフォルトは公開（true）
+            isPublic = doc.data()?["posts_are_public"] as? Bool ?? true
+        } catch {}
+        isLoading = false
+    }
+
+    private func saveSetting(isPublic: Bool) async {
+        isLoading = true
+        do {
+            // 投稿非公開にした場合、カレンダーも非公開にする（カレンダーのみ公開は不可）
+            if !isPublic {
+                try await db.collection("users").document(uid).updateData([
+                    "posts_are_public": false,
+                    "calendar_is_public": false
+                ])
+            } else {
+                try await db.collection("users").document(uid).updateData([
+                    "posts_are_public": true
+                ])
+            }
+        } catch {}
+        isLoading = false
     }
 }

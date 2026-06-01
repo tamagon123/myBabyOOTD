@@ -34,10 +34,7 @@ struct NewPostView: View {
 
     // === カレンダー連携 ===
     var calendarDate: Date? = nil          // カレンダーから開いた場合の指定日付
-    var defaultIsPublic: Bool = true       // デフォルトの公開状態
-
-    // === 投稿公開設定 ===
-    @State private var isPublicPost: Bool = true            // 投稿の公開・非公開
+    var isFromCalendar: Bool { calendarDate != nil }  // カレンダーからの投稿かどうか
 
     // === 写真関連 ===
     @State private var frontImage: UIImage?              // 正面写真
@@ -65,6 +62,7 @@ struct NewPostView: View {
     @State private var tempMax: String = ""                // 最高気温（文字列入力）
     @State private var tempMin: String = ""                // 最低気温（文字列入力）
     @State private var isFetchingWeather: Bool = false    // 天気自動取得中フラグ
+    @State private var isSubmitting: Bool = false         // 投稿中フラグ（連打防止）
 
     // === 子供選択 ===
     @State private var selectedChildIndex: Int = 0        // 選択中の子供インデックス
@@ -273,8 +271,6 @@ struct NewPostView: View {
             Divider().padding(.horizontal, 20)
             weatherSection
                 .padding(.horizontal, 20)
-            publicToggleSection
-                .padding(.horizontal, 20)
             draftSaveButton
                 .padding(.horizontal, 20)
             postButton
@@ -289,14 +285,19 @@ struct NewPostView: View {
 
     // =============================================================================
     // 【Viewサマリー】descriptionSection
-    // 目的: 投稿の説明文（服装のポイント）を入力するTextEditorを表示する
+    // 目的: 投稿の説明文入力（通常：服装のポイント、カレンダー：日記コメント）
     // 戻り値: some View
     // =============================================================================
     private var descriptionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("服装のポイント")
+            // カレンダー投稿の場合は「日記コメント」、通常投稿は「服装のポイント」
+            sectionLabel(isFromCalendar ? "日記コメント" : "服装のポイント")
             if #available(iOS 16.0, *) {
-                TextField("例：気温が上がったので半西デビュー！", text: $description, axis: .vertical)
+                TextField(
+                    isFromCalendar ? "例：今日は公園に行きました" : "例：気温が上がったので半西デビュー！",
+                    text: $description,
+                    axis: .vertical
+                )
                     .lineLimit(3...5)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: description, perform: { v in
@@ -347,15 +348,15 @@ struct NewPostView: View {
         Button {
             Task { await submitPost() }
         } label: {
-            Text(postsViewModel.isLoading ? "投稿中..." : "投稿する")
+            Text(isSubmitting ? "投稿中..." : "投稿する")
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(canPost ? Color.accentRed : Color.gray)
+                .background(canPost && !isSubmitting ? Color.accentRed : Color.gray)
                 .cornerRadius(16)
         }
-        .disabled(!canPost || postsViewModel.isLoading)
+        .disabled(!canPost || isSubmitting || postsViewModel.isLoading)
         .padding(.bottom, 40)
     }
 
@@ -792,25 +793,6 @@ struct NewPostView: View {
         return "新しい投稿"
     }
 
-    // MARK: - Public Toggle Section
-
-    private var publicToggleSection: some View {
-        Toggle(isOn: $isPublicPost) {
-            HStack(spacing: 8) {
-                Image(systemName: isPublicPost ? "globe" : "lock.fill")
-                    .foregroundColor(isPublicPost ? .accentBlue : Color(.systemGray))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("投稿を公開する")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text(isPublicPost ? "タイムラインに表示されます" : "自分のみ閲覧できます")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(.systemGray))
-                }
-            }
-        }
-        .tint(.accentBlue)
-    }
-
     // =============================================================================
     // 【Viewサマリー】sectionLabel
     // 目的: 各セクションのタイトルラベルを統一スタイルで表示するヘルパー
@@ -835,7 +817,6 @@ struct NewPostView: View {
         if let idx = Int(user.region_code), idx >= 1, idx <= 47 {
             selectedRegionIndex = idx - 1
         }
-        isPublicPost = defaultIsPublic
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
         if let draft = draftManager.pendingDraft {
             applyDraft(draft)
@@ -969,7 +950,10 @@ struct NewPostView: View {
     //   4. 失敗時はエラーアラートを表示
     // =============================================================================
     private func submitPost() async {
+        guard !isSubmitting else { return }  // 既に投稿中なら無視
         guard let user = authViewModel.currentUser else { return }
+        
+        isSubmitting = true  // 投稿開始
 
         // 子供が登録されている場合、選択中の子供情報を使う
         let selectedChild: ChildProfile? = children.indices.contains(selectedChildIndex) ? children[selectedChildIndex] : nil
@@ -1023,9 +1007,20 @@ struct NewPostView: View {
         modUser.child_birthday = effectiveBirthday
         modUser.child_gender = effectiveGender
 
-        // カレンダーからの投稿かどうかを判定（calendarDateが設定されている場合）
+        // カレンダーからの投稿かどうかを判定
         let isCalendarPost = calendarDate != nil
-        print("[DEBUG] submitPost: calendarDate=\(String(describing: calendarDate)), isCalendarPost=\(isCalendarPost)")
+        print("[DEBUG] submitPost: isCalendarPost=\(isCalendarPost)")
+        
+        // 通常投稿：無条件で公開
+        // カレンダー投稿：カレンダー公開設定に連動（カレンダー公開時のみ投稿も公開）
+        var shouldBePublic = true
+        if isCalendarPost {
+            let calVm = CalendarViewModel()
+            await calVm.fetchCalendarPublicSetting(uid: user.user_id)
+            shouldBePublic = calVm.calendarIsPublic
+            print("[DEBUG] Calendar post: calendarIsPublic=\(calVm.calendarIsPublic), shouldBePublic=\(shouldBePublic)")
+        }
+        print("[DEBUG] submitPost: shouldBePublic=\(shouldBePublic)")
 
         let success = await postsViewModel.uploadPost(
             frontImage: frontImage,
@@ -1038,7 +1033,7 @@ struct NewPostView: View {
             tempMin: tMin,
             items: postItems,
             user: modUser,
-            isPublic: isPublicPost,
+            isPublic: shouldBePublic,
             isCalendarPost: isCalendarPost
         )
 
@@ -1076,6 +1071,8 @@ struct NewPostView: View {
             }
             showSuccess = true
         } else { showError = true }
+        
+        isSubmitting = false  // 投稿完了
     }
 }
 
@@ -1633,9 +1630,6 @@ struct PhotoEditorView: View {
         let dispW = canvasSize.width == 0 ? UIScreen.main.bounds.width : canvasSize.width
         let dispH = canvasSize.height == 0 ? UIScreen.main.bounds.height : canvasSize.height
         let fitScale = min(dispW / imgW, dispH / imgH)
-        // キャンバス上での画像左上座標 (= canvasOffset)
-        let offsetX = canvasOffset.x
-        let offsetY = canvasOffset.y
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = image.scale
@@ -1643,9 +1637,10 @@ struct PhotoEditorView: View {
         return renderer.image { ctx in
             image.draw(in: CGRect(origin: .zero, size: CGSize(width: imgW, height: imgH)))
             for stamp in stampItems {
-                // stamp.position はジオメトリ全体上の座標 → 画像左上からの相対座標に変換
-                let imgX = (stamp.position.x - offsetX) / fitScale
-                let imgY = (stamp.position.y - offsetY) / fitScale
+                // stamp.position は画像左上からの相対座標（0～dispW, 0～dispH）
+                // → 元画像座標系に変換（fitScaleで除算）
+                let imgX = stamp.position.x / fitScale
+                let imgY = stamp.position.y / fitScale
                 // ビュー上のスタンプ描画サイズは StampView と同じ baseSize=44
                 let baseViewPt: CGFloat = 44
                 let stampViewPt = baseViewPt * stamp.scale
@@ -1713,6 +1708,7 @@ struct StampView: View {
                 VStack {
                     HStack {
                         Spacer()
+                        // 拡縮ハンドル（右上）
                         Image(systemName: "arrow.up.and.down")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
@@ -1733,6 +1729,20 @@ struct StampView: View {
                             )
                     }
                     Spacer()
+                    HStack {
+                        Spacer()
+                        // 削除ボタン（ゴミ箱アイコン、右下）
+                        Button(action: onRemove) {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(5)
+                                .background(Color.red.opacity(0.8))
+                                .clipShape(Circle())
+                        }
+                        .offset(x: 4, y: 4)
+                        .buttonStyle(.plain)
+                    }
                 }
                 .frame(width: baseSize * stamp.scale * liveScaleFactor + 12,
                        height: baseSize * stamp.scale * liveScaleFactor + 12)

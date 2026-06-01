@@ -18,10 +18,11 @@ struct MainTabView: View {
     @EnvironmentObject var authViewModel: AuthViewModel        // 認証状態（親から受け取る）
     @StateObject private var postsViewModel = PostsViewModel() // 投稿管理（自身で生成・保持）
     @StateObject private var draftManager = DraftManager()       // 下書き管理（自身で生成・保持）
-    @State private var selectedTab: Int = 0                    // 選択中のタブ（0=ホーム,1=カレンダー,2=検索,3=マイページ）
+    @State private var selectedTab: Int = 0                    // 選択中のタブ（0=ホーム,1=カレンダー,2=買い物,3=マイページ）
     @StateObject private var calendarViewModel = CalendarViewModel()
     @State private var showNewPost = false                     // 新規投稿シートの表示状態
     @State private var profileRefreshId = UUID()               // プロフィールViewの強制再描画用ID
+    @State private var unreadCount: Int = 0                    // 未読通知数
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -48,7 +49,7 @@ struct MainTabView: View {
                         .environmentObject(calendarViewModel)
                         .environmentObject(postsViewModel)
                 case 2:
-                    SearchView()
+                    ShoppingView()
                         .environmentObject(authViewModel)
                 case 3:
                     ProfileView(userId: Auth.currentUID)
@@ -68,6 +69,7 @@ struct MainTabView: View {
             // 下部カスタムナビゲーションバー
             BottomNavBar(
                 selectedTab: $selectedTab,
+                unreadCount: unreadCount,
                 onPostTap: { showNewPost = true }
             )
         }
@@ -90,10 +92,46 @@ struct MainTabView: View {
                 }
             }
         }
-        // 画面表示時にプッシュ通知の許可を要求・FCMトークンを保存
+        // 画面表示時にプッシュ通知の許可を要求・FCMトークンを保存・未読数を取得
         .onAppear {
             NotificationService.shared.requestPermissionIfNeeded()
             NotificationService.shared.saveFCMTokenIfSignedIn()
+            refreshUnreadCount()
+        }
+        // マイページタブ選択時に未読数を更新
+        .onChange(of: selectedTab) { tab in
+            if tab == 3 {
+                refreshUnreadCount()
+            }
+        }
+        // プッシュ通知タップ時に対応するタブへ遷移
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NotificationTapped"))) { notification in
+            guard let userInfo = notification.userInfo,
+                  let type = userInfo["type"] as? String else { return }
+
+            print("[MainTabView] Notification tapped: type=\(type)")
+
+            switch type {
+            case "new_post", "like":
+                selectedTab = 0  // ホーム
+            case "follow":
+                selectedTab = 3  // マイページ
+            case "diary_reminder":
+                selectedTab = 1  // カレンダー
+            default:
+                break
+            }
+        }
+    }
+
+    private func refreshUnreadCount() {
+        let uid = Auth.currentUID
+        guard !uid.isEmpty else { return }
+        Task {
+            let count = await NotificationService.shared.fetchUnreadCount(uid: uid)
+            await MainActor.run {
+                unreadCount = count
+            }
         }
     }
 }
@@ -109,6 +147,7 @@ struct MainTabView: View {
 
 struct BottomNavBar: View {
     @Binding var selectedTab: Int   // 双方向バインディング: MainTabViewとタブ状態を同期
+    var unreadCount: Int = 0        // 未読通知数（マイページタブのバッジ用）
     var onPostTap: () -> Void       // +ボタンタップ時のコールバック
 
     var body: some View {
@@ -133,11 +172,11 @@ struct BottomNavBar: View {
             }
             .offset(y: -12)
             Spacer()
-            // 検索ボタン（タブ2）
-            navItem(icon: "magnifyingglass", label: "検索", tab: 2)
+            // 買い物ボタン（タブ2）
+            navItem(icon: "bag.fill", label: "買い物", tab: 2)
             Spacer()
             // マイページボタン（タブ3）
-            navItem(icon: "person.fill",  label: "マイページ", tab: 3)
+            navItemWithBadge(icon: "person.fill", label: "マイページ", tab: 3, badge: unreadCount)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -170,6 +209,33 @@ struct BottomNavBar: View {
             }
             // 選択中のタブは朱色、未選択はグレー
             .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
+        }
+    }
+
+    @ViewBuilder
+    private func navItemWithBadge(icon: String, label: String, tab: Int, badge: Int) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            ZStack {
+                VStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.system(size: 22))
+                    Text(label)
+                        .font(.system(size: 10))
+                }
+                .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
+
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Color.accentRed)
+                        .clipShape(Capsule())
+                        .offset(x: 14, y: -10)
+                }
+            }
         }
     }
 }

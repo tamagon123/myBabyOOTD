@@ -94,4 +94,43 @@ final class NotificationService {
             }
         }
     }
+
+    // MARK: - 通知一覧・未読管理
+
+    /// ユーザーの未読通知数を取得する
+    func fetchUnreadCount(uid: String) async -> Int {
+        do {
+            let snap = try await Firestore.firestore()
+                .collection("notifications")
+                .whereField("user_id", isEqualTo: uid)
+                .whereField("is_read", isEqualTo: false)
+                .count
+                .getAggregation(source: .server)
+            return Int(snap.count)
+        } catch {
+            print("[NotificationService] fetchUnreadCount failed: \(error)")
+            return 0
+        }
+    }
+
+    /// 全通知を既読にする
+    func markAllAsRead(uid: String) async {
+        do {
+            let snap = try await Firestore.firestore()
+                .collection("notifications")
+                .whereField("user_id", isEqualTo: uid)
+                .whereField("is_read", isEqualTo: false)
+                .getDocuments()
+
+            guard !snap.documents.isEmpty else { return }
+            let batch = Firestore.firestore().batch()
+            for doc in snap.documents {
+                batch.updateData(["is_read": true], forDocument: doc.reference)
+            }
+            try await batch.commit()
+            print("[NotificationService] Marked \(snap.documents.count) notifications as read")
+        } catch {
+            print("[NotificationService] markAllAsRead failed: \(error)")
+        }
+    }
 }

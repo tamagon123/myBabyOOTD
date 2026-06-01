@@ -20,6 +20,7 @@ struct CalendarView: View {
     @State private var showNewPostSheet = false
     @State private var showPublicConfirm = false
     @State private var selectedPostForDetail: Post? = nil
+    @State private var selectedEntryForDetail: CalendarEntry? = nil  // 日記詳細表示用
 
     private var uid: String { Auth.currentUID }
     private var isSubscribed: Bool { SubscriptionManager.shared.isSubscribed }
@@ -46,6 +47,41 @@ struct CalendarView: View {
             .background(Color.ecruBackground.ignoresSafeArea())
             .navigationTitle("カレンダー")
             .navigationBarTitleDisplayMode(.inline)
+            .overlay(
+                // ローディング表示
+                Group {
+                    if vm.isLoading {
+                        ZStack {
+                            Color.black.opacity(0.3)
+                                .ignoresSafeArea()
+                            VStack(spacing: 16) {
+                                ProgressView()
+                                    .scaleEffect(1.5)
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                Text("読み込み中...")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(24)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.black.opacity(0.7))
+                            )
+                        }
+                    }
+                }
+            )
+            .sheet(isPresented: $vm.showRegionPicker) {
+                regionPickerSheet
+            }
+            // 日記詳細シート
+            .sheet(item: $selectedEntryForDetail) { entry in
+                CalendarEntryDetailView(entry: entry) { deletedEntry in
+                    // 削除された場合、entriesから削除
+                    vm.entries.removeValue(forKey: deletedEntry.date_key)
+                }
+                .environmentObject(authViewModel)
+            }
             .sheet(isPresented: $showEntrySheet, onDismiss: {
                 Task {
                     await vm.fetchEntries(uid: uid, around: displayedMonth)
@@ -93,27 +129,15 @@ struct CalendarView: View {
             }
             .task {
                 print("[DEBUG] CalendarView task started")
-                await vm.fetchCalendarPublicSetting(uid: uid)
-                print("[DEBUG] CalendarView task: fetchCalendarPublicSetting done")
-                await vm.fetchEntries(uid: uid, around: displayedMonth)
-                print("[DEBUG] CalendarView task: fetchEntries done, entries.count=\(vm.entries.count)")
-                await vm.fetchPosts(uid: uid, around: displayedMonth)
-                print("[DEBUG] CalendarView task: fetchPosts done")
-                // 月全体の天気データを取得
-                if let regionCode = authViewModel.currentUser?.region_code {
-                    await vm.fetchMonthlyWeather(regionCode: regionCode, month: displayedMonth)
-                    print("[DEBUG] CalendarView task: fetchMonthlyWeather done, weather count=\(vm.monthlyWeather.count)")
-                }
-                print("[DEBUG] CalendarView task: all done")
+                // プロフィールから地域を設定（未設定の場合は東京）
+                vm.setRegionFromProfile(authViewModel.currentUser?.region_code)
+                print("[DEBUG] CalendarView: set region to \(vm.selectedRegionName) (profile: \(authViewModel.currentUser?.region_code ?? "nil"))")
+                await vm.fetchAllData(uid: uid, around: displayedMonth)
+                print("[DEBUG] CalendarView task: all done, entries=\(vm.entries.count), posts=\(vm.postsByDate.count), weather=\(vm.monthlyWeather.count)")
             }
             .onChange(of: displayedMonth) { month in
                 Task {
-                    await vm.fetchEntries(uid: uid, around: month)
-                    await vm.fetchPosts(uid: uid, around: month)
-                    // 月変更時も天気データを取得
-                    if let regionCode = authViewModel.currentUser?.region_code {
-                        await vm.fetchMonthlyWeather(regionCode: regionCode, month: month)
-                    }
+                    await vm.fetchAllData(uid: uid, around: month)
                 }
             }
         }
@@ -122,13 +146,20 @@ struct CalendarView: View {
     // MARK: - Top status bar (region + public toggle)
     private var topStatusBar: some View {
         HStack {
-            HStack(spacing: 4) {
-                Image(systemName: "mappin.and.ellipse")
-                    .font(.system(size: 13))
-                Text(regionName)
-                    .font(.system(size: 14))
+            Button {
+                vm.showRegionPicker = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.system(size: 13))
+                    Text(regionName)
+                        .font(.system(size: 14))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10))
+                }
+                .foregroundColor(Color(.systemGray))
             }
-            .foregroundColor(Color(.systemGray))
+            .disabled(vm.isLoading)
 
             Spacer()
 
@@ -137,6 +168,75 @@ struct CalendarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Color.ecruBackground)
+    }
+
+    // MARK: - Region picker sheet
+    private var regionPickerSheet: some View {
+        NavigationView {
+            List {
+                // プロフィール地域が設定されていれば最上部に表示
+                if let profileCode = vm.profileRegionCode,
+                   let profileName = vm.prefectureNames[profileCode] {
+                    Section(header: Text("プロフィール設定").font(.system(size: 12))) {
+                        Button {
+                            Task {
+                                await vm.changeRegion(to: profileCode, uid: uid, around: displayedMonth)
+                            }
+                        } label: {
+                            HStack {
+                                Text(profileName)
+                                    .font(.system(size: 16, weight: .medium))
+                                Spacer()
+                                if profileCode == vm.selectedRegionCode {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.accentRed)
+                                }
+                                Text("設定中")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.accentRed)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentRed.opacity(0.1))
+                                    .cornerRadius(4)
+                            }
+                        }
+                        .foregroundColor(.primary)
+                    }
+                }
+                
+                // その他の地域リスト
+                Section(header: Text("すべての地域").font(.system(size: 12))) {
+                    ForEach(vm.sortedPrefectureCodes, id: \.self) { code in
+                        Button {
+                            Task {
+                                await vm.changeRegion(to: code, uid: uid, around: displayedMonth)
+                            }
+                        } label: {
+                            HStack {
+                                Text(vm.prefectureNames[code] ?? "")
+                                    .font(.system(size: 16))
+                                Spacer()
+                                if code == vm.selectedRegionCode {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.accentRed)
+                                }
+                            }
+                        }
+                        .foregroundColor(.primary)
+                    }
+                }
+            }
+            .listStyle(.grouped)
+            .navigationTitle("地域を選択")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("閉じる") {
+                        vm.showRegionPicker = false
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Month header (prev/next arrows)
@@ -178,12 +278,7 @@ struct CalendarView: View {
     }
 
     private var regionName: String {
-        guard let code = authViewModel.currentUser?.region_code,
-              let index = Int(code),
-              index >= 1 && index <= prefectures.count else {
-            return "未設定"
-        }
-        return prefectures[index - 1]
+        vm.selectedRegionName
     }
 
     // MARK: - Weekday row
@@ -240,7 +335,7 @@ struct CalendarView: View {
                             // Vertical grid line (except for last column)
                             if col < 6 {
                                 Rectangle()
-                                    .fill(Color(.systemGray5))
+                                    .fill(Color(.systemGray3))
                                     .frame(width: 0.5)
                             }
                         }
@@ -249,17 +344,13 @@ struct CalendarView: View {
                     // Horizontal grid line (except for last row)
                     if row < rows - 1 {
                         Rectangle()
-                            .fill(Color(.systemGray5))
+                            .fill(Color(.systemGray3))
                             .frame(height: 0.5)
                     }
                 }
             }
         }
         .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(.systemGray5), lineWidth: 0.5)
-        )
     }
 
     // MARK: - Selected day panel
@@ -325,9 +416,12 @@ struct CalendarView: View {
                         .padding(.horizontal, 16)
 
                         // 日記カード（タップで詳細）
-                        CalendarEntryCard(entry: entry, isEditable: false) {
-                            // 日記詳細表示（あれば）
-                        }
+                        CalendarEntryCard(
+                            entry: entry,
+                            isEditable: false,
+                            onEdit: { showEntrySheet = true },
+                            onTap: { selectedEntryForDetail = entry }
+                        )
                         .padding(.horizontal, 12)
                     }
                     .padding(.top, 4)
@@ -355,13 +449,14 @@ struct CalendarView: View {
                     }
                 }
 
-                // === 投稿セクション ===
-                if let posts = vm.postsByDate[key], !posts.isEmpty {
+                // === 投稿セクション（カレンダー投稿は除外） ===
+                let regularPosts = vm.postsByDate[key]?.filter { !($0.is_calendar_post ?? false) } ?? []
+                if !regularPosts.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Image(systemName: "photo.on.rectangle")
                                 .font(.system(size: 14))
-                            Text("投稿 (\(posts.count)件)")
+                            Text("投稿 (\(regularPosts.count)件)")
                                 .font(.system(size: 14, weight: .semibold))
                             Spacer()
                         }
@@ -370,7 +465,7 @@ struct CalendarView: View {
 
                         // 投稿カード一覧（縦に並べて表示）
                         VStack(spacing: 8) {
-                            ForEach(posts, id: \.post_id) { post in
+                            ForEach(regularPosts, id: \.post_id) { post in
                                 PostThumbnailCard(post: post)
                                     .onTapGesture {
                                         selectedPostForDetail = post
@@ -463,18 +558,21 @@ struct CalendarDayCell: View {
         weather?.tempMin ?? entry?.temp_min
     }
     
-    // 天気に応じた背景色（タイムライン同様）
+    // 天気に応じた背景色（薄く）
     private var weatherBackgroundColor: Color {
         guard let wt = displayWeather.flatMap({ WeatherType(rawValue: $0) }) else {
             return Color(.systemGray6)
         }
         switch wt {
-        case .sunny:  return Color.orange.opacity(0.35)
-        case .cloudy: return Color.gray.opacity(0.35)
-        case .rainy:  return Color.blue.opacity(0.35)
-        case .snowy:  return Color.cyan.opacity(0.35)
+        case .sunny:  return Color.orange.opacity(0.2)
+        case .cloudy: return Color.gray.opacity(0.2)
+        case .rainy:  return Color.blue.opacity(0.2)
+        case .snowy:  return Color.cyan.opacity(0.2)
         }
     }
+    
+    // 日記または投稿があるかどうか
+    private var hasDiaryOrPost: Bool { entry != nil || postCount > 0 }
 
     var body: some View {
         VStack(spacing: 2) {
@@ -493,61 +591,51 @@ struct CalendarDayCell: View {
                     .foregroundColor(dayTextColor)
             }
             .frame(width: 32, height: 32)
+            .background(
+                // 投稿がある日は薄い黄色の丸い背景
+                hasDiaryOrPost && !isSelected ? Circle().fill(Color.yellow.opacity(0.3)) : nil
+            )
 
-            // 中段: 天気アイコン + 気温（横1列、黒記号、背景色付き）
+            // 天気気温セクション：記号左・気温右（横並び）
             HStack(spacing: 4) {
-                // 天気記号（黒いSF Symbols）
+                // 左：天気記号
                 if let wt = displayWeather.flatMap({ WeatherType(rawValue: $0) }) {
                     Image(systemName: wt.sfSymbol)
                         .font(.system(size: 10))
-                        .foregroundColor(.black)
+                        .foregroundColor(Color.black.opacity(0.9))
                 } else {
                     Text("-")
                         .font(.system(size: 10))
                         .foregroundColor(Color(.systemGray4))
                 }
-
-                // 気温
+                
+                // 右：気温（分数形式）
                 if let max = displayTempMax, let min = displayTempMin {
-                    Text("\(Int(max.rounded()))°/\(Int(min.rounded()))°")
-                        .font(.system(size: 9))
-                        .foregroundColor(Color(.systemGray2))
+                    VStack(spacing: 0) {
+                        Text("\(Int(max.rounded()))°")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(Color.black.opacity(0.8))
+                        // 横棒（分数の線）
+                        Rectangle()
+                            .fill(Color.black.opacity(0.4))
+                            .frame(width: 14, height: 0.5)
+                            .padding(.vertical, 0.5)
+                        Text("\(Int(min.rounded()))°")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(Color.black.opacity(0.8))
+                    }
                 } else {
                     Text("-")
                         .font(.system(size: 9))
                         .foregroundColor(Color(.systemGray4))
                 }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1)
             .background(weatherBackgroundColor)
-            .cornerRadius(4)
-
-            // 下段: 投稿数バッジ（ある場合のみ）
-            if postCount > 0 {
-                Text("\(postCount)")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 14, height: 14)
-                    .background(Color.accentBlue)
-                    .clipShape(Circle())
-            } else {
-                Color.clear.frame(height: 14)
-            }
+            .cornerRadius(3)
         }
         .frame(maxWidth: .infinity, minHeight: 68)
-        .background(
-            Group {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.accentRed.opacity(0.08))
-                } else {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.white)
-                        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
-                }
-            }
-        )
         .opacity(isFuture ? 0.3 : 1.0)
     }
 
@@ -565,6 +653,14 @@ struct CalendarEntryCard: View {
     let entry: CalendarEntry
     let isEditable: Bool
     let onEdit: () -> Void
+    var onTap: (() -> Void)?  // タップで詳細表示
+    
+    init(entry: CalendarEntry, isEditable: Bool, onEdit: @escaping () -> Void, onTap: (() -> Void)? = nil) {
+        self.entry = entry
+        self.isEditable = isEditable
+        self.onEdit = onEdit
+        self.onTap = onTap
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -599,9 +695,20 @@ struct CalendarEntryCard: View {
                 }
             }
 
-            if isEditable {
-                HStack {
-                    Spacer()
+            HStack {
+                // タップして詳細表示ボタン
+                if onTap != nil {
+                    Button(action: { onTap?() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.text")
+                            Text("詳細")
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.accentBlue)
+                    }
+                }
+                Spacer()
+                if isEditable {
                     Button(action: onEdit) {
                         HStack(spacing: 4) {
                             Image(systemName: "pencil")
@@ -612,6 +719,10 @@ struct CalendarEntryCard: View {
                     }
                 }
             }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?()
         }
         .padding(14)
         .background(Color.white)
@@ -680,7 +791,7 @@ struct CalendarNewPostBridge: View {
     @StateObject private var draftManager = DraftManager()
 
     var body: some View {
-        NewPostView(calendarDate: date, defaultIsPublic: false)
+        NewPostView(calendarDate: date)
             .environmentObject(postsViewModel)
             .environmentObject(authViewModel)
             .environmentObject(draftManager)

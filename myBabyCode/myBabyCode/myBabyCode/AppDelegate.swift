@@ -169,8 +169,37 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        let userInfo = response.notification.request.content.userInfo
+        
+        // FCM dataペイロードを解析してアプリ内通知を発行
+        if let type = userInfo["type"] as? String {
+            var notificationData: [String: Any] = ["type": type]
+            // 付加データを収集
+            for key in ["post_id", "author_id", "liker_id", "follower_id", "date_key"] {
+                if let value = userInfo[key] as? String {
+                    notificationData[key] = value
+                }
+            }
+            NotificationCenter.default.post(
+                name: .notificationTapped,
+                object: nil,
+                userInfo: notificationData
+            )
+            print("[Push] Notification tapped: type=\(type), data=\(notificationData)")
+        }
+        
+        // バッジをクリア
+        UIApplication.shared.applicationIconBadgeNumber = 0
+        
         completionHandler()
     }
+}
+
+// MARK: - Notification.Name Extension
+
+extension Notification.Name {
+    /// ユーザーがプッシュ通知をタップした時に発行される通知
+    static let notificationTapped = Notification.Name("NotificationTapped")
 }
 
 // MARK: - MessagingDelegate

@@ -25,7 +25,7 @@ service cloud.firestore {
       allow update: if isAuth()
         && (resource.data.user_id == request.auth.uid
           || request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['reports_count']));
+              .hasOnly(['reports_count', 'likes_count']));
       allow delete: if isAuth() && resource.data.user_id == request.auth.uid;
 
       match /items/{itemId} {
@@ -55,6 +55,16 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.user_id
         && !exists(/databases/$(database)/documents/reports/$(reportId));
       allow read, update, delete: if false;
+    }
+
+    // notifications: 自分宛ての通知のみ読み取り可能。is_readのみ更新可能。
+    match /notifications/{notificationId} {
+      allow read: if isAuth() && resource.data.user_id == request.auth.uid;
+      allow create: if false;  // Cloud Functionsのみ作成可能
+      allow update: if isAuth()
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);
+      allow delete: if false;
     }
 
     // デフォルト: すべて禁止

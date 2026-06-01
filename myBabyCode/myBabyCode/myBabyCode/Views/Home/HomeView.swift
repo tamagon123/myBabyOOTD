@@ -163,9 +163,7 @@ struct HomeView: View {
                 LazyVStack(spacing: 0) {
                     // トップスクロール用の目印
                     Color.clear.frame(height: 0).id("homeTop")
-                    ForEach(displayPosts.indices, id: \.self) { idx in
-                        let post = displayPosts[idx]
-
+                    ForEach(Array(displayPosts.enumerated()), id: \.element.post_id) { idx, post in
                         PostCardView(
                             post: post,
                             isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),

@@ -29,6 +29,7 @@ struct SearchView: View {
     @State private var sheetSelectedBrand: String = ""        // シート選択一時値
     @State private var showBrandSearch = false                // ブランド検索シート表示フラグ
     @State private var selectedSizeIndices: Set<Int> = []     // 選択されたサイズ
+    @State private var selectedFilter: PostFilterType = .all    // 投稿フィルター（投稿のみ/日記のみ/両方）
 
     // === 検索結果 ===
     @State private var results: [Post] = []        // 検索結果の投稿リスト
@@ -302,6 +303,19 @@ struct SearchView: View {
                     }
                 }
             }
+
+            // 投稿タイプフィルター
+            filterRow(label: "表示タイプ") {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(PostFilterType.allCases) { filter in
+                            chipButton(label: filter.rawValue, active: selectedFilter == filter) {
+                                selectedFilter = filter
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -422,6 +436,16 @@ struct SearchView: View {
                     }
                 }
                 fetched = fetched.filter { matchedIds.contains($0.post_id) }
+            }
+
+            // 投稿タイプフィルター適用（投稿のみ/日記のみ/両方）
+            switch selectedFilter {
+            case .postsOnly:
+                fetched = fetched.filter { !($0.is_calendar_post ?? false) }
+            case .diaryOnly:
+                fetched = fetched.filter { $0.is_calendar_post ?? false }
+            case .all:
+                break // 全て表示
             }
 
             results = fetched

@@ -31,6 +31,16 @@ struct PostCardView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
 
+    // postsViewModelから現在のいいね状態を動的に読み取る（UIが確実に更新されるため）
+    private var postId: String { post.id ?? post.post_id }
+    private var effectiveIsLiked: Bool { postsViewModel.likedPostIds.contains(postId) }
+    private var effectiveLikes: Int {
+        // posts配列またはsearchResults配列から最新のlikes_countを取得
+        let currentPost = postsViewModel.posts.first(where: { ($0.id ?? $0.post_id) == postId })
+            ?? postsViewModel.searchResults.first(where: { ($0.id ?? $0.post_id) == postId })
+        return currentPost?.likes_count ?? post.likes_count
+    }
+
     // 計算プロパティ: frontとbackの画像URLを(URL, side)のタプルで配列化
     private var imageEntries: [(url: String, side: String)] {
         var result: [(url: String, side: String)] = []
@@ -163,15 +173,15 @@ struct PostCardView: View {
                     HStack(spacing: 8) {
                         Button(action: onLike) {
                             HStack(spacing: 4) {
-                                Image(systemName: isLiked ? "heart.fill" : "heart")
-                                    .foregroundColor(isLiked ? .pink : .white)
-                                Text("\(post.likes_count)")
+                                Image(systemName: effectiveIsLiked ? "heart.fill" : "heart")
+                                    .foregroundColor(effectiveIsLiked ? .pink : .white)
+                                Text("\(effectiveLikes)")
                                     .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(isLiked ? .pink : .white)
+                                    .foregroundColor(effectiveIsLiked ? .pink : .white)
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(isLiked ? Color.pink.opacity(0.35) : Color.pink.opacity(0.25))
+                            .background(effectiveIsLiked ? Color.pink.opacity(0.35) : Color.pink.opacity(0.25))
                             .cornerRadius(20)
                         }
                         .buttonStyle(.plain)
@@ -254,7 +264,7 @@ struct PostCardView: View {
         .sheet(isPresented: $showPostDetail) {
             PostDetailView(
                 post: post,
-                isLiked: isLiked,
+                isLiked: effectiveIsLiked,
                 onLike: onLike,
                 onDeleted: { _ in }
             )

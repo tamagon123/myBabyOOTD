@@ -167,13 +167,19 @@ actor WeatherService {
         let startDay = calendar.startOfDay(for: startDate)
         let endDay = calendar.startOfDay(for: endDate)
         
+        print("[WeatherService] fetchMonthly debug: today=\(fmt.string(from: today)), startDay=\(fmt.string(from: startDay)), endDay=\(fmt.string(from: endDay))")
+        
         // 過去データの範囲（昨日まで）
         let archiveStart = startDay
-        let archiveEnd = min(endDay, calendar.date(byAdding: .day, value: -1, to: today) ?? today)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        let archiveEnd = min(endDay, yesterday)
         
-        // 未来予報の範囲（今日から最大16日先）
+        // 未来予報の範囲（今日から最大15日先 - API制限で16日先は取得不可）
         let forecastStart = max(startDay, today)
-        let forecastEnd = min(endDay, calendar.date(byAdding: .day, value: 16, to: today) ?? today)
+        let maxForecastDate = calendar.date(byAdding: .day, value: 15, to: today) ?? today
+        let forecastEnd = min(endDay, maxForecastDate)
+        
+        print("[WeatherService] fetchMonthly ranges: archive=\(fmt.string(from: archiveStart))~\(fmt.string(from: archiveEnd)), forecast=\(fmt.string(from: forecastStart))~\(fmt.string(from: forecastEnd))")
         
         var results: [String: WeatherResult] = [:]
         
@@ -207,14 +213,21 @@ actor WeatherService {
         
         // 2. 未来予報を取得（forecast API、最大16日）
         if forecastStart <= forecastEnd {
-            let days = calendar.dateComponents([.day], from: forecastStart, to: forecastEnd).day ?? 0
-            let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&forecast_days=\(days + 1)&start_date=\(fmt.string(from: forecastStart))"
-            print("[WeatherService] fetchMonthly forecast: \(days+1) days from \(fmt.string(from: forecastStart))")
+            let startStr = fmt.string(from: forecastStart)
+            let endStr = fmt.string(from: forecastEnd)
+            // forecast API: start_dateとend_dateの両方が必要
+            let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&start_date=\(startStr)&end_date=\(endStr)"
+            print("[WeatherService] fetchMonthly forecast: \(startStr) to \(endStr)")
             
             if let url = URL(string: urlString) {
                 do {
+                    print("[WeatherService] forecast API URL: \(urlString)")
                     let (data, _) = try await URLSession.shared.data(from: url)
+                    if let raw = String(data: data, encoding: .utf8) {
+                        print("[WeatherService] forecast API raw response (first 500): \(raw.prefix(500))")
+                    }
                     let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
+                    print("[WeatherService] forecast API decoded: max=\(json.daily.temperature_2m_max), min=\(json.daily.temperature_2m_min), codes=\(json.daily.weather_code)")
                     var currentDate = forecastStart
                     for i in 0..<json.daily.temperature_2m_max.count {
                         let dateKey = fmt.string(from: currentDate)
@@ -225,7 +238,7 @@ actor WeatherService {
                         )
                         currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
                     }
-                    print("[WeatherService] fetchMonthly forecast: got \(json.daily.temperature_2m_max.count) days")
+                    print("[WeatherService] fetchMonthly forecast: got \(json.daily.temperature_2m_max.count) days, results keys: \(results.keys.sorted())")
                 } catch {
                     print("[WeatherService] fetchMonthly forecast error: \(error)")
                 }

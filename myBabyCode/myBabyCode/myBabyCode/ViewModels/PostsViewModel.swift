@@ -25,6 +25,14 @@ enum TimelineTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// PostFilterType: 絞り込み検索の表示タイプ
+enum PostFilterType: String, CaseIterable, Identifiable {
+    case postsOnly = "投稿のみ"
+    case diaryOnly = "日記のみ"
+    case all = "投稿+日記"
+    var id: String { rawValue }
+}
+
 // MARK: - Array Extension for Chunking
 // 説明: Firestoreの「in」クエリは最大30件までしか指定できないため、
 //       フォロー中ユーザーIDなどを30件ずつのチャンクに分割するために使用される。
@@ -57,6 +65,7 @@ class PostsViewModel: ObservableObject {
     @Published var hasMorePosts: Bool = false        // さらに読み込める投稿があるか
     @Published var searchResults: [Post] = []        // 検索結果の投稿リスト
     @Published var isSearchActive: Bool = false       // 検索結果表示中フラグ
+    @Published var searchFilter: PostFilterType = .postsOnly  // 絞り込み検索フィルター
 
     // === プライベート状態 ===
     private let db = Firestore.firestore()          // Firestoreデータベース参照
@@ -139,7 +148,9 @@ class PostsViewModel: ObservableObject {
                     isLoading = false
                     return
                 }
-                let followPage = try await fetchFollowingPosts(ids: followingIds)
+                var followPage = try await fetchFollowingPosts(ids: followingIds)
+                // カレンダー投稿（日記）はタイムラインに表示しない
+                followPage = followPage.filter { !($0.is_calendar_post ?? false) }
                 let enrichedFollow = await enrichWithPosterInfo(followPage)
                 posts = enrichedFollow
                 followingCursor = enrichedFollow.last?.created_at
@@ -150,6 +161,8 @@ class PostsViewModel: ObservableObject {
 
             let snapshot = try await query.getDocuments()
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
+            // カレンダー投稿（日記）はタイムラインに表示しない（通常投稿のみ）
+            fetched = fetched.filter { !($0.is_calendar_post ?? false) }
             fetched = await enrichWithPosterInfo(fetched)
             posts = fetched
             let postIds = fetched.map { $0.post_id }
@@ -209,7 +222,9 @@ class PostsViewModel: ObservableObject {
                 } else { return }
             case .following:
                 guard !cachedFollowingIds.isEmpty, let cursor = followingCursor else { return }
-                let followPage = try await fetchFollowingPosts(ids: cachedFollowingIds, before: cursor)
+                var followPage = try await fetchFollowingPosts(ids: cachedFollowingIds, before: cursor)
+                // カレンダー投稿（日記）はタイムラインに表示しない
+                followPage = followPage.filter { !($0.is_calendar_post ?? false) }
                 let enrichedFollow = await enrichWithPosterInfo(followPage)
                 print("[DEBUG] fetchMorePosts (following): appending \(enrichedFollow.count) posts")
                 posts.append(contentsOf: enrichedFollow)
@@ -219,6 +234,8 @@ class PostsViewModel: ObservableObject {
             }
             let snapshot = try await query.getDocuments()
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
+            // カレンダー投稿（日記）はタイムラインに表示しない
+            fetched = fetched.filter { !($0.is_calendar_post ?? false) }
             fetched = await enrichWithPosterInfo(fetched)
             print("[DEBUG] fetchMorePosts: appending \(fetched.count) posts, lastDoc=\(lastDoc.documentID)")
             posts.append(contentsOf: fetched)
@@ -387,11 +404,9 @@ class PostsViewModel: ObservableObject {
         let postRef = db.collection("posts").document(postId)
 
         if likedPostIds.contains(postId) {
-            // 楽観的UI更新（即時反映）
+            // 楽観的UI更新（即時反映）- postsとsearchResultsの両方を更新
             likedPostIds.remove(postId)
-            if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
-                posts[idx].likes_count = max(0, posts[idx].likes_count - 1)
-            }
+            updateLocalLikesCount(postId: postId, delta: -1)
             // バックグラウンドでFirestore更新、エラー時は復元
             do {
                 try await likeRef.delete()
@@ -399,17 +414,13 @@ class PostsViewModel: ObservableObject {
             } catch {
                 // エラー時はUIを元に戻す
                 likedPostIds.insert(postId)
-                if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
-                    posts[idx].likes_count += 1
-                }
+                updateLocalLikesCount(postId: postId, delta: 1)
                 errorMessage = "いいね解除に失敗しました: \(error.localizedDescription)"
             }
         } else {
-            // 楽観的UI更新（即時反映）
+            // 楽観的UI更新（即時反映）- postsとsearchResultsの両方を更新
             likedPostIds.insert(postId)
-            if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
-                posts[idx].likes_count += 1
-            }
+            updateLocalLikesCount(postId: postId, delta: 1)
             // バックグラウンドでFirestore更新、エラー時は復元
             do {
                 try await likeRef.setData(["user_id": uid, "post_id": postId])
@@ -417,11 +428,27 @@ class PostsViewModel: ObservableObject {
             } catch {
                 // エラー時はUIを元に戻す
                 likedPostIds.remove(postId)
-                if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
-                    posts[idx].likes_count = max(0, posts[idx].likes_count - 1)
-                }
+                updateLocalLikesCount(postId: postId, delta: -1)
                 errorMessage = "いいねに失敗しました: \(error.localizedDescription)"
             }
+        }
+    }
+
+    // =============================================================================
+    // 【関数サマリー】updateLocalLikesCount
+    // 目的: posts配列とsearchResults配列の両方で指定投稿のlikes_countを更新
+    // 引数:
+    //   - postId: 対象投稿ID
+    //   - delta: 増減値 (+1 または -1)
+    // =============================================================================
+    private func updateLocalLikesCount(postId: String, delta: Int) {
+        // posts配列を更新
+        if let idx = posts.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
+            posts[idx].likes_count = max(0, posts[idx].likes_count + delta)
+        }
+        // searchResults配列も更新
+        if let idx = searchResults.firstIndex(where: { ($0.id ?? $0.post_id) == postId }) {
+            searchResults[idx].likes_count = max(0, searchResults[idx].likes_count + delta)
         }
     }
 
@@ -573,7 +600,7 @@ class PostsViewModel: ObservableObject {
 
             let postRef = db.collection("posts").document(postId)
             try postRef.setData(from: post)
-            print("[DEBUG] Post created: post_id=\(postId), is_calendar_post=\(post.is_calendar_post)")
+            print("[DEBUG] Post created: post_id=\(postId), is_calendar_post=\(String(describing: post.is_calendar_post))")
 
             for item in items {
                 let itemRef = postRef.collection("items").document(item.item_id)
@@ -884,3 +911,4 @@ class DraftManager: ObservableObject {
         return true
     }
 }
+

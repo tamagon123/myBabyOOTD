@@ -30,6 +30,7 @@ struct ProfileView: View {
     @State private var errorMessage: String? = nil   // エラーメッセージ
     @State private var showEditProfile = false        // プロフィール編集シート表示フラグ
     @State private var showSettings = false           // 設定画面表示フラグ
+    @State private var showNotifications = false       // 通知一覧画面表示フラグ
     @State private var selectedPost: Post? = nil     // タップされた投稿（詳細画面へ）
     @State private var selectedTab: ProfileTab = .posts  // 選択中のタブ（投稿/いいね）
     @State private var showFollowingList = false       // フォロー一覧表示フラグ
@@ -136,6 +137,12 @@ struct ProfileView: View {
                 .environmentObject(authViewModel)
                 .environmentObject(draftManager)
         }
+        .sheet(isPresented: $showNotifications) {
+            NavigationView {
+                NotificationsView()
+                    .environmentObject(authViewModel)
+            }
+        }
         .sheet(isPresented: $showFollowingList) {
             FollowingListView(users: followingUsers)
                 .environmentObject(authViewModel)
@@ -215,9 +222,19 @@ struct ProfileView: View {
                     }
                     .frame(maxWidth: .infinity)
 
-                    // 設定ボタン（自分のプロフィール時のみ、右上）
+                    // 設定・通知ボタン（自分のプロフィール時のみ、右上）
                     if isOwnProfile {
                         HStack(spacing: 12) {
+                            Button {
+                                showNotifications = true
+                            } label: {
+                                Image(systemName: "bell")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color(.systemGray6))
+                                    .clipShape(Circle())
+                            }
                             Button {
                                 showSettings = true
                             } label: {

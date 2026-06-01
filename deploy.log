@@ -1,0 +1,54 @@
+
+=== Deploying to 'mybabyootd-932c9'...
+
+i  deploying functions
+i  functions: preparing codebase default for deployment
+i  functions: ensuring required API cloudfunctions.googleapis.com is enabled...
+i  functions: ensuring required API cloudbuild.googleapis.com is enabled...
+i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled...
+⚠  functions: missing required API cloudbuild.googleapis.com. Enabling now...
+⚠  functions: missing required API cloudfunctions.googleapis.com. Enabling now...
+⚠  artifactregistry: missing required API artifactregistry.googleapis.com. Enabling now...
+⚠  functions: Runtime Node.js 20 was deprecated on 2026-04-30 and will be decommissioned on 2026-10-30, after which you will not be able to deploy without upgrading. Consider upgrading now to avoid disruption. See https://cloud.google.com/functions/docs/runtime-support for full details on the lifecycle policy
+⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory.
+⚠  functions: Please note that there will be breaking changes when you upgrade.
+i  functions: Loading and analyzing source code for codebase default to determine what to deploy
+Serving at port 8713
+
+i  extensions: ensuring required API firebaseextensions.googleapis.com is enabled...
+⚠  extensions: missing required API firebaseextensions.googleapis.com. Enabling now...
+i  functions: preparing functions directory for uploading...
+i  functions: packaged /Users/s.tamaki/Documents/Swift/myBabyCode/functions (52.72 KB) for uploading
+i  functions: ensuring required API cloudscheduler.googleapis.com is enabled...
+⚠  functions: missing required API cloudscheduler.googleapis.com. Enabling now...
+✔  functions: functions source uploaded successfully
+i  functions: creating Node.js 20 (1st Gen) function onPostCreated(asia-northeast1)...
+i  functions: creating Node.js 20 (1st Gen) function onLikeCreated(asia-northeast1)...
+i  functions: creating Node.js 20 (1st Gen) function onFollowCreated(asia-northeast1)...
+i  functions: creating Node.js 20 (1st Gen) function diaryReminderJob(asia-northeast1)...
+Gen1 operation for function projects/mybabyootd-932c9/locations/asia-northeast1/functions/onPostCreated failed: Build failed: Access to bucket gcf-sources-881795054553-asia-northeast1 denied. You must grant Storage Object Viewer permission to 881795054553-compute@developer.gserviceaccount.com. If you are using VPC Service Controls, you must also grant it access to your service perimeter.
+.
+Gen1 operation for function projects/mybabyootd-932c9/locations/asia-northeast1/functions/onFollowCreated failed: Build failed: Access to bucket gcf-sources-881795054553-asia-northeast1 denied. You must grant Storage Object Viewer permission to 881795054553-compute@developer.gserviceaccount.com. If you are using VPC Service Controls, you must also grant it access to your service perimeter.
+.
+Gen1 operation for function projects/mybabyootd-932c9/locations/asia-northeast1/functions/diaryReminderJob failed: Build failed: Access to bucket gcf-sources-881795054553-asia-northeast1 denied. You must grant Storage Object Viewer permission to 881795054553-compute@developer.gserviceaccount.com. If you are using VPC Service Controls, you must also grant it access to your service perimeter.
+.
+Gen1 operation for function projects/mybabyootd-932c9/locations/asia-northeast1/functions/onLikeCreated failed: Build failed: Access to bucket gcf-sources-881795054553-asia-northeast1 denied. You must grant Storage Object Viewer permission to 881795054553-compute@developer.gserviceaccount.com. If you are using VPC Service Controls, you must also grant it access to your service perimeter.
+.
+⚠  functions: Deploys failed. Skipping deletes.
+
+Functions deploy had errors with the following functions:
+	diaryReminderJob(asia-northeast1)
+	onFollowCreated(asia-northeast1)
+	onLikeCreated(asia-northeast1)
+	onPostCreated(asia-northeast1)
+⚠  functions: No cleanup policy detected for repositories in asia-northeast1. This may result in a small monthly bill as container images accumulate over time.
+[34m?[39m [1mHow many days do you want to keep container images before they're deleted?[22m [2m(1)[22m
+[1A[82G[1B[2K[1A[2K[G[34m?[39m [1mHow many days do you want to keep container images before they're deleted?[22m [2m(1)[22m
+[1A[82G[1B[2K[1A[2K[G[34m?[39m [1mHow many days do you want to keep container images before they're deleted?[22m 1[79G[2K[G[32m✔[39m [1mHow many days do you want to keep container images before they're deleted?[22m [36m1[39m[79G
+[?25hi  functions: Configuring cleanup policy for repository in asia-northeast1. Images older than 1 days will be automatically deleted.
+i  functions: Configured cleanup policy for repository in asia-northeast1.
+Error: There was an error deploying functions:
+- Error Failed to create function onPostCreated in region asia-northeast1
+- Error Failed to create function onLikeCreated in region asia-northeast1
+- Error Failed to create function onFollowCreated in region asia-northeast1
+- Error Failed to create function diaryReminderJob in region asia-northeast1

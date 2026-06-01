@@ -40,6 +40,9 @@ struct AppUser: Identifiable, Codable {
     var followers_count: Int           // フォロワー数（他ユーザーからのフォロー総数）
     var children: [ChildProfile]?      // 【新仕様】複数の子供プロファイルを配列で保持
     var is_profile_complete: Bool? = false  // 初回プロフィール設定が完了したかのフラグ
+    var diary_reminder_enabled: Bool? = false  // 日記リマインダー通知のON/OFF
+    var diary_reminder_hour: Int? = 21         // リマインダー通知時刻（時）
+    var diary_reminder_minute: Int? = 0        // リマインダー通知時刻（分）
 }
 
 // MARK: - Post
@@ -68,6 +71,7 @@ struct Post: Identifiable, Codable, @unchecked Sendable {
     var created_at: Timestamp          // 投稿日時（Firestoreのサーバータイムスタンプ）
 
     var item_tags: [PostItemTag]?      // 写真上に配置されたアイテムタグの位置情報
+    var stamps: [PostStamp]?           // 写真上に配置されたスタンプの情報（編集時復元用）
 
     // 以下はFirestoreには保存されないローカル専用フィールド
     // タイムライン表示時に、投稿者情報を付加するために使用
@@ -126,6 +130,31 @@ struct PostItemTag: Identifiable, Codable {
     var x_ratio: Double      // 写真の左端からの横方向位置（0.0=左端 1.0=右端）
     var y_ratio: Double      // 写真の上端からの縦方向位置（0.0=上端 1.0=下端）
     var image_side: String   // タグを貼る写真の面（"front"=正面 "back"=背面）
+}
+
+// MARK: - PostStamp
+// 説明: 投稿写真上に配置されたスタンプの情報。Firestoreに保存され編集時に復元可能。
+//       スタンプ編集画面で使用される位置・サイズ・回転情報を保持します。
+
+struct PostStamp: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var kind_type: String    // "symbol" または "image"
+    var kind_value: String   // symbol名（例: "heart.fill"）または画像名
+    var x_ratio: Double      // 写真の左端からの横方向位置（0.0=左端 1.0=右端）
+    var y_ratio: Double      // 写真の上端からの縦方向位置（0.0=上端 1.0=下端）
+    var scale: Double        // スタンプのスケール（1.0がデフォルト）
+    var rotation: Double     // 回転角度（ラジアン）
+    var image_side: String   // "front"=正面 "back"=背面
+    
+    // StampKindへの変換ヘルパー
+    var stampKind: StampKind? {
+        if kind_type == "symbol" {
+            return StampKind.symbol(StampSymbol(rawValue: kind_value) ?? .heart)
+        } else if kind_type == "image" {
+            return StampKind.image(kind_value)
+        }
+        return nil
+    }
 }
 
 // MARK: - Follow
@@ -245,6 +274,21 @@ struct CalendarEntry: Identifiable, Codable {
 
 struct CalendarSettings: Codable {
     var is_public: Bool = false   // デフォルトは非公開
+}
+
+// MARK: - AppNotification
+// 説明: プッシュ通知の履歴。Firestoreの notifications コレクションに保存されます。
+//       未読(is_read=false)の数をバッジに表示し、一覧画面で確認できます。
+
+struct AppNotification: Identifiable, Codable {
+    @DocumentID var id: String?
+    var user_id: String           // 受信者のUID
+    var type: String              // "new_post" / "like" / "follow" / "diary_reminder"
+    var title: String             // 通知タイトル
+    var body: String              // 通知本文
+    var related_id: String?       // 関連ID（投稿者UID/いいねした人/フォロワー/日付キー）
+    var is_read: Bool             // 既読フラグ
+    var created_at: Timestamp     // 作成日時
 }
 
 // MARK: - Draft

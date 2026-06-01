@@ -14,14 +14,35 @@ class CalendarViewModel: ObservableObject {
     @Published var entries: [String: CalendarEntry] = [:]       // dateKey → CalendarEntry
     @Published var postsByDate: [String: [Post]] = [:]        // dateKey → その日の投稿一覧
     @Published var calendarIsPublic: Bool = false               // カレンダー公開設定
-    @Published var isLoading: Bool = false
+    @Published var isLoading: Bool = false                      // 全データ読み込み中フラグ
     @Published var errorMessage: String?
     @Published var monthlyWeather: [String: WeatherResult] = [:] // dateKey → 月全体の天気データ
+    @Published var selectedRegionCode: String = "13"            // 選択中の地域コード（デフォルト: 東京）
+    @Published var profileRegionCode: String? = nil             // プロフィールに設定されている地域コード
+    @Published var showRegionPicker: Bool = false               // 地域選択シート表示フラグ
 
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
     private var lastFetchedMonth: String? = nil                 // キャッシュ用: 最後に取得した月
     private var lastFetchedRegion: String? = nil                // キャッシュ用: 最後に取得した地域
+    
+    // 都道府県コード → 名称マッピング
+    let prefectureNames: [String: String] = [
+        "01": "北海道", "02": "青森", "03": "岩手", "04": "宮城", "05": "秋田",
+        "06": "山形", "07": "福島", "08": "茨城", "09": "栃木", "10": "群馬",
+        "11": "埼玉", "12": "千葉", "13": "東京", "14": "神奈川", "15": "新潟",
+        "16": "富山", "17": "石川", "18": "福井", "19": "山梨", "20": "長野",
+        "21": "岐阜", "22": "静岡", "23": "愛知", "24": "三重", "25": "滋賀",
+        "26": "京都", "27": "大阪", "28": "兵庫", "29": "奈良", "30": "和歌山",
+        "31": "鳥取", "32": "島根", "33": "岡山", "34": "広島", "35": "山口",
+        "36": "徳島", "37": "香川", "38": "愛媛", "39": "高知", "40": "福岡",
+        "41": "佐賀", "42": "長崎", "43": "熊本", "44": "大分", "45": "宮崎",
+        "46": "鹿児島", "47": "沖縄"
+    ]
+    
+    var selectedRegionName: String {
+        prefectureNames[selectedRegionCode] ?? "不明"
+    }
 
     // 日付フォーマッター（"yyyy-MM-dd"）
     static let dateKeyFormatter: DateFormatter = {
@@ -46,10 +67,62 @@ class CalendarViewModel: ObservableObject {
 
     // MARK: - Load
 
-    // 指定月（前後1ヶ月含む）のエントリーをFirestoreから取得
-    func fetchEntries(uid: String, around month: Date) async {
+    // プロフィールから地域を設定（未設定の場合は東京）
+    func setRegionFromProfile(_ regionCode: String?) {
+        self.profileRegionCode = regionCode
+        if let code = regionCode, prefectureNames.keys.contains(code) {
+            selectedRegionCode = code
+        } else {
+            selectedRegionCode = "13" // 東京
+        }
+        // キャッシュをクリア
+        lastFetchedRegion = nil
+        monthlyWeather = [:]
+    }
+    
+    // 地域選択リスト用：プロフィール地域を最上部にした並び順
+    var sortedPrefectureCodes: [String] {
+        let allCodes = Array(prefectureNames.keys.sorted())
+        guard let profileCode = profileRegionCode,
+              allCodes.contains(profileCode) else {
+            return allCodes
+        }
+        // プロフィール地域を最上部に、残りは通常順
+        var reordered = allCodes
+        reordered.removeAll { $0 == profileCode }
+        return [profileCode] + reordered
+    }
+    
+    // 指定月（前後1ヶ月含む）の全データを一括取得（ローディング管理付き）
+    func fetchAllData(uid: String, around month: Date) async {
         isLoading = true
         defer { isLoading = false }
+        
+        // 並列で全データを取得
+        async let entriesTask = fetchEntriesInternal(uid: uid, around: month)
+        async let postsTask = fetchPostsInternal(uid: uid, around: month)
+        async let settingsTask = fetchCalendarPublicSetting(uid: uid)
+        async let weatherTask = fetchMonthlyWeather(regionCode: selectedRegionCode, month: month)
+        
+        await entriesTask
+        await postsTask
+        await settingsTask
+        await weatherTask
+    }
+    
+    // 地域を変更して天気データを再取得
+    func changeRegion(to regionCode: String, uid: String, around month: Date) async {
+        selectedRegionCode = regionCode
+        showRegionPicker = false
+        // 天気データをクリアして再取得
+        monthlyWeather = [:]
+        lastFetchedMonth = nil
+        lastFetchedRegion = nil
+        await fetchAllData(uid: uid, around: month)
+    }
+    
+    // 指定月（前後1ヶ月含む）のエントリーをFirestoreから取得
+    private func fetchEntriesInternal(uid: String, around month: Date) async {
         let cal = Calendar.current
         guard let start = cal.date(byAdding: .month, value: -1, to: cal.startOfMonth(for: month)),
               let end = cal.date(byAdding: .month, value: 2, to: cal.startOfMonth(for: month)) else { return }
@@ -82,7 +155,7 @@ class CalendarViewModel: ObservableObject {
     }
 
     // 指定月の投稿を取得し、日付ごとにグループ化
-    func fetchPosts(uid: String, around month: Date) async {
+    private func fetchPostsInternal(uid: String, around month: Date) async {
         let cal = Calendar.current
         guard let start = cal.date(byAdding: .month, value: -1, to: cal.startOfMonth(for: month)),
               let end = cal.date(byAdding: .month, value: 2, to: cal.startOfMonth(for: month)) else { return }
@@ -110,12 +183,20 @@ class CalendarViewModel: ObservableObject {
         }
     }
 
-    // カレンダー公開設定を取得
+    // カレンダー公開設定を取得（NewPostViewからも呼ばれるためinternal）
     func fetchCalendarPublicSetting(uid: String) async {
         do {
             let doc = try await db.collection("users").document(uid).getDocument()
             calendarIsPublic = doc.data()?["calendar_is_public"] as? Bool ?? false
         } catch {}
+    }
+    
+    // 後方互換: 個別取得メソッド（必要に応じて）
+    func fetchEntries(uid: String, around month: Date) async {
+        await fetchAllData(uid: uid, around: month)
+    }
+    func fetchPosts(uid: String, around month: Date) async {
+        await fetchAllData(uid: uid, around: month)
     }
 
     // 月全体の天気データを取得（キャッシュ機能付き）

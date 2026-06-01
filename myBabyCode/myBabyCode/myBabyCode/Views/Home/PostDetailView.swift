@@ -33,6 +33,16 @@ struct PostDetailView: View {
     @State private var showItemTags = false         // アイテムタグの表示/非表示
     @State private var imageHeights: [Int: CGFloat] = [:]  // 各画像インデックス→実際の表示高さ
 
+    // postsViewModelから現在のいいね状態を動的に読み取る（シート表示中でもUIが確実に更新されるため）
+    private var postId: String { post.id ?? post.post_id }
+    private var effectiveIsLiked: Bool { postsViewModel.likedPostIds.contains(postId) }
+    private var effectiveLikes: Int {
+        // posts配列またはsearchResults配列から最新のlikes_countを取得
+        let currentPost = postsViewModel.posts.first(where: { ($0.id ?? $0.post_id) == postId })
+            ?? postsViewModel.searchResults.first(where: { ($0.id ?? $0.post_id) == postId })
+        return currentPost?.likes_count ?? post.likes_count
+    }
+
     // 計算プロパティ: 現在表示中の画像面に対応するタグのみ抽出
     private var visibleItemTags: [PostItemTag] {
         guard showItemTags && itemsLoaded else { return [] }
@@ -128,10 +138,10 @@ struct PostDetailView: View {
                                 onLike?()
                             } label: {
                                 HStack(spacing: 4) {
-                                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                                    Image(systemName: effectiveIsLiked ? "heart.fill" : "heart")
                                         .font(.system(size: 20))
-                                        .foregroundColor(isLiked ? .red : .gray)
-                                    Text("\(post.likes_count)")
+                                        .foregroundColor(effectiveIsLiked ? .red : .gray)
+                                    Text("\(effectiveLikes)")
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(.secondary)
                                 }
