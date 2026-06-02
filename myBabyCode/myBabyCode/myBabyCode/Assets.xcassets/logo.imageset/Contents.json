@@ -6,12 +6,24 @@
       "scale" : "1x"
     },
     {
+      "filename" : "logo 3.png",
       "idiom" : "iphone",
       "scale" : "2x"
     },
     {
+      "filename" : "logo 4.png",
       "idiom" : "iphone",
       "scale" : "3x"
+    },
+    {
+      "filename" : "logo 1.png",
+      "idiom" : "ipad",
+      "scale" : "1x"
+    },
+    {
+      "filename" : "logo 2.png",
+      "idiom" : "ipad",
+      "scale" : "2x"
     }
   ],
   "info" : {

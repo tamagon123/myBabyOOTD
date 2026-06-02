@@ -98,6 +98,7 @@ struct MainTabView: View {
             NotificationService.shared.requestPermissionIfNeeded()
             NotificationService.shared.saveFCMTokenIfSignedIn()
             refreshUnreadCount()
+            UIApplication.shared.applicationIconBadgeNumber = 0
             Task {
                 await BrandService.shared.fetchAll()
             }

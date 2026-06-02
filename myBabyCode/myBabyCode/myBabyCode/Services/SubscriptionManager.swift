@@ -17,9 +17,7 @@ import StoreKit
 
 // MARK: - プレミアムプラン商品ID設定
 private enum PremiumConfig {
-    // 買い切りプレミアムプラン（Non-Consumable）
-    // App Store Connect の「App 内課金（消耗型以外）」で設定した製品IDと完全一致させること
-    static let productId: String = "com.tamagon.mybabyootd.premium"
+    static let productId: String = "com.tamagon.Nanikiru.premium"
 }
 
 // MARK: - SubscriptionManager
@@ -187,13 +185,16 @@ final class SubscriptionManager: ObservableObject {
     // 備考: アプリ起動後に開始。購入完了・返金・サブスク更新時に自動で呼ばれる
     // =============================================================================
     private func listenForTransactionUpdates() {
-        Task.detached { [weak self] in
+        // Capture product ID outside the task to avoid cross-actor access
+        let productId = PremiumConfig.productId
+        Task { [weak self] in
+            // This Task inherits the @MainActor from SubscriptionManager
             for await result in Transaction.updates {
                 guard let self = self else { return }
                 switch result {
                 case .verified(let transaction):
-                    if transaction.productID == PremiumConfig.productId {
-                        await self.setPremium(true)
+                    if transaction.productID == productId {
+                        self.setPremium(true)
                     }
                     await transaction.finish()
                 case .unverified(_, let error):

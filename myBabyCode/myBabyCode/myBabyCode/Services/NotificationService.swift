@@ -106,7 +106,7 @@ final class NotificationService {
                 .whereField("is_read", isEqualTo: false)
                 .count
                 .getAggregation(source: .server)
-            return Int(snap.count)
+            return Int(truncating: snap.count)
         } catch {
             print("[NotificationService] fetchUnreadCount failed: \(error)")
             return 0
@@ -154,3 +154,4 @@ final class NotificationService {
         }
     }
 }
+

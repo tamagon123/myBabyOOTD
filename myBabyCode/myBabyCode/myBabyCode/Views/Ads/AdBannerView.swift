@@ -25,10 +25,8 @@ import GoogleMobileAds
 
 // MARK: - AdMob 設定
 private enum AdConfig {
-    // 本番広告ユニットID（テスト時は ca-app-pub-3940256099942544/2934735716 に差し替え）
-    //static let bannerAdUnitId: String = "ca-app-pub-1810074247562384/5573930888"
-    // テスト用
-    static let bannerAdUnitId: String = "ca-app-pub-3940256099942544/2934735716"
+    // 本番広告ユニットID
+    static let bannerAdUnitId: String = "ca-app-pub-1810074247562384/5573930888"
 
     // バナーの標準高さ
     static let bannerHeight: CGFloat = 50

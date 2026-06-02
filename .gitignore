@@ -19,6 +19,7 @@ build/
 
 # Firebase - センシティブな設定ファイル
 GoogleService-Info.plist
+**/GoogleService-Info.plist
 
 # macOS
 .DS_Store
@@ -30,3 +31,15 @@ Podfile.lock
 
 # Archives
 *.xcarchive
+
+# Xcode user state
+*.xcuserstate
+UserInterfaceState.xcuserstate
+
+# 環境変数・秘密情報
+.env
+*.env
+secrets.plist
+
+# ワークスペースのローカルノート（不要ファイル）
+gist.md

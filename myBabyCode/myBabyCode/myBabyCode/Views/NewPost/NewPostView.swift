@@ -108,7 +108,9 @@ struct NewPostView: View {
         NavigationView {
             ScrollView {
                 mainForm
+                    .frame(maxWidth: .infinity)
             }
+            .clipped()
             .background(Color(.systemBackground))
             .toolbar {
                 ToolbarItemGroup(placement: .keyboard) {
@@ -1185,7 +1187,7 @@ struct ItemEntryRow: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 80)
+                .fixedSize()
                 .padding(8)
                 .background(Color(.systemGray6))
                 .cornerRadius(8)

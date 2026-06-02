@@ -13,6 +13,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-1810074247562384~7190264881</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>
@@ -26,10 +28,10 @@
 			</dict>
 		</dict>
 	</dict>
-	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-1810074247562384~7190264881</string>
 	<key>NSUserTrackingUsageDescription</key>
-	<string>あなたに最適な広告を表示するために、広告識別子の使用を許可してください。</string>
+	<string>広告をパーソナライズするために使用します。許可しない場合も広告は表示されますが、関連性が低くなる場合があります。</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>
