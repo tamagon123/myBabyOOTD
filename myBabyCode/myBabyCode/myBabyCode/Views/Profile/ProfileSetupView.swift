@@ -238,8 +238,10 @@ struct ProfileSetupView: View {
                         }
                     }
                 }
+                .navigationViewStyle(StackNavigationViewStyle())
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Avatar Section
@@ -487,6 +489,7 @@ struct AvatarPickerView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     private func avatarButton(name: String, isImage: Bool) -> some View {

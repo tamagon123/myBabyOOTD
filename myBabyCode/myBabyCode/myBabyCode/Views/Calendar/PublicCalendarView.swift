@@ -61,6 +61,7 @@ struct PublicCalendarView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Month header

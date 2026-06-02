@@ -113,6 +113,26 @@ final class NotificationService {
         }
     }
 
+    /// 全通知を削除する
+    func deleteAllNotifications(uid: String) async {
+        do {
+            let snap = try await Firestore.firestore()
+                .collection("notifications")
+                .whereField("user_id", isEqualTo: uid)
+                .getDocuments()
+
+            guard !snap.documents.isEmpty else { return }
+            let batch = Firestore.firestore().batch()
+            for doc in snap.documents {
+                batch.deleteDocument(doc.reference)
+            }
+            try await batch.commit()
+            print("[NotificationService] Deleted \(snap.documents.count) notifications")
+        } catch {
+            print("[NotificationService] deleteAllNotifications failed: \(error)")
+        }
+    }
+
     /// 全通知を既読にする
     func markAllAsRead(uid: String) async {
         do {

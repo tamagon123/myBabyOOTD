@@ -86,19 +86,22 @@ enum AffiliatePlatform: String, CaseIterable {
         }
     }
 
-    /// このASPのアフィリエイトIDが設定済みか
+    /// このASPのアフィリエイトIDが設定済みか（ローカル or Firestore）
     var isConfigured: Bool {
+        let remote = BrandService.shared.platformConfig
         switch self {
         case .rakuten:
-            return !AffiliateConfig.affiliateIdRakuten.isEmpty
+            return !(remote?.rakutenId ?? AffiliateConfig.affiliateIdRakuten).isEmpty
         case .amazon:
-            return !AffiliateConfig.associateTagAmazon.isEmpty
+            return !(remote?.amazonTag ?? AffiliateConfig.associateTagAmazon).isEmpty
         case .linkshare:
-            return !AffiliateConfig.linkshareSiteId.isEmpty
+            return !(remote?.linkshareId ?? AffiliateConfig.linkshareSiteId).isEmpty
         case .valuecommerce:
-            return !AffiliateConfig.valuecommercePid.isEmpty && !AffiliateConfig.valuecommerceSid.isEmpty
+            let pid = remote?.valuecommercePid ?? AffiliateConfig.valuecommercePid
+            let sid = remote?.valuecommerceSid ?? AffiliateConfig.valuecommerceSid
+            return !pid.isEmpty && !sid.isEmpty
         case .a8net:
-            return !AffiliateConfig.a8AffiliateId.isEmpty
+            return !(remote?.a8AffiliateId ?? AffiliateConfig.a8AffiliateId).isEmpty
         }
     }
 }
@@ -123,6 +126,21 @@ final class AffiliateManager {
         let trimmed = brandName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return [] }
 
+        // === Firestoreアフィリエイト設定を優先 ===
+        if let remoteLinks = BrandService.shared.affiliateMap[trimmed], !remoteLinks.isEmpty {
+            return remoteLinks.compactMap { config in
+                guard let platform = AffiliatePlatform(rawValue: config.platform),
+                      let url = URL(string: config.url) else { return nil }
+                return AffiliateLink(
+                    platform: platform,
+                    brandName: trimmed,
+                    searchQuery: "",
+                    url: url
+                )
+            }
+        }
+
+        // === ローカル自動生成（フォールバック） ===
         var query = trimmed
         if let category = category, !category.isEmpty {
             query += " \(category)"
@@ -245,21 +263,27 @@ final class AffiliateManager {
         }
     }
 
+    private static var remoteConfig: AffiliatePlatformConfig? {
+        BrandService.shared.platformConfig
+    }
+
     private static func makeRakutenURL(encoded: String) -> URL? {
-        if AffiliateConfig.affiliateIdRakuten.isEmpty {
+        let id = remoteConfig?.rakutenId ?? AffiliateConfig.affiliateIdRakuten
+        if id.isEmpty {
             return URL(string: "https://search.rakuten.co.jp/search/mall/\(encoded)/")
         } else {
             let target = "https://search.rakuten.co.jp/search/mall/\(encoded)/"
             let targetEnc = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
-            return URL(string: "https://hb.afl.rakuten.co.jp/hgc/\(AffiliateConfig.affiliateIdRakuten)/?pc=\(targetEnc)")
+            return URL(string: "https://hb.afl.rakuten.co.jp/hgc/\(id)/?pc=\(targetEnc)")
         }
     }
 
     private static func makeAmazonURL(encoded: String) -> URL? {
-        if AffiliateConfig.associateTagAmazon.isEmpty {
+        let tag = remoteConfig?.amazonTag ?? AffiliateConfig.associateTagAmazon
+        if tag.isEmpty {
             return URL(string: "https://www.amazon.co.jp/s?k=\(encoded)")
         } else {
-            return URL(string: "https://www.amazon.co.jp/s?k=\(encoded)&tag=\(AffiliateConfig.associateTagAmazon)")
+            return URL(string: "https://www.amazon.co.jp/s?k=\(encoded)&tag=\(tag)")
         }
     }
 
@@ -272,20 +296,20 @@ final class AffiliateManager {
 
     // バリューコマース: 汎用検索リンク
     private static func makeValueCommerceURL(encoded: String) -> URL? {
-        // pid/sid があれば広告主個別リンク、なければ汎用検索
-        if AffiliateConfig.valuecommercePid.isEmpty {
+        let pid = remoteConfig?.valuecommercePid ?? AffiliateConfig.valuecommercePid
+        let sid = remoteConfig?.valuecommerceSid ?? AffiliateConfig.valuecommerceSid
+        if pid.isEmpty {
             return URL(string: "https://search.rakuten.co.jp/search/mall/\(encoded)/")
         }
-        // 実際のバリューコマースリンクは広告主毎に異なるため、サンプルURL
-        return URL(string: "https://ck.jp.ap.valuecommerce.com/servlet/referral?sid=\(AffiliateConfig.valuecommerceSid)&pid=\(AffiliateConfig.valuecommercePid)&vc_url=https://search.rakuten.co.jp/search/mall/\(encoded)/")
+        return URL(string: "https://ck.jp.ap.valuecommerce.com/servlet/referral?sid=\(sid)&pid=\(pid)&vc_url=https://search.rakuten.co.jp/search/mall/\(encoded)/")
     }
 
     // a8.net: 汎用検索リンク
     private static func makeA8URL(encoded: String) -> URL? {
-        if AffiliateConfig.a8AffiliateId.isEmpty {
+        let id = remoteConfig?.a8AffiliateId ?? AffiliateConfig.a8AffiliateId
+        if id.isEmpty {
             return URL(string: "https://search.rakuten.co.jp/search/mall/\(encoded)/")
         }
-        // a8 は広告主毎に a8mat が異なるため、汎用的に商品検索を誘導
-        return URL(string: "https://a8.net/redirect?a8=\(AffiliateConfig.a8AffiliateId)&q=\(encoded)")
+        return URL(string: "https://a8.net/redirect?a8=\(id)&q=\(encoded)")
     }
 }

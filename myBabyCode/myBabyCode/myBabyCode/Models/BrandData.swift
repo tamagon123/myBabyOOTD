@@ -5,10 +5,11 @@
 
 import Foundation
 
-struct BrandEntry: Identifiable {
-    let id = UUID()
+struct BrandEntry: Identifiable, Codable {
+    var id: String = UUID().uuidString
     let name: String       // 画面上の表示名
     let reading: String    // カタカナ読み（ふりがな検索用）
+    var order: Int = 0     // 表示順（Firestore管理用）
 }
 
 // 検索用文字列正規化：ひらがな→カタカナ、大文字→小文字、記号除去

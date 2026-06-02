@@ -21,6 +21,8 @@ struct CalendarView: View {
     @State private var showPublicConfirm = false
     @State private var selectedPostForDetail: Post? = nil
     @State private var selectedEntryForDetail: CalendarEntry? = nil  // 日記詳細表示用
+    @State private var showSearchConfirm = false                     // 検索確認アラート表示フラグ
+    @State private var confirmSearchDate: Date? = nil                // 確認中の検索日付
 
     private var uid: String { Auth.currentUID }
     private var isSubscribed: Bool { SubscriptionManager.shared.isSubscribed }
@@ -101,6 +103,17 @@ struct CalendarView: View {
             } message: {
                 Text("カレンダーの日記内容が他のユーザーに公開されます。")
             }
+            .alert("この日を検索しますか？", isPresented: $showSearchConfirm, presenting: confirmSearchDate) { date in
+                Button("検索する", role: .none) {
+                    Task {
+                        await postsViewModel.searchByDateAndRegion(date: date, regionCode: vm.selectedRegionCode)
+                        NotificationCenter.default.post(name: Notification.Name("SwitchToTab"), object: nil, userInfo: ["tab": 0])
+                    }
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: { date in
+                Text("\(vm.selectedRegionName)・\(formatSearchDate(date))の投稿を検索します")
+            }
             .sheet(isPresented: $showNewPostSheet, onDismiss: {
                 print("[DEBUG] CalendarView onDismiss fired (new post)")
                 Task {
@@ -141,6 +154,7 @@ struct CalendarView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Top status bar (region + public toggle)
@@ -477,6 +491,30 @@ struct CalendarView: View {
                     .padding(.top, 4)
                 }
 
+                // この日を検索するボタン
+                if let date = selectedDate {
+                    Button {
+                        confirmSearchDate = date
+                        showSearchConfirm = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                            Text("この日を検索する")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12))
+                        }
+                        .font(.system(size: 14))
+                        .foregroundColor(.accentRed)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .padding(.horizontal, 12)
+                    }
+                    .padding(.top, 4)
+                }
+
             }
             .padding(.bottom, 16)
         }
@@ -531,6 +569,13 @@ struct CalendarView: View {
 
     static func dateKey(for date: Date) -> String {
         CalendarViewModel.dateKeyFormatter.string(from: date)
+    }
+
+    private func formatSearchDate(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "M月d日"
+        fmt.locale = Locale(identifier: "ja_JP")
+        return fmt.string(from: date)
     }
 }
 
@@ -641,7 +686,7 @@ struct CalendarDayCell: View {
 
     private var dayTextColor: Color {
         if isSelected { return .white }
-        if isFuture { return Color(.systemGray3) }
+        if isFuture { return Color(.systemGray2) }
         if weekdayColumn == 0 { return .accentRed }
         if weekdayColumn == 6 { return .accentBlue }
         return .primary

@@ -105,6 +105,7 @@ struct CalendarEntryDetailView: View {
                 Text("この日記と写真が永久に削除されます。この操作は取り消せません。")
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Photo Section

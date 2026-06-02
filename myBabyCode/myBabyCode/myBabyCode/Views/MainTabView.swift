@@ -93,10 +93,14 @@ struct MainTabView: View {
             }
         }
         // 画面表示時にプッシュ通知の許可を要求・FCMトークンを保存・未読数を取得
+        // ブランド・アフィリエイト情報もFirestoreから取得
         .onAppear {
             NotificationService.shared.requestPermissionIfNeeded()
             NotificationService.shared.saveFCMTokenIfSignedIn()
             refreshUnreadCount()
+            Task {
+                await BrandService.shared.fetchAll()
+            }
         }
         // マイページタブ選択時に未読数を更新
         .onChange(of: selectedTab) { tab in
@@ -121,6 +125,16 @@ struct MainTabView: View {
             default:
                 break
             }
+        }
+        // 任意のタブへの遷移（カレンダーなどからの検索結果表示用）
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SwitchToTab"))) { notification in
+            guard let userInfo = notification.userInfo,
+                  let tab = userInfo["tab"] as? Int else { return }
+            selectedTab = tab
+        }
+        // 通知全削除後にバッジを更新
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NotificationsDeleted"))) { _ in
+            refreshUnreadCount()
         }
     }
 

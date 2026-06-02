@@ -62,6 +62,7 @@ class PostsViewModel: ObservableObject {
     @Published var currentTab: TimelineTab = .latest  // 選択中のタイムラインタブ
     @Published var likedPostIds: Set<String> = []     // 自分がいいねした投稿IDの集合
     @Published var pendingItemTags: [PostItemTag] = [] // 新規投稿時に一時保持されるタグ位置
+    @Published var pendingStamps: [PostStamp] = []     // 新規投稿時に一時保持されるスタンプ情報
     @Published var hasMorePosts: Bool = false        // さらに読み込める投稿があるか
     @Published var searchResults: [Post] = []        // 検索結果の投稿リスト
     @Published var isSearchActive: Bool = false       // 検索結果表示中フラグ
@@ -82,6 +83,48 @@ class PostsViewModel: ObservableObject {
     func clearSearch() {
         isSearchActive = false
         searchResults = []
+    }
+
+    // =============================================================================
+    // 【関数サマリー】searchByDateAndRegion
+    // 目的: 指定日付・地域の投稿を検索して結果をsearchResultsに設定する
+    // =============================================================================
+    func searchByDateAndRegion(date: Date, regionCode: String) async {
+        isLoading = true
+        defer { isLoading = false }
+
+        let cal = Calendar.current
+        let startOfDay = cal.startOfDay(for: date)
+        guard let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay) else { return }
+
+        do {
+            let snapshot = try await db.collection("posts")
+                .whereField("is_hidden", isEqualTo: false)
+                .order(by: "created_at", descending: true)
+                .limit(to: 100)
+                .getDocuments()
+
+            var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
+
+            // クライアント側で地域と日付をフィルタリング
+            fetched = fetched.filter { post in
+                guard post.region_code == regionCode else { return false }
+                let postDate = post.created_at.dateValue()
+                return postDate >= startOfDay && postDate < endOfDay
+            }
+
+            // カレンダー投稿（日記）は除外
+            fetched = fetched.filter { !($0.is_calendar_post ?? false) }
+            fetched = await enrichWithPosterInfo(fetched)
+
+            await MainActor.run {
+                searchResults = fetched
+                isSearchActive = true
+                searchFilter = .postsOnly
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Fetch
@@ -543,7 +586,9 @@ class PostsViewModel: ObservableObject {
     ) async -> Bool {
         print("[DEBUG] uploadPost: isCalendarPost=\(isCalendarPost)")
         let itemTags = pendingItemTags
+        let stamps = pendingStamps
         pendingItemTags = []
+        pendingStamps = []
         guard frontImage != nil || backImage != nil else {
             errorMessage = "フロントまたはバックの写真を1枚以上選択してください。"
             return false
@@ -618,6 +663,23 @@ class PostsViewModel: ObservableObject {
                     ]
                 }
                 try? await postRef.updateData(["item_tags": tagData])
+            }
+
+            // stampsがあれば保存
+            if !stamps.isEmpty {
+                let stampData = stamps.map { stamp -> [String: Any] in
+                    return [
+                        "id": stamp.id,
+                        "kind_type": stamp.kind_type,
+                        "kind_value": stamp.kind_value,
+                        "x_ratio": stamp.x_ratio,
+                        "y_ratio": stamp.y_ratio,
+                        "scale": stamp.scale,
+                        "rotation": stamp.rotation,
+                        "image_side": stamp.image_side
+                    ]
+                }
+                try? await postRef.updateData(["stamps": stampData])
             }
 
             return true

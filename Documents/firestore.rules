@@ -67,6 +67,30 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // brands: 全認証ユーザーに読み取り可。書き込みはConsole/Adminのみ
+    match /brands/{brandId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
+    // affiliate_links: 全認証ユーザーに読み取り可
+    match /affiliate_links/{linkId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
+    // shopping_portals: 全認証ユーザーに読み取り可。書き込みはConsole/Adminのみ
+    match /shopping_portals/{portalId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
+    // config: 全認証ユーザーに読み取り可。書き込みはConsole/Adminのみ
+    match /config/{configId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
     // デフォルト: すべて禁止
     match /{document=**} {
       allow read, write: if false;

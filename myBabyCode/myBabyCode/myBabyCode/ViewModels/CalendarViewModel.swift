@@ -53,9 +53,9 @@ class CalendarViewModel: ObservableObject {
         return f
     }()
 
-    // 編集可能な最大過去日数（サブスク: 2日、無課金: 7日）
+    // 編集可能な最大過去日数（無課金: 2日前まで、プレミアム: 365日=1年前まで）
     func maxEditableDays(isSubscribed: Bool) -> Int {
-        isSubscribed ? 2 : 7
+        isSubscribed ? 365 : 2
     }
 
     // 指定日が編集可能かどうか

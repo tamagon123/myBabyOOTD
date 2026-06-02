@@ -153,8 +153,9 @@ struct HomeView: View {
                 .environmentObject(postsViewModel)
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
-    
+
     // MARK: - List View
     
     private var listPostsView: some View {

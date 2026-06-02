@@ -2,8 +2,9 @@
 // ファイル名: ShoppingView.swift
 // 役割: 買い物タブ画面（各種ショッピングサイトのアフィリエイトリンク一覧）
 // 説明:
-//   各種ショッピングサイトのアフィリエイトリンクを表示する画面です。
-//   カテゴリ別に整理し、タップで各サイトへ遷移します。
+//   Firestore「shopping_portals」コレクションから動的に取得した
+//   ショッピングサイトリンクを表示します。カテゴリ別に整理し、
+//   タップで各サイト（アフィリエイトURL）へ遷移します。
 // =============================================================================
 
 import SwiftUI
@@ -11,6 +12,7 @@ import SwiftUI
 struct ShoppingView: View {
     // === 環境 ===
     @EnvironmentObject var authViewModel: AuthViewModel
+    @ObservedObject private var brandService = BrandService.shared
 
     // === 状態 ===
     @State private var selectedCategory: ShoppingCategory = .all
@@ -28,8 +30,18 @@ struct ShoppingView: View {
                 // アフィリエイトリンク一覧
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(filteredLinks) { link in
-                            AffiliateLinkCard(link: link)
+                        if brandService.isLoading && brandService.shoppingPortals.isEmpty {
+                            ProgressView()
+                                .padding(.top, 40)
+                        } else if filteredPortals.isEmpty {
+                            Text("リンクがありません")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
+                                .padding(.top, 40)
+                        } else {
+                            ForEach(filteredPortals) { portal in
+                                PortalLinkCard(portal: portal)
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -39,6 +51,7 @@ struct ShoppingView: View {
             .navigationTitle("買い物")
             .navigationBarTitleDisplayMode(.large)
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // =============================================================================
@@ -66,14 +79,37 @@ struct ShoppingView: View {
     }
 
     // =============================================================================
-    // 【Computed Property】filteredLinks
-    // 目的: 選択中カテゴリでフィルタリングされたリンク一覧
+    // 【Computed Property】filteredPortals
+    // 目的: 選択中カテゴリでフィルタリングされた入口リンク一覧
     // =============================================================================
-    private var filteredLinks: [ShoppingAffiliateLink] {
+    private var filteredPortals: [ShoppingPortal] {
+        let portals = brandService.shoppingPortals.isEmpty ? fallbackPortals : brandService.shoppingPortals
         if selectedCategory == .all {
-            return sampleAffiliateLinks
+            return portals
         }
-        return sampleAffiliateLinks.filter { $0.category == selectedCategory }
+        return portals.filter { $0.category == selectedCategory.rawValue }
+    }
+
+    /// Firestore未接続時のローカルフォールバック
+    private var fallbackPortals: [ShoppingPortal] {
+        [
+            ShoppingPortal(id: "amazon_baby", title: "Amazon ベビーストア", description: "ベビー用品が豊富なAmazonのベビー専門ストア", url: "https://www.amazon.co.jp/baby", platform: "amazon", category: "ベビー用品", badge: "おすすめ", order: 0, isActive: true),
+            ShoppingPortal(id: "rakuten_baby", title: "楽天 ベビー・キッズ", description: "ポイント還元率が高い楽天のベビー・キッズ用品", url: "https://www.rakuten.co.jp/baby", platform: "rakuten", category: "ベビー用品", badge: nil, order: 1, isActive: true),
+            ShoppingPortal(id: "shimamura", title: "しまむらオンライン", description: "プチプラベビー服のしまむら。オンラインで便利に", url: "https://www.shimamura.gr.jp/", platform: "other", category: "ベビー服", badge: "プチプラ", order: 2, isActive: true),
+            ShoppingPortal(id: "nishimatsuya", title: "西松屋オンライン", description: "赤ちゃんのデパート西松屋。定番アイテムが充実", url: "https://www.nishimatsuya.co.jp/", platform: "other", category: "ベビー服", badge: "定番", order: 3, isActive: true),
+            ShoppingPortal(id: "hm_kids", title: "H&M キッズ", description: "おしゃれな北欧デザインの子供服", url: "https://www2.hm.com/ja_jp/kids.html", platform: "other", category: "キッズ服", badge: "おしゃれ", order: 4, isActive: true),
+            ShoppingPortal(id: "gu_kids", title: "GU キッズ", description: "リーズナブルで着やすい子供服", url: "https://www.gu-global.com/jp/ja/kids", platform: "other", category: "キッズ服", badge: "リーズナブル", order: 5, isActive: true),
+            ShoppingPortal(id: "ifme", title: "IFME イフミー", description: "足育を応援する子供靴の専門ブランド", url: "https://www.ifmeshoes.com/", platform: "other", category: "靴", badge: "足育", order: 6, isActive: true),
+            ShoppingPortal(id: "mikihouse", title: "MIKI HOUSE", description: "高品質な日本製子供靴", url: "https://www.mikihouse.co.jp/", platform: "other", category: "靴", badge: "日本製", order: 7, isActive: true),
+            ShoppingPortal(id: "toysrus", title: "トイザらス", description: "おもちゃが豊富なトイザらスオンライン", url: "https://www.toysrus.co.jp/", platform: "other", category: "おもちゃ", badge: "豊富", order: 8, isActive: true),
+            ShoppingPortal(id: "bornerund", title: "ボーネルンド", description: "知育玩具と北欧雑貨のセレクトショップ", url: "https://www.borneLund.com/", platform: "other", category: "おもちゃ", badge: "知育", order: 9, isActive: true),
+            ShoppingPortal(id: "akachan", title: "アカチャンホンポ", description: "ベビー用品が充実する総合専門店", url: "https://www.akachan.co.jp/", platform: "other", category: "ベビー用品", badge: "総合", order: 10, isActive: true),
+            ShoppingPortal(id: "angeliebe", title: "エンジェリーベ", description: "マタニティウェアとベビー用品の通販", url: "https://www.angeliebe.co.jp/", platform: "other", category: "マタニティ", badge: "マタニティ", order: 11, isActive: true),
+            ShoppingPortal(id: "wacoal_mat", title: "ワコールマタニティ", description: "機能性に優れたマタニティインナー", url: "https://www.wacoal.co.jp/maternity/", platform: "other", category: "マタニティ", badge: "機能性", order: 12, isActive: true),
+            ShoppingPortal(id: "babiesrus", title: "ベビーザらス", description: "ベビー用品の大型専門店", url: "https://www.babiesrus.co.jp/", platform: "other", category: "ベビー用品", badge: "大型店", order: 13, isActive: true),
+            ShoppingPortal(id: "combi", title: "コンビ公式", description: "ベビーカーやチャイルドシートの老舗メーカー", url: "https://www.combi.co.jp/", platform: "other", category: "ベビー用品", badge: "老舗", order: 14, isActive: true),
+            ShoppingPortal(id: "aprica", title: "アップリカ", description: "ベビーカーとチャイルドシートの専門メーカー", url: "https://www.aprica.com/", platform: "other", category: "ベビー用品", badge: "専門メーカー", order: 15, isActive: true),
+        ]
     }
 }
 
@@ -90,151 +126,6 @@ enum ShoppingCategory: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 }
-
-// MARK: - ShoppingAffiliateLink
-
-struct ShoppingAffiliateLink: Identifiable {
-    let id = UUID()
-    let title: String
-    let description: String
-    let url: String
-    let category: ShoppingCategory
-    let imageName: String?
-    let badge: String?
-}
-
-// MARK: - Sample Data
-
-let sampleAffiliateLinks: [ShoppingAffiliateLink] = [
-    ShoppingAffiliateLink(
-        title: "Amazon ベビーストア",
-        description: "ベビー用品が豊富なAmazonのベビー専門ストア",
-        url: "https://www.amazon.co.jp/baby",
-        category: .babyGoods,
-        imageName: nil,
-        badge: "おすすめ"
-    ),
-    ShoppingAffiliateLink(
-        title: "楽天 ベビー・キッズ",
-        description: "ポイント還元率が高い楽天のベビー・キッズ用品",
-        url: "https://www.rakuten.co.jp/baby",
-        category: .babyGoods,
-        imageName: nil,
-        badge: nil
-    ),
-    ShoppingAffiliateLink(
-        title: "しまむらオンライン",
-        description: "プチプラベビー服のしまむら。オンラインで便利に",
-        url: "https://www.shimamura.gr.jp/",
-        category: .babyClothes,
-        imageName: nil,
-        badge: "プチプラ"
-    ),
-    ShoppingAffiliateLink(
-        title: "西松屋オンライン",
-        description: "赤ちゃんのデパート西松屋。定番アイテムが充実",
-        url: "https://www.nishimatsuya.co.jp/",
-        category: .babyClothes,
-        imageName: nil,
-        badge: "定番"
-    ),
-    ShoppingAffiliateLink(
-        title: "H&M キッズ",
-        description: "おしゃれな北欧デザインの子供服",
-        url: "https://www2.hm.com/ja_jp/kids.html",
-        category: .kidsClothes,
-        imageName: nil,
-        badge: "おしゃれ"
-    ),
-    ShoppingAffiliateLink(
-        title: "GU キッズ",
-        description: "リーズナブルで着やすい子供服",
-        url: "https://www.gu-global.com/jp/ja/kids",
-        category: .kidsClothes,
-        imageName: nil,
-        badge: "リーズナブル"
-    ),
-    ShoppingAffiliateLink(
-        title: "IFME イフミー",
-        description: "足育を応援する子供靴の専門ブランド",
-        url: "https://www.ifmeshoes.com/",
-        category: .shoes,
-        imageName: nil,
-        badge: "足育"
-    ),
-    ShoppingAffiliateLink(
-        title: "MIKI HOUSE",
-        description: "高品質な日本製子供靴",
-        url: "https://www.mikihouse.co.jp/",
-        category: .shoes,
-        imageName: nil,
-        badge: "日本製"
-    ),
-    ShoppingAffiliateLink(
-        title: "トイザらス",
-        description: "おもちゃが豊富なトイザらスオンライン",
-        url: "https://www.toysrus.co.jp/",
-        category: .toys,
-        imageName: nil,
-        badge: "豊富"
-    ),
-    ShoppingAffiliateLink(
-        title: "ボーネルンド",
-        description: "知育玩具と北欧雑貨のセレクトショップ",
-        url: "https://www.borneLund.com/",
-        category: .toys,
-        imageName: nil,
-        badge: "知育"
-    ),
-    ShoppingAffiliateLink(
-        title: "アカチャンホンポ",
-        description: "ベビー用品が充実する総合専門店",
-        url: "https://www.akachan.co.jp/",
-        category: .babyGoods,
-        imageName: nil,
-        badge: "総合"
-    ),
-    ShoppingAffiliateLink(
-        title: "エンジェリーベ",
-        description: "マタニティウェアとベビー用品の通販",
-        url: "https://www.angeliebe.co.jp/",
-        category: .maternity,
-        imageName: nil,
-        badge: "マタニティ"
-    ),
-    ShoppingAffiliateLink(
-        title: "ワコールマタニティ",
-        description: "機能性に優れたマタニティインナー",
-        url: "https://www.wacoal.co.jp/maternity/",
-        category: .maternity,
-        imageName: nil,
-        badge: "機能性"
-    ),
-    ShoppingAffiliateLink(
-        title: "ベビーザらス",
-        description: "ベビー用品の大型専門店",
-        url: "https://www.babiesrus.co.jp/",
-        category: .babyGoods,
-        imageName: nil,
-        badge: "大型店"
-    ),
-    ShoppingAffiliateLink(
-        title: "コンビ公式",
-        description: "ベビーカーやチャイルドシートの老舗メーカー",
-        url: "https://www.combi.co.jp/",
-        category: .babyGoods,
-        imageName: nil,
-        badge: "老舗"
-    ),
-    ShoppingAffiliateLink(
-        title: "アップリカ",
-        description: "ベビーカーとチャイルドシートの専門メーカー",
-        url: "https://www.aprica.com/",
-        category: .babyGoods,
-        imageName: nil,
-        badge: "専門メーカー"
-    )
-]
 
 // MARK: - CategoryChip
 
@@ -256,14 +147,14 @@ struct CategoryChip: View {
     }
 }
 
-// MARK: - AffiliateLinkCard
+// MARK: - PortalLinkCard
 
-struct AffiliateLinkCard: View {
-    let link: ShoppingAffiliateLink
+struct PortalLinkCard: View {
+    let portal: ShoppingPortal
 
     var body: some View {
         Button(action: {
-            if let url = URL(string: link.url) {
+            if let url = URL(string: portal.url) {
                 UIApplication.shared.open(url)
             }
         }) {
@@ -271,22 +162,22 @@ struct AffiliateLinkCard: View {
                 // アイコン
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.accentRed.opacity(0.1))
+                        .fill(portalColor.opacity(0.1))
                         .frame(width: 60, height: 60)
 
-                    Image(systemName: "bag.fill")
+                    Image(systemName: portalIcon)
                         .font(.system(size: 24))
-                        .foregroundColor(.accentRed)
+                        .foregroundColor(portalColor)
                 }
 
                 // テキスト情報
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(link.title)
+                        Text(portal.title)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.primary)
 
-                        if let badge = link.badge {
+                        if let badge = portal.badge {
                             Text(badge)
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.white)
@@ -297,7 +188,7 @@ struct AffiliateLinkCard: View {
                         }
                     }
 
-                    Text(link.description)
+                    Text(portal.description)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .lineLimit(2)
@@ -319,6 +210,22 @@ struct AffiliateLinkCard: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
+    }
+
+    private var portalIcon: String {
+        switch portal.platform.lowercased() {
+        case "rakuten": return "cart.fill"
+        case "amazon": return "shippingbox.fill"
+        default: return "bag.fill"
+        }
+    }
+
+    private var portalColor: Color {
+        switch portal.platform.lowercased() {
+        case "rakuten": return Color(hex: "#BF0000") ?? .accentRed
+        case "amazon": return Color(hex: "#FF9900") ?? .orange
+        default: return .accentRed
+        }
     }
 }
 

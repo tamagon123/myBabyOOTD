@@ -182,7 +182,7 @@ struct SettingsView: View {
                 } header: {
                     Text("プレミアム")
                 } footer: {
-                    Text("広告を非表示にするプレミアムプランです。購入はApp Store経由で行われます。")
+                    Text("買い切り型プレミアムプランです。広告非表示＋日記を１年前まで編集可能になります。購入はApp Store経由で行われます。")
                         .font(.caption)
                 }
 
@@ -293,10 +293,10 @@ struct SettingsView: View {
             .alert("プレミアムを解除", isPresented: $showUnsubscribeAlert) {
                 Button("キャンセル", role: .cancel) {}
                 Button("解除する", role: .destructive) {
-                    subscriptionManager.setSubscribed(false)
+                    subscriptionManager.setPremium(false)
                 }
             } message: {
-                Text("プレミアム状態を解除すると、広告が表示されるようになります。よろしいですか？")
+                Text("プレミアム状態を解除すると、広告表示と日記編集制限が復活します。買い切り購入の場合、「購入を復元する」から再度有効化できます。よろしいですか？")
             }
             // Apple Sign In 再認証シート（アカウント削除前）
             .sheet(isPresented: $showAppleReauthSheet) {
@@ -334,6 +334,7 @@ struct SettingsView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - リマインダー設定の保存・読み込み
@@ -467,7 +468,7 @@ struct PremiumBannerCard: View {
                             .foregroundColor(.white)
                     }
 
-                    Text("広告を完全に非表示にして\nすっきり快適に使えます")
+                    Text("買い切り型プレミアムプラン\n一度購入するだけで永久利用できます")
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.9))
                         .multilineTextAlignment(.center)
@@ -475,7 +476,7 @@ struct PremiumBannerCard: View {
                     // 特典リスト
                     VStack(alignment: .leading, spacing: 6) {
                         PremiumFeatureRow(icon: "nosign", text: "全広告を非表示")
-                        PremiumFeatureRow(icon: "bolt.fill", text: "タイムラインがすっきり表示")
+                        PremiumFeatureRow(icon: "calendar", text: "日記を１年前まで編集可能")
                         PremiumFeatureRow(icon: "heart.fill", text: "アプリ開発を応援できる")
                     }
                     .padding(.top, 4)
@@ -497,7 +498,7 @@ struct PremiumBannerCard: View {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 15))
                         }
-                        Text(isPurchasing ? "処理中..." : "プレミアムに登録する")
+                        Text(isPurchasing ? "処理中..." : "プレミアムを購入する")
                             .font(.system(size: 16, weight: .bold))
                     }
                     .foregroundColor(.white)

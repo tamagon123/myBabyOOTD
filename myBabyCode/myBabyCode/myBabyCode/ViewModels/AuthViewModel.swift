@@ -458,7 +458,7 @@ class AuthViewModel: ObservableObject {
             for doc in postsSnapshot.documents {
                 let postId = doc.documentID
                 let postData = doc.data()
-                // Delete Storage images
+                // Delete Storage images（失敗しても続行、ファイルが存在しない場合があるため）
                 for key in ["image_url_front", "image_url_back"] {
                     if let urlStr = postData[key] as? String, !urlStr.isEmpty,
                        let url = URL(string: urlStr) {
@@ -471,38 +471,38 @@ class AuthViewModel: ObservableObject {
                     }
                 }
                 // Delete items subcollection
-                let itemsSnap = try? await doc.reference.collection("items").getDocuments()
-                for itemDoc in itemsSnap?.documents ?? [] {
-                    try? await itemDoc.reference.delete()
+                let itemsSnap = try await doc.reference.collection("items").getDocuments()
+                for itemDoc in itemsSnap.documents {
+                    try await itemDoc.reference.delete()
                 }
                 // Delete likes on this post by other users
-                let postLikesSnap = try? await db.collection("likes")
+                let postLikesSnap = try await db.collection("likes")
                     .whereField("post_id", isEqualTo: postId)
                     .getDocuments()
-                for likeDoc in postLikesSnap?.documents ?? [] {
-                    try? await likeDoc.reference.delete()
+                for likeDoc in postLikesSnap.documents {
+                    try await likeDoc.reference.delete()
                 }
-                try? await doc.reference.delete()
+                try await doc.reference.delete()
             }
             // Delete likes by this user
             let likesSnapshot = try await db.collection("likes")
                 .whereField("user_id", isEqualTo: uid)
                 .getDocuments()
             for doc in likesSnapshot.documents {
-                try? await doc.reference.delete()
+                try await doc.reference.delete()
             }
             // Delete follows
             let followsSnapshot = try await db.collection("follows")
                 .whereField("follower_id", isEqualTo: uid)
                 .getDocuments()
             for doc in followsSnapshot.documents {
-                try? await doc.reference.delete()
+                try await doc.reference.delete()
             }
             let followingSnapshot = try await db.collection("follows")
                 .whereField("following_id", isEqualTo: uid)
                 .getDocuments()
             for doc in followingSnapshot.documents {
-                try? await doc.reference.delete()
+                try await doc.reference.delete()
             }
             // Delete Firebase Auth user
             try await user.delete()

@@ -33,6 +33,12 @@ struct PostDetailView: View {
     @State private var showItemTags = false         // アイテムタグの表示/非表示
     @State private var imageHeights: [Int: CGFloat] = [:]  // 各画像インデックス→実際の表示高さ
 
+    // スタンプ編集関連
+    @State private var showStampEditor = false      // スタンプ編集画面表示フラグ
+    @State private var editingImage: UIImage? = nil // 編集中の画像
+    @State private var editingImageSide: String = "front" // 編集中の画像面
+    @State private var isLoadingImage = false       // 画像読み込み中フラグ
+
     // postsViewModelから現在のいいね状態を動的に読み取る（シート表示中でもUIが確実に更新されるため）
     private var postId: String { post.id ?? post.post_id }
     private var effectiveIsLiked: Bool { postsViewModel.likedPostIds.contains(postId) }
@@ -41,6 +47,11 @@ struct PostDetailView: View {
         let currentPost = postsViewModel.posts.first(where: { ($0.id ?? $0.post_id) == postId })
             ?? postsViewModel.searchResults.first(where: { ($0.id ?? $0.post_id) == postId })
         return currentPost?.likes_count ?? post.likes_count
+    }
+
+    // 自分の投稿かどうか
+    private var isMyPost: Bool {
+        post.user_id == authViewModel.currentUser?.user_id
     }
 
     // 計算プロパティ: 現在表示中の画像面に対応するタグのみ抽出
@@ -199,14 +210,42 @@ struct PostDetailView: View {
                     Button("閉じる") { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if let uid = FirebaseAuth.Auth.auth().currentUser?.uid, uid == post.user_id {
-                        Button(role: .destructive) {
-                            showDeleteConfirm = true
+                    if isMyPost {
+                        Menu {
+                            Button {
+                                Task { await openStampEditor() }
+                            } label: {
+                                Label("スタンプを編集", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                showDeleteConfirm = true
+                            } label: {
+                                Label("削除", systemImage: "trash")
+                            }
                         } label: {
-                            Image(systemName: "trash")
+                            Image(systemName: "ellipsis.circle")
                         }
-                        .disabled(isDeleting)
+                        .disabled(isDeleting || isLoadingImage)
                     }
+                }
+            }
+            .sheet(isPresented: $showStampEditor, onDismiss: {
+                editingImage = nil
+            }) {
+                if let img = editingImage {
+                    PhotoEditorView(
+                        image: img,
+                        imageSide: editingImageSide,
+                        onDone: { _ in
+                            // 画像は既に合成済みなので更新不要
+                        },
+                        onSaveStamps: { stamps in
+                            Task {
+                                await updateStamps(stamps: stamps)
+                            }
+                        },
+                        existingStamps: post.stamps?.filter { $0.image_side == editingImageSide } ?? []
+                    )
                 }
             }
             .alert("投稿を削除", isPresented: $showDeleteConfirm) {
@@ -226,6 +265,7 @@ struct PostDetailView: View {
                 Text("この投稿を削除しますか？この操作は取り消せません。")
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Items Section
@@ -314,6 +354,69 @@ struct PostDetailView: View {
         let y = months / 12
         let m = months % 12
         return m == 0 ? "\(y)歳" : "\(y)歳\(m)ヶ月"
+    }
+
+    // =============================================================================
+    // 【関数サマリー】openStampEditor
+    // 目的: 現在表示中の画像をダウンロードしてスタンプ編集画面を開く
+    // =============================================================================
+    private func openStampEditor() async {
+        isLoadingImage = true
+        defer { isLoadingImage = false }
+
+        let imageUrl = currentImageIndex == 0 ? post.image_url_front : post.image_url_back
+        let side = currentImageIndex == 0 ? "front" : "back"
+
+        guard let urlString = imageUrl, let url = URL(string: urlString) else {
+            return
+        }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            if let image = UIImage(data: data) {
+                editingImage = image
+                editingImageSide = side
+                showStampEditor = true
+            }
+        } catch {
+            print("[PostDetailView] Failed to load image: \(error)")
+        }
+    }
+
+    // =============================================================================
+    // 【関数サマリー】updateStamps
+    // 目的: 編集したスタンプをFirestoreに保存
+    // =============================================================================
+    private func updateStamps(stamps: [PostStamp]) async {
+        let postId = post.id ?? post.post_id
+        guard !postId.isEmpty else { return }
+
+        let db = Firestore.firestore()
+        let postRef = db.collection("posts").document(postId)
+
+        // 既存のスタンプから、編集対象面以外のスタンプを保持
+        let otherSideStamps = post.stamps?.filter { $0.image_side != editingImageSide } ?? []
+        let allStamps = otherSideStamps + stamps
+
+        let stampData = allStamps.map { stamp -> [String: Any] in
+            return [
+                "id": stamp.id,
+                "kind_type": stamp.kind_type,
+                "kind_value": stamp.kind_value,
+                "x_ratio": stamp.x_ratio,
+                "y_ratio": stamp.y_ratio,
+                "scale": stamp.scale,
+                "rotation": stamp.rotation,
+                "image_side": stamp.image_side
+            ]
+        }
+
+        do {
+            try await postRef.updateData(["stamps": stampData])
+            print("[PostDetailView] Stamps updated successfully")
+        } catch {
+            print("[PostDetailView] Failed to update stamps: \(error)")
+        }
     }
 
     // MARK: - Detail Image Slide

@@ -1,29 +1,25 @@
 // =============================================================================
 // ファイル名: SubscriptionManager.swift
-// 役割: サブスクリプション状態の管理と広告非表示フラグの提供
+// 役割: プレミアムプラン（買い切り）の購入状態管理
 // 説明:
-//   将来的なサブスクリプション機能（StoreKit/RevenueCat等）の導入に備えた
-//   管理クラスです。現時点では「広告を非表示にするか」の状態のみを管理します。
-//   サブスクリプションの購入・検証ロジックは TODO として明示してあります。
+//   買い切り型（Non-Consumable）のプレミアムプランを管理します。
+//   購入済みの場合、広告非表示とカレンダー編集期間拡張（1年前まで）が有効になります。
 //
-//   【将来的なサブスクリプション実装手順】
-//   1. App Store Connect で「月額プラン」などのサブスクリプション商品を作成
-//      → productId に取得したプロダクトIDを設定
-//   2. StoreKit 2 または RevenueCat SDK を導入
-//   3. purchase() / restorePurchases() の TODO 箇所を実装
-//   4. サーバーサイド検証（任意）
+//   【App Store Connect での設定手順】
+//   1. App Store Connect → App 内課金 → 「消耗型以外」で商品を作成
+//   2. 製品IDを PremiumConfig.productId と完全一致させること
+//   3. サンドボックスアカウントでテスト購入を実施
 // =============================================================================
 
 import SwiftUI
 import Combine
 import StoreKit
 
-// MARK: - サブスクリプション商品ID設定
-// App Store Connect で作成した商品IDを設定してください
-private enum SubscriptionConfig {
-    // 広告非表示プラン（月額）
-    // TODO: App Store Connect で作成後に実際のProduct IDに変更
-    static let removeAdsProductId: String = "com.yourapp.removeads.monthly"
+// MARK: - プレミアムプラン商品ID設定
+private enum PremiumConfig {
+    // 買い切りプレミアムプラン（Non-Consumable）
+    // App Store Connect の「App 内課金（消耗型以外）」で設定した製品IDと完全一致させること
+    static let productId: String = "com.tamagon.mybabyootd.premium"
 }
 
 // MARK: - SubscriptionManager
@@ -32,11 +28,8 @@ private enum SubscriptionConfig {
 final class SubscriptionManager: ObservableObject {
     static let shared = SubscriptionManager()
 
-    // 広告を非表示にするか（サブスク購入済み or デバッグ中はtrue）
-    @Published var isAdsRemoved: Bool = false
-
-    // サブスクリプション購入済みかどうか
-    @Published var isSubscribed: Bool = false
+    // プレミアム購入済みかどうか（広告非表示＋カレンダー拡張が有効）
+    @Published var isPremium: Bool = false
 
     // 購入/復元処理中フラグ
     @Published var isPurchasing: Bool = false
@@ -47,6 +40,10 @@ final class SubscriptionManager: ObservableObject {
     // StoreKit 商品情報（価格表示用）
     @Published var product: Product? = nil
     @Published var productPrice: String? = nil
+
+    // 後方互換プロパティ（既存Viewとの互換性維持）
+    var isSubscribed: Bool { isPremium }
+    var isAdsRemoved: Bool { isPremium }
 
     private init() {
         loadFromUserDefaults()
@@ -60,8 +57,7 @@ final class SubscriptionManager: ObservableObject {
     // 備考: サーバー検証を導入した場合はここで検証APIを呼び出す
     // =============================================================================
     private func loadFromUserDefaults() {
-        isSubscribed = UserDefaults.standard.bool(forKey: "subscription_isSubscribed")
-        isAdsRemoved = isSubscribed
+        isPremium = UserDefaults.standard.bool(forKey: "premium_isPurchased")
     }
 
     // =============================================================================
@@ -74,7 +70,7 @@ final class SubscriptionManager: ObservableObject {
         #endif
 
         do {
-            let products = try await Product.products(for: [SubscriptionConfig.removeAdsProductId])
+            let products = try await Product.products(for: [PremiumConfig.productId])
             if let product = products.first {
                 self.product = product
                 self.productPrice = product.displayPrice
@@ -95,16 +91,15 @@ final class SubscriptionManager: ObservableObject {
 
         // DEBUG ビルドでかつ StoreKit Testing 未設定の場合はモック動作
         #if DEBUG
-        // StoreKit Configuration File を使用していない場合のみモック
         if !_isStoreKitTestingAvailable {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            setSubscribed(true)
+            setPremium(true)
             return
         }
         #endif
 
         do {
-            let products = try await Product.products(for: [SubscriptionConfig.removeAdsProductId])
+            let products = try await Product.products(for: [PremiumConfig.productId])
             guard let product = products.first else {
                 errorMessage = "商品情報を取得できませんでした"
                 return
@@ -113,19 +108,16 @@ final class SubscriptionManager: ObservableObject {
             let result = try await product.purchase()
             switch result {
             case .success(let verification):
-                // 購入成功。トランザクションを検証して完了させる
                 switch verification {
                 case .verified(let transaction):
                     await transaction.finish()
-                    setSubscribed(true)
+                    setPremium(true)
                 case .unverified(_, let error):
                     errorMessage = "購入の検証に失敗しました: \(error.localizedDescription)"
                 }
             case .userCancelled:
-                // ユーザーがキャンセル（エラーではない）
                 break
             case .pending:
-                // 購入保留（保護者承認待ちなど）
                 errorMessage = "購入が保留されています。承認後に反映されます"
             @unknown default:
                 errorMessage = "予期しない購入結果が返りました"
@@ -153,9 +145,7 @@ final class SubscriptionManager: ObservableObject {
         #endif
 
         do {
-            // App Store と同期（未完了トランザクションを同期）
             try await AppStore.sync()
-            // 現在の有効な権利を確認
             await loadCurrentEntitlements()
         } catch {
             errorMessage = "復元に失敗しました: \(error.localizedDescription)"
@@ -163,13 +153,12 @@ final class SubscriptionManager: ObservableObject {
     }
 
     // =============================================================================
-    // 【関数サマリー】setSubscribed
-    // 目的: サブスク状態を設定し、UserDefaultsに永続保存する
+    // 【関数サマリー】setPremium
+    // 目的: プレミアム状態を設定し、UserDefaultsに永続保存する
     // =============================================================================
-    func setSubscribed(_ subscribed: Bool) {
-        isSubscribed = subscribed
-        isAdsRemoved = subscribed
-        UserDefaults.standard.set(subscribed, forKey: "subscription_isSubscribed")
+    func setPremium(_ purchased: Bool) {
+        isPremium = purchased
+        UserDefaults.standard.set(purchased, forKey: "premium_isPurchased")
     }
 
     // =============================================================================
@@ -178,18 +167,18 @@ final class SubscriptionManager: ObservableObject {
     // 呼び出し元: init() 時、restorePurchases() 後、トランザクション更新時
     // =============================================================================
     private func loadCurrentEntitlements() async {
-        var hasActiveSubscription = false
+        var hasPurchased = false
         for await result in Transaction.currentEntitlements {
             switch result {
             case .verified(let transaction):
-                if transaction.productID == SubscriptionConfig.removeAdsProductId {
-                    hasActiveSubscription = true
+                if transaction.productID == PremiumConfig.productId {
+                    hasPurchased = true
                 }
             case .unverified(_, let error):
                 print("[StoreKit] Unverified transaction: \(error.localizedDescription)")
             }
         }
-        setSubscribed(hasActiveSubscription)
+        setPremium(hasPurchased)
     }
 
     // =============================================================================
@@ -203,11 +192,8 @@ final class SubscriptionManager: ObservableObject {
                 guard let self = self else { return }
                 switch result {
                 case .verified(let transaction):
-                    // 対象商品のトランザクションなら状態を更新
-                    await MainActor.run {
-                        if transaction.productID == SubscriptionConfig.removeAdsProductId {
-                            self.setSubscribed(true)
-                        }
+                    if transaction.productID == PremiumConfig.productId {
+                        await self.setPremium(true)
                     }
                     await transaction.finish()
                 case .unverified(_, let error):

@@ -37,8 +37,10 @@ struct NewPostView: View {
     var isFromCalendar: Bool { calendarDate != nil }  // カレンダーからの投稿かどうか
 
     // === 写真関連 ===
-    @State private var frontImage: UIImage?              // 正面写真
-    @State private var backImage: UIImage?               // 背面写真
+    @State private var frontImage: UIImage?              // 正面写真（スタンプ合成済み）
+    @State private var backImage: UIImage?               // 背面写真（スタンプ合成済み）
+    @State private var originalFrontImage: UIImage?      // オリジナル画像（スタンプなし）
+    @State private var originalBackImage: UIImage?       // オリジナル画像（スタンプなし）
     @State private var photoSourceTarget: PhotoTarget = .front  // 現在選択中の写真対象（front/back）
     @State private var showPhotoSourceSheet = false      // 写真ソース選択（カメラ/ライブラリ）シート
     @State private var showImagePicker = false           // UIImagePickerController表示フラグ
@@ -176,14 +178,22 @@ struct NewPostView: View {
             }
             .confirmationDialog("この写真を編集しますか？", isPresented: $showEditConfirm, titleVisibility: .visible) {
                 Button("編集する（スタンプ）") {
+                    // オリジナル画像を保存
+                    if photoSourceTarget == .front {
+                        originalFrontImage = editingImage
+                    } else {
+                        originalBackImage = editingImage
+                    }
                     editorReadyImage = editingImage
                     editingImage = nil
                     showImageEditor = true
                 }
                 Button("そのまま使う") {
                     if photoSourceTarget == .front {
+                        originalFrontImage = editingImage
                         frontImage = editingImage
                     } else {
+                        originalBackImage = editingImage
                         backImage = editingImage
                     }
                     editingImage = nil
@@ -196,13 +206,26 @@ struct NewPostView: View {
                 editorReadyImage = nil
             }) {
                 if let img = editorReadyImage {
-                    PhotoEditorView(image: img) { edited in
-                        if photoSourceTarget == .front {
-                            frontImage = edited
-                        } else {
-                            backImage = edited
-                        }
-                    }
+                    let currentSide = photoSourceTarget == .front ? "front" : "back"
+                    // 前回編集した同じ面のスタンプを取得
+                    let existingStamps = postsViewModel.pendingStamps.filter { $0.image_side == currentSide }
+                    PhotoEditorView(
+                        image: img,
+                        imageSide: currentSide,
+                        onDone: { edited in
+                            if photoSourceTarget == .front {
+                                frontImage = edited
+                            } else {
+                                backImage = edited
+                            }
+                        },
+                        onSaveStamps: { stamps in
+                            // 既存の同じ面のスタンプを削除して新しいスタンプを追加
+                            postsViewModel.pendingStamps.removeAll { $0.image_side == currentSide }
+                            postsViewModel.pendingStamps.append(contentsOf: stamps)
+                        },
+                        existingStamps: existingStamps
+                    )
                 }
             }
             .alert("投稿完了！", isPresented: $showSuccess) {
@@ -241,6 +264,7 @@ struct NewPostView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // =============================================================================
@@ -392,7 +416,8 @@ struct NewPostView: View {
             if image != nil {
                 Button {
                     photoSourceTarget = target
-                    editorReadyImage = image
+                    // 合成済み(image)ではなくオリジナル画像をエディタに渡す
+                    editorReadyImage = target == .front ? originalFrontImage : originalBackImage
                     showImageEditor = true
                 } label: {
                     Label("スタンプを編集", systemImage: "pencil")
@@ -716,7 +741,6 @@ struct NewPostView: View {
                                         let ratioY = max(0, min(1, val.location.y / imgH))
                                         items[idx].tagPosition = CGPoint(x: ratioX, y: ratioY)
                                         items[idx].tagSide = taggingSide
-                                        print("[DEBUG] Tag saved: item=\(idx), side=\(taggingSide), pos=(\(ratioX), \(ratioY))")
                                         taggingItemIndex = nil
                                     }
                             )
@@ -996,7 +1020,6 @@ struct NewPostView: View {
                 y_ratio: Double(pos.y),
                 image_side: items[idx].tagSide
             )
-            print("[DEBUG] PostItemTag created: item_index=\(tag.item_index), side=\(tag.image_side)")
             return tag
         }
         let collectedTags: [PostItemTag] = tags
@@ -1009,7 +1032,6 @@ struct NewPostView: View {
 
         // カレンダーからの投稿かどうかを判定
         let isCalendarPost = calendarDate != nil
-        print("[DEBUG] submitPost: isCalendarPost=\(isCalendarPost)")
         
         // 通常投稿：無条件で公開
         // カレンダー投稿：カレンダー公開設定に連動（カレンダー公開時のみ投稿も公開）
@@ -1018,9 +1040,7 @@ struct NewPostView: View {
             let calVm = CalendarViewModel()
             await calVm.fetchCalendarPublicSetting(uid: user.user_id)
             shouldBePublic = calVm.calendarIsPublic
-            print("[DEBUG] Calendar post: calendarIsPublic=\(calVm.calendarIsPublic), shouldBePublic=\(shouldBePublic)")
         }
-        print("[DEBUG] submitPost: shouldBePublic=\(shouldBePublic)")
 
         let success = await postsViewModel.uploadPost(
             frontImage: frontImage,
@@ -1047,10 +1067,8 @@ struct NewPostView: View {
             if let targetDate = calendarDate {
                 let uid = user.user_id
                 let dateKey = CalendarView.dateKey(for: targetDate)
-                print("[DEBUG] Calendar auto-save start: uid=\(uid), dateKey=\(dateKey)")
                 let calVm = CalendarViewModel()
                 await calVm.fetchCalendarPublicSetting(uid: uid)
-                print("[DEBUG] Calendar isPublic: \(calVm.calendarIsPublic)")
                 let saved = await calVm.saveEntry(
                     uid: uid,
                     dateKey: dateKey,
@@ -1058,16 +1076,12 @@ struct NewPostView: View {
                     image: frontImage,
                     regionCode: regionCode
                 )
-                print("[DEBUG] Calendar saveEntry result: \(saved)")
                 // 天気情報も保存
                 let weather = WeatherResult(tempMax: tMax, tempMin: tMin, weatherType: weatherType.rawValue)
                 await calVm.updateWeather(uid: uid, dateKey: dateKey, weather: weather)
-                print("[DEBUG] Calendar updateWeather done")
                 // カレンダー画面に通知
                 NotificationCenter.default.post(name: Notification.Name("CalendarEntryUpdated"), object: nil)
-                print("[DEBUG] Calendar notification posted")
             } else {
-                print("[DEBUG] Skipping calendar entry creation for regular post")
             }
             showSuccess = true
         } else { showError = true }
@@ -1193,24 +1207,25 @@ struct BrandSearchSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query: String = ""
     @FocusState private var isSearchFocused: Bool
+    @ObservedObject private var brandService = BrandService.shared
 
     private var filteredBrands: [BrandEntry] {
-        filterBrands(allBrands, query: query)
+        filterBrands(brandService.brands, query: query)
     }
 
-    // 入力されたブランド名をallBrands内の正式名称に正規化して返す
+    // 入力されたブランド名をブランド一覧内の正式名称に正規化して返す
     private func canonicalBrandName(for input: String) -> String {
         let normalizedInput = normalizeForSearch(input)
         // マッチする正式名称があればそれを返す
-        if let match = allBrands.first(where: { normalizeForSearch($0.name) == normalizedInput }) {
+        if let match = brandService.brands.first(where: { normalizeForSearch($0.name) == normalizedInput }) {
             return match.name
         }
         // 読み仮名完全一致も探す
-        if let readingMatch = allBrands.first(where: { $0.reading == normalizedInput }) {
+        if let readingMatch = brandService.brands.first(where: { $0.reading == normalizedInput }) {
             return readingMatch.name
         }
         // 部分一致も探す（「ユニクロ」→「UNIQLO」など）
-        if let partial = allBrands.first(where: {
+        if let partial = brandService.brands.first(where: {
             normalizeForSearch($0.name).contains(normalizedInput) ||
             $0.reading.contains(normalizedInput) ||
             normalizedInput.contains(normalizeForSearch($0.name)) ||
@@ -1314,6 +1329,7 @@ struct BrandSearchSheet: View {
             }
             .onAppear { isSearchFocused = true }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }
 
@@ -1409,7 +1425,10 @@ enum EditorAction {
 
 struct PhotoEditorView: View {
     let image: UIImage
+    let imageSide: String  // "front" または "back"
     let onDone: (UIImage) -> Void
+    let onSaveStamps: ([PostStamp]) -> Void  // スタンプ保存時のコールバック
+    var existingStamps: [PostStamp] = []  // 既存スタンプ（編集時）
     @Environment(\.dismiss) private var dismiss
 
     @State private var stampItems: [PlacedStamp] = []
@@ -1442,7 +1461,12 @@ struct PhotoEditorView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
-                        onDone(renderFinalImage())
+                        // スタンプ情報を変換して保存（現在の正確なcanvasSizeを使用）
+                        let postStamps = convertToPostStamps(stampItems: stampItems, canvasSize: canvasSize, imageSide: imageSide)
+                        onSaveStamps(postStamps)
+                        // 現在のcanvasSizeをその場で渡してレンダリング（状態変化前に確定）
+                        let finalImage = renderFinalImage(currentCanvasSize: canvasSize)
+                        onDone(finalImage)
                         dismiss()
                     } label: {
                         Text("完了").font(.system(size: 15, weight: .bold))
@@ -1450,6 +1474,7 @@ struct PhotoEditorView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Stamp Palette
@@ -1515,36 +1540,29 @@ struct PhotoEditorView: View {
     // =============================================================================
     // 【Viewサマリー】canvas
     // 目的: 写真を表示し、タップ・ドラッグでスタンプの配置・移動・拡縮を可能にする
+    //        画像とスタンプを同じサイズのコンテナに入れ、offsetX/Yを使わない設計
     // 戻り値: some View
     // =============================================================================
     private var canvas: some View {
         GeometryReader { geo in
-            let imgW = image.size.width
-            let imgH = image.size.height
-            let fitScale = min(geo.size.width / imgW, geo.size.height / imgH)
-            let dispW = imgW * fitScale
-            let dispH = imgH * fitScale
-            let offsetX = (geo.size.width - dispW) / 2
-            let offsetY = (geo.size.height - dispH) / 2
+            // 1. 画面全体のサイズに画像がどう収まるか（実際の表示サイズ）を計算
+            let displaySize = calculateFitSize(canvasSize: geo.size, imageSize: image.size)
 
+            // 2. 画面の中央に、画像と「全く同じサイズ」のスタンプ配置エリアを作る
+            // alignment: .topLeading で左上を原点とする座標系に統一
             ZStack(alignment: .topLeading) {
+                // 背景画像（余白なしのジャストサイズで配置）
                 Image(uiImage: image)
                     .resizable()
-                    .frame(width: dispW, height: dispH)
-                    .onAppear {
-                        canvasSize = CGSize(width: dispW, height: dispH)
-                        canvasOffset = CGPoint(x: offsetX, y: offsetY)
-                    }
+                    .frame(width: displaySize.width, height: displaySize.height)
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 0)
                             .onEnded { val in
                                 guard let kind = selectedKind else { return }
-                                // ZStack(alignment: .topLeft) なので座標をそのまま使う
-                                let stampX = val.location.x - offsetX
-                                let stampY = val.location.y - offsetY
+                                // ZStack(alignment: .topLeading) なので座標をそのまま使う
                                 let position = CGPoint(
-                                    x: max(0, min(stampX, dispW)),
-                                    y: max(0, min(stampY, dispH))
+                                    x: max(0, min(val.location.x, displaySize.width)),
+                                    y: max(0, min(val.location.y, displaySize.height))
                                 )
                                 let stamp = PlacedStamp(kind: kind, position: position)
                                 stampItems.append(stamp)
@@ -1553,10 +1571,11 @@ struct PhotoEditorView: View {
                                 selectedKind = nil
                             }
                     )
-                    .offset(x: offsetX, y: offsetY)
+
+                // スタンプ編集レイヤー（画像と完全に同じ枠になる）
                 ForEach($stampItems) { $stamp in
                     StampView(stamp: $stamp,
-                              canvasOffset: canvasOffset,
+                              canvasOffset: .zero, // offsetは不要（常に0）
                               isActive: activeStampId == stamp.id,
                               onTap: { activeStampId = stamp.id },
                               onRemove: {
@@ -1565,7 +1584,20 @@ struct PhotoEditorView: View {
                               })
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+            .onAppear {
+                // canvasSizeをこの「画像表示サイズ」で上書き（offsetなし）
+                canvasSize = displaySize
+                canvasOffset = .zero
+                loadExistingStamps()
+            }
         }
+    }
+
+    // ヘルパー関数: Aspect Fit された実際の表示サイズを計算する
+    private func calculateFitSize(canvasSize: CGSize, imageSize: CGSize) -> CGSize {
+        let scale = min(canvasSize.width / imageSize.width, canvasSize.height / imageSize.height)
+        return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
     }
 
     // MARK: - Hint
@@ -1618,33 +1650,34 @@ struct PhotoEditorView: View {
     // =============================================================================
     // 【関数サマリー】renderFinalImage
     // 目的: スタンプを元の写真に合成して、編集後のUIImageを生成する
-    // 戻り値: UIImage - スタンプ合成済みの最終画像
-    // 処理の流れ:
-    //   1. キャンバス座標系から画像座標系へ変換
-    //   2. UIGraphicsImageRendererで元画像に各スタンプを描画
+    //        offsetなし：canvasSizeが画像ぴったりサイズなので単純計算
+    //        currentCanvasSize: 完了ボタン押下時点の正確なサイズを引数で受け取る
     // =============================================================================
-    private func renderFinalImage() -> UIImage {
+    private func renderFinalImage(currentCanvasSize: CGSize) -> UIImage {
         let imgW = image.size.width
         let imgH = image.size.height
-        // canvasSize はaspectFit後の実際の表示サイズ
-        let dispW = canvasSize.width == 0 ? UIScreen.main.bounds.width : canvasSize.width
-        let dispH = canvasSize.height == 0 ? UIScreen.main.bounds.height : canvasSize.height
-        let fitScale = min(dispW / imgW, dispH / imgH)
+
+        // canvasSizeが画像ぴったりサイズなので、単純に拡大率を計算
+        let fitScale = currentCanvasSize.width / imgW
+
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = image.scale
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: imgW, height: imgH), format: format)
+
         return renderer.image { ctx in
             image.draw(in: CGRect(origin: .zero, size: CGSize(width: imgW, height: imgH)))
+
             for stamp in stampItems {
-                // stamp.position は画像左上からの相対座標（0～dispW, 0～dispH）
-                // → 元画像座標系に変換（fitScaleで除算）
+                // canvasSizeが画像ぴったりサイズなので、単に拡大率で割るだけで完璧に一致
                 let imgX = stamp.position.x / fitScale
                 let imgY = stamp.position.y / fitScale
-                // ビュー上のスタンプ描画サイズは StampView と同じ baseSize=44
-                let baseViewPt: CGFloat = 44
-                let stampViewPt = baseViewPt * stamp.scale
-                let stampImgPt = stampViewPt / fitScale
+
+
+                // スタンプサイズも元画像サイズに合わせて拡大
+                let uiSize: CGFloat = 44 * stamp.scale
+                let stampImgPt = uiSize / fitScale
+
                 let drawImage: UIImage?
                 switch stamp.kind {
                 case .symbol(let sym):
@@ -1654,14 +1687,84 @@ struct PhotoEditorView: View {
                 case .image(let name):
                     drawImage = UIImage(named: name)
                 }
+
                 if let img = drawImage {
                     ctx.cgContext.saveGState()
                     ctx.cgContext.translateBy(x: imgX, y: imgY)
                     ctx.cgContext.rotate(by: CGFloat(stamp.rotation.radians))
-                    img.draw(in: CGRect(x: -stampImgPt / 2, y: -stampImgPt / 2, width: stampImgPt, height: stampImgPt))
+                    let rect = CGRect(x: -stampImgPt / 2, y: -stampImgPt / 2, width: stampImgPt, height: stampImgPt)
+                    img.draw(in: rect)
                     ctx.cgContext.restoreGState()
                 }
             }
+        }
+    }
+
+    // =============================================================================
+    // 【関数サマリー】getFitScale
+    // 目的: 画像をcanvasにfitさせるためのスケールを計算
+    // =============================================================================
+    private func getFitScale(canvasSize: CGSize, imageSize: CGSize) -> CGFloat {
+        return min(canvasSize.width / imageSize.width, canvasSize.height / imageSize.height)
+    }
+
+    // =============================================================================
+    // 【関数サマリー】loadExistingStamps
+    // 目的: 既存スタンプをPhotoEditorViewに復元（offsetなし・シンプル設計）
+    //        canvasSizeが画像ぴったりサイズなので、単純な比率計算で復元
+    // =============================================================================
+    private func loadExistingStamps() {
+        guard image.size.width > 0, canvasSize.width > 0 else { return }
+
+        stampItems.removeAll() // 重複防止のために必ずクリア
+        let restored = existingStamps.compactMap { postStamp -> PlacedStamp? in
+            guard let stampKind = postStamp.stampKind else { return nil }
+
+            // 余白を足す処理が不要：canvasSizeが画像ぴったりサイズ
+            let position = CGPoint(
+                x: CGFloat(postStamp.x_ratio) * canvasSize.width,
+                y: CGFloat(postStamp.y_ratio) * canvasSize.height
+            )
+            return PlacedStamp(
+                kind: stampKind,
+                position: position,
+                scale: CGFloat(postStamp.scale),
+                rotation: Angle(radians: postStamp.rotation)
+            )
+        }
+        stampItems = restored
+    }
+
+    // =============================================================================
+    // 【関数サマリー】convertToPostStamps
+    // 目的: PlacedStamp配列をPostStamp配列に変換（Firestore保存用）
+    //        offsetなし：canvasSizeが画像ぴったりサイズなので単純比率計算
+    // =============================================================================
+    private func convertToPostStamps(stampItems: [PlacedStamp], canvasSize: CGSize, imageSide: String) -> [PostStamp] {
+        return stampItems.map { stamp in
+            let kindType: String
+            let kindValue: String
+            switch stamp.kind {
+            case .symbol(let sym):
+                kindType = "symbol"
+                kindValue = sym.rawValue
+            case .image(let name):
+                kindType = "image"
+                kindValue = name
+            }
+            // 余白を引く処理が不要：canvasSizeが画像ぴったりサイズ
+            let xRatio = stamp.position.x / canvasSize.width
+            let yRatio = stamp.position.y / canvasSize.height
+            return PostStamp(
+                id: stamp.id.uuidString,
+                kind_type: kindType,
+                kind_value: kindValue,
+                x_ratio: Double(max(0, min(1, xRatio))),
+                y_ratio: Double(max(0, min(1, yRatio))),
+                scale: Double(stamp.scale),
+                rotation: Double(stamp.rotation.radians),
+                image_side: imageSide
+            )
         }
     }
 }
@@ -1748,9 +1851,10 @@ struct StampView: View {
                        height: baseSize * stamp.scale * liveScaleFactor + 12)
             }
         }
-        .position(
-            x: stamp.position.x + canvasOffset.x + dragOffset.width,
-            y: stamp.position.y + canvasOffset.y + dragOffset.height
+        // .offset()を使用：左上を原点とする絶対座標（ZStack(alignment: .topLeading)と一致）
+        .offset(
+            x: stamp.position.x + canvasOffset.x + dragOffset.width - baseSize / 2,
+            y: stamp.position.y + canvasOffset.y + dragOffset.height - baseSize / 2
         )
         .gesture(
             SimultaneousGesture(
@@ -1770,7 +1874,9 @@ struct StampView: View {
         .highPriorityGesture(
             TapGesture(count: 2).onEnded { onRemove() }
         )
-        .onTapGesture { onTap() }
+        .highPriorityGesture(
+            TapGesture().onEnded { onTap() }
+        )
     }
 }
 

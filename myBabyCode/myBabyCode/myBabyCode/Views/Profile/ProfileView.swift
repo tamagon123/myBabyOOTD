@@ -107,6 +107,7 @@ struct ProfileView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
         .background(Color.ecruBackground.ignoresSafeArea())
         // 設定ボタンはヘッダーカード内に統合済み
         // Pull-to-refresh
@@ -131,6 +132,7 @@ struct ProfileView: View {
                 EditProfileView()
                     .environmentObject(authViewModel)
             }
+            .navigationViewStyle(StackNavigationViewStyle())
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -142,10 +144,12 @@ struct ProfileView: View {
                 NotificationsView()
                     .environmentObject(authViewModel)
             }
+            .navigationViewStyle(StackNavigationViewStyle())
         }
         .sheet(isPresented: $showFollowingList) {
-            FollowingListView(users: followingUsers)
+            FollowingListView()
                 .environmentObject(authViewModel)
+                .environmentObject(postsViewModel)
         }
         .sheet(isPresented: $showPublicCalendar) {
             if let targetUid = publicCalendarUserId {
@@ -158,7 +162,8 @@ struct ProfileView: View {
                 isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
                 onLike: { Task { await postsViewModel.toggleLike(post: post) } },
                 onDeleted: { deletedPost in
-                    userPosts.removeAll { $0.id == deletedPost.id }
+                    // post_idを使用して一致する投稿を削除（idは@DocumentIDなので使用しない）
+                    userPosts.removeAll { $0.post_id == deletedPost.post_id }
                 }
             )
                 .environmentObject(authViewModel)
@@ -328,10 +333,7 @@ struct ProfileView: View {
                 if isOwnProfile {
                     Divider().frame(height: 40)
                     Button {
-                        Task {
-                            await loadFollowingUsers()
-                            showFollowingList = true
-                        }
+                        showFollowingList = true
                     } label: {
                         statCardContent(count: followingCount, label: "フォロー", icon: "person.2.fill")
                     }
@@ -754,10 +756,11 @@ struct ProfileView: View {
 // MARK: - Following List View
 
 struct FollowingListView: View {
-    let users: [AppUser]
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var users: [AppUser] = []
+    @State private var isLoading = true
     @State private var selectedUserId: String? = nil
     @State private var selectedUserPosts: [Post] = []
     @State private var showUserPosts = false
@@ -766,7 +769,11 @@ struct FollowingListView: View {
     var body: some View {
         NavigationView {
             List {
-                if users.isEmpty {
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 40)
+                } else if users.isEmpty {
                     Text("フォロー中のアカウントがありません")
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -838,6 +845,39 @@ struct FollowingListView: View {
                     .environmentObject(postsViewModel)
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
+        .task {
+            await loadFollowingUsers()
+        }
+    }
+
+    private func loadFollowingUsers() async {
+        guard let myId = FirebaseAuth.Auth.auth().currentUser?.uid else {
+            isLoading = false
+            return
+        }
+        do {
+            let snap = try await Firestore.firestore().collection("follows")
+                .whereField("follower_id", isEqualTo: myId)
+                .getDocuments()
+            let followingIds = snap.documents.compactMap { $0.data()["following_id"] as? String }
+            guard !followingIds.isEmpty else {
+                users = []
+                isLoading = false
+                return
+            }
+            var loadedUsers: [AppUser] = []
+            for uid in followingIds {
+                if let doc = try? await Firestore.firestore().collection("users").document(uid).getDocument(),
+                   let user = try? doc.data(as: AppUser.self) {
+                    loadedUsers.append(user)
+                }
+            }
+            users = loadedUsers
+        } catch {
+            users = []
+        }
+        isLoading = false
     }
 
     private func loadUserPosts(userId: String) async {
@@ -948,5 +988,6 @@ struct UserPostsSheet: View {
                     .environmentObject(postsViewModel)
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }

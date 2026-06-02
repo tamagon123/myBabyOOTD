@@ -15,6 +15,7 @@ struct NotificationsView: View {
     @State private var notifications: [AppNotification] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var showDeleteConfirm = false
 
     private var uid: String { Auth.currentUID }
 
@@ -50,6 +51,26 @@ struct NotificationsView: View {
         .listStyle(.plain)
         .navigationTitle("通知")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundColor(.accentRed)
+                }
+                .opacity(notifications.isEmpty ? 0 : 1)
+                .disabled(notifications.isEmpty)
+            }
+        }
+        .alert("すべての通知を削除しますか？", isPresented: $showDeleteConfirm) {
+            Button("削除", role: .destructive) {
+                Task { await deleteAll() }
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("削除した通知は元に戻せません")
+        }
         .task {
             await loadNotifications()
         }
@@ -134,6 +155,16 @@ struct NotificationsView: View {
             errorMessage = "通知の取得に失敗しました"
             print("[NotificationsView] load error: \(error)")
         }
+    }
+
+    // MARK: - Delete All
+
+    private func deleteAll() async {
+        await NotificationService.shared.deleteAllNotifications(uid: uid)
+        await MainActor.run {
+            notifications = []
+        }
+        NotificationCenter.default.post(name: Notification.Name("NotificationsDeleted"), object: nil)
     }
 
     // MARK: - Helpers

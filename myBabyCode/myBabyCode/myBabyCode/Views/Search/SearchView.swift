@@ -29,7 +29,11 @@ struct SearchView: View {
     @State private var sheetSelectedBrand: String = ""        // シート選択一時値
     @State private var showBrandSearch = false                // ブランド検索シート表示フラグ
     @State private var selectedSizeIndices: Set<Int> = []     // 選択されたサイズ
-    @State private var selectedFilter: PostFilterType = .all    // 投稿フィルター（投稿のみ/日記のみ/両方）
+    @State private var selectedFilter: PostFilterType = .postsOnly  // 投稿フィルター（投稿のみ/日記のみ/両方）
+    @State private var startDate: Date? = nil                  // 検索開始日
+    @State private var endDate: Date? = nil                    // 検索終了日
+    @State private var showStartDatePicker = false             // 開始日Picker表示フラグ
+    @State private var showEndDatePicker = false               // 終了日Picker表示フラグ
 
     // === 検索結果 ===
     @State private var results: [Post] = []        // 検索結果の投稿リスト
@@ -97,6 +101,7 @@ struct SearchView: View {
                 BrandSearchSheet(selectedBrand: $sheetSelectedBrand)
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Filter UI
@@ -304,6 +309,85 @@ struct SearchView: View {
                 }
             }
 
+            // 日付フィルター
+            filterRow(label: "日付") {
+                VStack(alignment: .leading, spacing: 8) {
+                    // 開始日
+                    Button {
+                        showStartDatePicker.toggle()
+                        showEndDatePicker = false
+                    } label: {
+                        HStack {
+                            Text(startDate != nil ? formatDate(startDate!) : "開始日を選択")
+                                .font(.system(size: 14))
+                                .foregroundColor(startDate != nil ? .primary : Color(.systemGray))
+                            Spacer()
+                            Image(systemName: "calendar")
+                                .font(.system(size: 14))
+                                .foregroundColor(.accentRed)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+
+                    if showStartDatePicker {
+                        DatePicker("", selection: Binding(
+                            get: { startDate ?? Date() },
+                            set: { startDate = $0 }
+                        ), displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                    }
+
+                    // 終了日
+                    Button {
+                        showEndDatePicker.toggle()
+                        showStartDatePicker = false
+                    } label: {
+                        HStack {
+                            Text(endDate != nil ? formatDate(endDate!) : "終了日を選択")
+                                .font(.system(size: 14))
+                                .foregroundColor(endDate != nil ? .primary : Color(.systemGray))
+                            Spacer()
+                            Image(systemName: "calendar")
+                                .font(.system(size: 14))
+                                .foregroundColor(.accentRed)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+
+                    if showEndDatePicker {
+                        DatePicker("", selection: Binding(
+                            get: { endDate ?? Date() },
+                            set: { endDate = $0 }
+                        ), displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                    }
+
+                    // クリアボタン
+                    if startDate != nil || endDate != nil {
+                        Button {
+                            startDate = nil
+                            endDate = nil
+                            showStartDatePicker = false
+                            showEndDatePicker = false
+                        } label: {
+                            Text("日付をクリア")
+                                .font(.system(size: 12))
+                                .foregroundColor(.accentRed)
+                        }
+                    }
+                }
+            }
+
             // 投稿タイプフィルター
             filterRow(label: "表示タイプ") {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -438,6 +522,22 @@ struct SearchView: View {
                 fetched = fetched.filter { matchedIds.contains($0.post_id) }
             }
 
+            // 日付フィルター適用
+            if let start = startDate {
+                let cal = Calendar.current
+                let startOfDay = cal.startOfDay(for: start)
+                fetched = fetched.filter { post in
+                    post.created_at.dateValue() >= startOfDay
+                }
+            }
+            if let end = endDate {
+                let cal = Calendar.current
+                let endOfDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: end)) ?? end
+                fetched = fetched.filter { post in
+                    post.created_at.dateValue() < endOfDay
+                }
+            }
+
             // 投稿タイプフィルター適用（投稿のみ/日記のみ/両方）
             switch selectedFilter {
             case .postsOnly:
@@ -459,5 +559,12 @@ struct SearchView: View {
             errorMessage = "検索中にエラーが発生しました。再度お試しください。"
         }
         isLoading = false
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy年M月d日"
+        fmt.locale = Locale(identifier: "ja_JP")
+        return fmt.string(from: date)
     }
 }

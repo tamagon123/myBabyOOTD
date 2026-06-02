@@ -119,6 +119,7 @@ struct CalendarEntryEditView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     // MARK: - Sections

@@ -174,9 +174,9 @@ actor WeatherService {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
         let archiveEnd = min(endDay, yesterday)
         
-        // 未来予報の範囲（今日から最大15日先 - API制限で16日先は取得不可）
+        // 未来予報の範囲（今日から向こう6日間＝7日間まで）
         let forecastStart = max(startDay, today)
-        let maxForecastDate = calendar.date(byAdding: .day, value: 15, to: today) ?? today
+        let maxForecastDate = calendar.date(byAdding: .day, value: 6, to: today) ?? today
         let forecastEnd = min(endDay, maxForecastDate)
         
         print("[WeatherService] fetchMonthly ranges: archive=\(fmt.string(from: archiveStart))~\(fmt.string(from: archiveEnd)), forecast=\(fmt.string(from: forecastStart))~\(fmt.string(from: forecastEnd))")
