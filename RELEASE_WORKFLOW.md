@@ -4,9 +4,10 @@
 
 | ブランチ | 用途 |
 |---|---|
-| `main` | 初回リリースまでの開発履歴。以降は審査提出前の統合ブランチとして使用 |
-| `release` | 審査通過済みビルドのみを置く本番ブランチ。タグで各バージョンを管理 |
+| `main` | 初回リリースまでの開発履歴 |
 | `develop` | 日常の開発はここで行う |
+| `review` | 審査提出専用。却下→修正→再提出の繰り返しはここで行う |
+| `release` | 審査通過済みビルドのみを置く本番ブランチ。タグで各バージョンを管理 |
 
 ---
 
@@ -26,14 +27,14 @@ git push origin develop
 
 ---
 
-## バージョンアップ審査に出す手順
+## 審査に出す手順
 
-### ① developをmainにマージ
+### ① developをreviewにマージ
 
 ```bash
-git checkout main
-git merge develop --no-ff -m "release: v1.x.0 準備"
-git push origin main
+git checkout review
+git merge develop --no-ff -m "review: v1.x.0 審査提出"
+git push origin review
 ```
 
 ### ② Xcodeでビルドを上げる
@@ -46,13 +47,36 @@ git push origin main
 
 ---
 
+## 審査が却下された場合
+
+### ① developで修正
+
+```bash
+git checkout develop
+# 修正をコミット
+git add .
+git commit -m "fix: 審査指摘事項の修正"
+git push origin develop
+```
+
+### ② 再びreviewにマージして再提出
+
+```bash
+git checkout review
+git merge develop --no-ff -m "review: v1.x.0 修正再提出"
+git push origin review
+```
+→ XcodeでArchiveして再アップロード
+
+---
+
 ## 審査が通過した後の手順
 
 ### ① releaseブランチにマージ＆タグ付け
 
 ```bash
 git checkout release
-git merge main --no-ff -m "release: v1.x.0"
+git merge review --no-ff -m "release: v1.x.0"
 git tag v1.x.0
 git push origin release --tags
 ```
@@ -92,5 +116,6 @@ git push origin develop
 ## 注意事項
 
 - `GoogleService-Info.plist` は `.gitignore` で除外済み。**絶対にcommitしないこと**
-- `release` ブランチへの直接pushは禁止。必ず `main` 経由でマージすること
+- `release` ブランチへの直接pushは禁止。必ず `review` 経由でマージすること
+- `review` ブランチは審査提出専用。日常開発は `develop` で行うこと
 - タグは `v{major}.{minor}.{patch}` 形式で統一すること（例: `v1.0.0`, `v1.1.0`）
