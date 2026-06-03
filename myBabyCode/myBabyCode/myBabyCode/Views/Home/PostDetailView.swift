@@ -14,10 +14,15 @@ import FirebaseAuth
 
 struct PostDetailView: View {
     // === 入力パラメータ ===
-    let post: Post                              // 表示対象の投稿データ
+    let post: Post?                             // 表示対象の投稿データ（直接指定時）
+    let postId: String?                          // 投稿ID（Firestoreから取得する場合）
     var isLiked: Bool = false                   // いいね済みかどうか
     var onLike: (() -> Void)? = nil             // いいね押下時のコールバック
     var onDeleted: ((Post) -> Void)? = nil      // 削除完了後のコールバック（オプション）
+    
+    // === postId指定時の状態 ===
+    @State private var fetchedPost: Post? = nil  // Firestoreから取得した投稿
+    @State private var isLoading = false         // ロード中フラグ
 
     // === 環境オブジェクト ===
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -39,31 +44,37 @@ struct PostDetailView: View {
     @State private var editingImageSide: String = "front" // 編集中の画像面
     @State private var isLoadingImage = false       // 画像読み込み中フラグ
 
+    // 実際に表示する投稿データ
+    private var displayPost: Post? {
+        post ?? fetchedPost
+    }
+    
     // postsViewModelから現在のいいね状態を動的に読み取る（シート表示中でもUIが確実に更新されるため）
-    private var postId: String { post.id ?? post.post_id }
-    private var effectiveIsLiked: Bool { postsViewModel.likedPostIds.contains(postId) }
+    private var effectivePostId: String { displayPost?.id ?? displayPost?.post_id ?? postId ?? "" }
+    private var effectiveIsLiked: Bool { postsViewModel.likedPostIds.contains(effectivePostId) }
     private var effectiveLikes: Int {
         // posts配列またはsearchResults配列から最新のlikes_countを取得
-        let currentPost = postsViewModel.posts.first(where: { ($0.id ?? $0.post_id) == postId })
-            ?? postsViewModel.searchResults.first(where: { ($0.id ?? $0.post_id) == postId })
-        return currentPost?.likes_count ?? post.likes_count
+        let currentPost = postsViewModel.posts.first(where: { ($0.id ?? $0.post_id) == effectivePostId })
+            ?? postsViewModel.searchResults.first(where: { ($0.id ?? $0.post_id) == effectivePostId })
+        return currentPost?.likes_count ?? displayPost?.likes_count ?? 0
     }
 
     // 自分の投稿かどうか
     private var isMyPost: Bool {
-        post.user_id == authViewModel.currentUser?.user_id
+        displayPost?.user_id == authViewModel.currentUser?.user_id
     }
 
     // 計算プロパティ: 現在表示中の画像面に対応するタグのみ抽出
     private var visibleItemTags: [PostItemTag] {
         guard showItemTags && itemsLoaded else { return [] }
         let side = currentImageIndex == 0 ? "front" : "back"
-        return (post.item_tags ?? []).filter { $0.image_side == side }
+        return (displayPost?.item_tags ?? []).filter { $0.image_side == side }
     }
 
     // 計算プロパティ: frontとbackの画像URLを配列化
     private var imageURLs: [String] {
-        [post.image_url_front, post.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
+        guard let p = displayPost else { return [] }
+        return [p.image_url_front, p.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
     }
 
     private let screenW: CGFloat = UIScreen.main.bounds.width
@@ -109,100 +120,131 @@ struct PostDetailView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Photo carousel
-                    if imageURLs.isEmpty {
-                        RoundedRectangle(cornerRadius: 0)
-                            .fill(Color.ecruBackground)
-                            .frame(height: UIScreen.main.bounds.width)
-                            .overlay(
-                                Image(systemName: "photo")
-                                    .font(.system(size: 48))
-                                    .foregroundColor(.secondary.opacity(0.4))
-                            )
+                    // ロード中または投稿データがない場合
+                    if isLoading {
+                        VStack(spacing: 20) {
+                            Spacer().frame(height: 100)
+                            ProgressView()
+                            Text("読み込み中...")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 300)
+                    } else if displayPost == nil {
+                        VStack(spacing: 20) {
+                            Spacer().frame(height: 100)
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 48))
+                                .foregroundColor(.secondary)
+                            Text("投稿が見つかりません")
+                                .font(.system(size: 16))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 300)
                     } else {
-                        imageCarousel
-                    }
+                        // 投稿データ表示
+                        let p = displayPost!
+                        
+                        // Photo carousel
+                        if imageURLs.isEmpty {
+                            RoundedRectangle(cornerRadius: 0)
+                                .fill(Color.ecruBackground)
+                                .frame(height: UIScreen.main.bounds.width)
+                                .overlay(
+                                    Image(systemName: "photo")
+                                        .font(.system(size: 48))
+                                        .foregroundColor(.secondary.opacity(0.4))
+                                )
+                        } else {
+                            imageCarousel
+                        }
 
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Poster info + Like button
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(post.posterDisplayName ?? "名前未設定")
-                                    .font(.system(size: 15, weight: .bold))
-                                HStack(spacing: 6) {
-                                    if let childName = post.posterChildAgeName, !childName.isEmpty {
-                                        Text(childName)
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.secondary)
-                                        Text("・")
+                        VStack(alignment: .leading, spacing: 20) {
+                            // Poster info + Like button
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(p.posterDisplayName ?? "名前未設定")
+                                        .font(.system(size: 15, weight: .bold))
+                                    HStack(spacing: 6) {
+                                        if let childName = p.posterChildAgeName, !childName.isEmpty {
+                                            Text(childName)
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.secondary)
+                                            Text("・")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Text(ageLabel(months: p.child_age_months))
                                             .font(.system(size: 12))
                                             .foregroundColor(.secondary)
                                     }
-                                    Text(ageLabel(months: post.child_age_months))
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
                                 }
-                            }
-                            Spacer()
-                            // Like button
-                            Button {
-                                onLike?()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: effectiveIsLiked ? "heart.fill" : "heart")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(effectiveIsLiked ? .red : .gray)
-                                    Text("\(effectiveLikes)")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.secondary)
+                                Spacer()
+                                // Like button
+                                Button {
+                                    onLike?()
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: effectiveIsLiked ? "heart.fill" : "heart")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(effectiveIsLiked ? .red : .gray)
+                                        Text("\(effectiveLikes)")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
-                        }
 
-                        // Weather / Temp
-                        let wt = WeatherType(rawValue: post.weather_type)
-                        HStack(spacing: 8) {
-                            Label(wt?.label ?? "", systemImage: wt?.sfSymbol ?? "cloud.sun")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.blue)
-                            Spacer()
-                            Text("最高 \(Int(post.temp_max))℃  最低 \(Int(post.temp_min))℃")
+                            // Weather / Temp
+                            let wt = WeatherType(rawValue: p.weather_type)
+                            HStack(spacing: 8) {
+                                Label(wt?.label ?? "", systemImage: wt?.sfSymbol ?? "cloud.sun")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                Spacer()
+                                Text("最高 \(Int(p.temp_max))℃  最低 \(Int(p.temp_min))℃")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(12)
+                            .background(Color.blue.opacity(0.07))
+                            .cornerRadius(12)
+
+                            // Region
+                            let region: String = {
+                                guard let idx = Int(p.region_code), idx >= 1, idx <= prefectures.count else { return "非公表" }
+                                return prefectures[idx - 1]
+                            }()
+                            Label(region, systemImage: "mappin.and.ellipse")
                                 .font(.system(size: 13))
                                 .foregroundColor(.secondary)
-                        }
-                        .padding(12)
-                        .background(Color.blue.opacity(0.07))
-                        .cornerRadius(12)
 
-                        // Region
-                        let region: String = {
-                            guard let idx = Int(post.region_code), idx >= 1, idx <= prefectures.count else { return "非公表" }
-                            return prefectures[idx - 1]
-                        }()
-                        Label(region, systemImage: "mappin.and.ellipse")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
+                            // Description
+                            if !p.description.isEmpty {
+                                Text(p.description)
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.primary)
+                            }
 
-                        // Description
-                        if !post.description.isEmpty {
-                            Text(post.description)
-                                .font(.system(size: 15))
-                                .foregroundColor(.primary)
+                            // Items
+                            if itemsLoaded && !postItems.isEmpty {
+                                itemsSection
+                            }
                         }
+                        .padding(20)
 
-                        // Items
-                        if itemsLoaded && !postItems.isEmpty {
-                            itemsSection
-                        }
+                        // バナー広告（設定画面からサブスク登録で非表示可）
+                        AdBannerView()
                     }
-                    .padding(20)
-
-                    // バナー広告（設定画面からサブスク登録で非表示可）
-                    AdBannerView()
                 }
             }
-            .task { await loadItems() }
+            .task { 
+                await fetchPostIfNeeded()
+                await loadItems()
+            }
             .navigationTitle("投稿詳細")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -232,7 +274,7 @@ struct PostDetailView: View {
             .sheet(isPresented: $showStampEditor, onDismiss: {
                 editingImage = nil
             }) {
-                if let img = editingImage {
+                if let img = editingImage, let p = displayPost {
                     PhotoEditorView(
                         image: img,
                         imageSide: editingImageSide,
@@ -244,18 +286,19 @@ struct PostDetailView: View {
                                 await updateStamps(stamps: stamps)
                             }
                         },
-                        existingStamps: post.stamps?.filter { $0.image_side == editingImageSide } ?? []
+                        existingStamps: p.stamps?.filter { $0.image_side == editingImageSide } ?? []
                     )
                 }
             }
             .alert("投稿を削除", isPresented: $showDeleteConfirm) {
                 Button("削除", role: .destructive) {
                     Task {
+                        guard let p = displayPost else { return }
                         isDeleting = true
-                        let success = await postsViewModel.deletePost(post)
+                        let success = await postsViewModel.deletePost(p)
                         isDeleting = false
                         if success {
-                            onDeleted?(post)
+                            onDeleted?(p)
                             dismiss()
                         }
                     }
@@ -277,7 +320,7 @@ struct PostDetailView: View {
 
             ForEach(postItems.indices, id: \.self) { idx in
                 let item = postItems[idx]
-                let tags = (post.item_tags ?? []).filter { $0.item_index == idx }
+                let tags = (displayPost?.item_tags ?? []).filter { $0.item_index == idx }
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center) {
@@ -333,15 +376,36 @@ struct PostDetailView: View {
 
     // MARK: - Helpers
 
+    // Firestoreから投稿を取得（postId指定時）
+    private func fetchPostIfNeeded() async {
+        guard post == nil, let pid = postId else { return }
+        isLoading = true
+        defer { isLoading = false }
+        
+        let db = Firestore.firestore()
+        do {
+            let doc = try await db.collection("posts").document(pid).getDocument()
+            if let p = try? doc.data(as: Post.self) {
+                fetchedPost = p
+            }
+        } catch {
+            print("[PostDetailView] Failed to fetch post: \(error)")
+        }
+    }
+    
     private func loadItems() async {
-        let postId = post.id ?? post.post_id
-        guard !postId.isEmpty else {
+        guard let p = displayPost else {
+            itemsLoaded = true
+            return
+        }
+        let pid = p.id ?? p.post_id
+        guard !pid.isEmpty else {
             itemsLoaded = true
             return
         }
         let db = Firestore.firestore()
         do {
-            let snap = try await db.collection("posts").document(postId).collection("items")
+            let snap = try await db.collection("posts").document(pid).collection("items")
                 .order(by: "item_id")
                 .getDocuments()
             postItems = snap.documents.compactMap { try? $0.data(as: PostItem.self) }
@@ -364,7 +428,7 @@ struct PostDetailView: View {
         isLoadingImage = true
         defer { isLoadingImage = false }
 
-        let imageUrl = currentImageIndex == 0 ? post.image_url_front : post.image_url_back
+        let imageUrl = currentImageIndex == 0 ? displayPost?.image_url_front : displayPost?.image_url_back
         let side = currentImageIndex == 0 ? "front" : "back"
 
         guard let urlString = imageUrl, let url = URL(string: urlString) else {
@@ -388,14 +452,15 @@ struct PostDetailView: View {
     // 目的: 編集したスタンプをFirestoreに保存
     // =============================================================================
     private func updateStamps(stamps: [PostStamp]) async {
-        let postId = post.id ?? post.post_id
-        guard !postId.isEmpty else { return }
+        guard let p = displayPost else { return }
+        let pid = p.id ?? p.post_id
+        guard !pid.isEmpty else { return }
 
         let db = Firestore.firestore()
-        let postRef = db.collection("posts").document(postId)
+        let postRef = db.collection("posts").document(pid)
 
         // 既存のスタンプから、編集対象面以外のスタンプを保持
-        let otherSideStamps = post.stamps?.filter { $0.image_side != editingImageSide } ?? []
+        let otherSideStamps = p.stamps?.filter { $0.image_side != editingImageSide } ?? []
         let allStamps = otherSideStamps + stamps
 
         let stampData = allStamps.map { stamp -> [String: Any] in
@@ -424,7 +489,7 @@ struct PostDetailView: View {
     private func detailImageSlide(uiImage: UIImage, idx: Int, screenW: CGFloat) -> some View {
         let dispH = screenW * uiImage.size.height / uiImage.size.width
         let side = idx == 0 ? "front" : "back"
-        let tags: [PostItemTag] = showItemTags ? (post.item_tags ?? []).filter { $0.image_side == side } : []
+        let tags: [PostItemTag] = showItemTags ? (displayPost?.item_tags ?? []).filter { $0.image_side == side } : []
         return ZStack(alignment: .topLeading) {
             Image(uiImage: uiImage)
                 .resizable()
