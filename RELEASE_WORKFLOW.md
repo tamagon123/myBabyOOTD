@@ -1,35 +1,56 @@
 # リリース・開発運用手順書
 
-## ブランチ構成
+## ブランチの種類（4つ）
 
-| ブランチ | 用途 |
+アプリのコードを4つの箱に分けて管理しています。
+
+| ブランチ | 何を置く箱か |
 |---|---|
-| `main` | 初回リリースまでの開発履歴 |
-| `develop` | 日常の開発はここで行う |
-| `review` | 審査提出専用。却下→修正→再提出の繰り返しはここで行う |
-| `release` | 審査通過済みビルドのみを置く本番ブランチ。タグで各バージョンを管理 |
+| `main` | 初回リリースまでの履歴（もう触らない） |
+| `develop` | **普段の開発。いつもここで作業する** |
+| `review` | 審査に出す時だけ使う箱 |
+| `release` | 審査が通ったコードだけを置く箱 |
 
----
-
-## 日常開発のフロー
-
-```bash
-# developブランチで作業
-git checkout develop
-
-# 変更をコミット
-git add .
-git commit -m "feat: xxx機能追加"
-
-# GitHubにpush
-git push origin develop
+```
+開発中 → develop → 審査に出す → review → 審査通過 → release
 ```
 
 ---
 
-## 審査に出す手順
+## 普段の作業（いつもこれ）
 
-### ① developをreviewにマージ
+毎日コードを書いて保存する時は、**いつも `develop` ブランチ**で行います。
+
+```bash
+# ① 自分が develop ブランチにいることを確認
+git branch
+
+# ② 変更を保存（add → commit → push の3回）
+git add .
+git commit -m "〇〇を修正"
+git push origin develop
+```
+
+**「今どのブランチにいるか？」を確認するコマンド**
+```bash
+git branch
+```
+→ `* develop` と表示されていればOKです。
+
+---
+
+## 審査に出す時
+
+### ① まず develop で全ての変更を commit & push する
+
+```bash
+git checkout develop
+git add .
+git commit -m "審査提出用"
+git push origin develop
+```
+
+### ② reviewブランチに移動して、developの内容を取り込む
 
 ```bash
 git checkout review
@@ -37,7 +58,7 @@ git merge develop --no-ff -m "review: v1.x.0 審査提出"
 git push origin review
 ```
 
-### ② Xcodeでビルドを上げる
+### ③ Xcodeでアーカイブを作成してアップロード
 
 1. Xcode → プロジェクト設定 → `Version` を更新（例: 1.1.0）
 2. `Build Number` を更新（例: 2）
@@ -47,32 +68,33 @@ git push origin review
 
 ---
 
-## 審査が却下された場合
+## 審査が却下された時
 
-### ① developで修正
+### ① developに戻って修正する
 
 ```bash
 git checkout develop
-# 修正をコミット
+# コードを修正
 git add .
-git commit -m "fix: 審査指摘事項の修正"
+git commit -m "fix: 審査指摘の修正"
 git push origin develop
 ```
 
-### ② 再びreviewにマージして再提出
+### ② 再びreviewに送って再提出
 
 ```bash
 git checkout review
 git merge develop --no-ff -m "review: v1.x.0 修正再提出"
 git push origin review
 ```
-→ XcodeでArchiveして再アップロード
+
+→ XcodeでArchiveし直して、App Store Connectに再アップロード
 
 ---
 
-## 審査が通過した後の手順
+## 審査が通過した時
 
-### ① releaseブランチにマージ＆タグ付け
+### ① reviewの内容をreleaseに送る
 
 ```bash
 git checkout release
@@ -81,13 +103,26 @@ git tag v1.x.0
 git push origin release --tags
 ```
 
-### ② developを最新に同期
+### ② releaseの内容をdevelopにも反映する
 
 ```bash
 git checkout develop
 git merge release
 git push origin develop
 ```
+
+---
+
+## よく使うコマンドまとめ
+
+| やりたいこと | コマンド |
+|---|---|
+| 今どのブランチ？ | `git branch` |
+| developに移動 | `git checkout develop` |
+| 変更を保存（add・commit・push） | `git add .` → `git commit -m "コメント"` → `git push origin develop` |
+| reviewに移動 | `git checkout review` |
+| developの内容をreviewに取り込む | `git checkout review` → `git merge develop` → `git push origin review` |
+| reviewの内容をreleaseに取り込む | `git checkout release` → `git merge review` → `git push origin release` |
 
 ---
 
@@ -99,23 +134,18 @@ git push origin develop
 
 ---
 
-## AdMob 本番確認チェックリスト（リリース前）
+## リリース前チェックリスト
 
-- [ ] `AdBannerView.swift` の `bannerAdUnitId` が本番ID（`ca-app-pub-1810074247562384/5573930888`）になっているか
-- [ ] `Info.plist` の `GADApplicationIdentifier` が本番ID（`ca-app-pub-1810074247562384~7190264881`）になっているか
+### AdMob（広告）
+- [ ] `AdBannerView.swift` の `bannerAdUnitId` が本番IDになっている
 
-## App Store Connect チェックリスト（審査提出前）
+### App Store Connect
+- [ ] バージョン番号・ビルド番号を更新した
+- [ ] スクリーンショットをアップロードした
+- [ ] プライバシーポリシーURLが有効
+- [ ] App内購入をバージョンに紐付けた
+- [ ] テストアカウントを入力した
 
-- [ ] バージョン番号・ビルド番号を更新したか
-- [ ] スクリーンショットをアップロードしたか（6.5インチ or 6.7インチ必須）
-- [ ] プライバシーポリシーURLが有効か
-- [ ] App内購入（プレミアムプラン）をバージョンに紐付けたか
-- [ ] テストアカウント（ユーザー名・パスワード）を入力したか
-- [ ] アプリのプライバシー設定が完了しているか
-
-## 注意事項
-
-- `GoogleService-Info.plist` は `.gitignore` で除外済み。**絶対にcommitしないこと**
-- `release` ブランチへの直接pushは禁止。必ず `review` 経由でマージすること
-- `review` ブランチは審査提出専用。日常開発は `develop` で行うこと
-- タグは `v{major}.{minor}.{patch}` 形式で統一すること（例: `v1.0.0`, `v1.1.0`）
+### 注意
+- `GoogleService-Info.plist` は `.gitignore` で除外済み。**commitしないこと**
+- 普段は必ず `develop` ブランチで作業すること
