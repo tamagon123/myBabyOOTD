@@ -220,12 +220,13 @@ struct ProfileSetupView: View {
             .sheet(isPresented: $showAvatarPicker) {
                 AvatarPickerView(selectedAvatarId: $avatarId, isPresented: $showAvatarPicker)
             }
-            // 使い方ページ表示（初回登録時）
+            // 使い方ページ表示（初回登録時のみ）
             .sheet(isPresented: $showAppGuide) {
                 NavigationView {
                     AppGuideView(
                         isFirstLaunch: true,
                         onComplete: {
+                            UserDefaults.standard.set(true, forKey: "hasSeenAppGuide")
                             showAppGuide = false
                             dismiss()
                         }
@@ -428,8 +429,12 @@ struct ProfileSetupView: View {
                 children: children
             )
             if success {
-                // プロフィール設定完了後、使い方ページを表示
-                showAppGuide = true
+                // プロフィール設定完了後、初回のみ使い方ページを表示
+                if UserDefaults.standard.bool(forKey: "hasSeenAppGuide") == false {
+                    showAppGuide = true
+                } else {
+                    dismiss()
+                }
             } else {
                 showError = true
             }
