@@ -37,13 +37,14 @@ async function getFcmToken(uid) {
 // ─────────────────────────────────────────────
 // ヘルパー: 通知をFirestoreに保存する
 // ─────────────────────────────────────────────
-async function saveNotification(userId, type, title, body, relatedId) {
+async function saveNotification(userId, type, title, body, relatedId, postId) {
     const docRef = await db.collection("notifications").add({
         user_id: userId,
         type,
         title,
         body,
         related_id: relatedId !== null && relatedId !== void 0 ? relatedId : null,
+        post_id: postId !== null && postId !== void 0 ? postId : null,
         is_read: false,
         created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -79,7 +80,7 @@ exports.onPostCreated = functions
         const token = await getFcmToken(followerId);
         if (!token)
             return;
-        await saveNotification(followerId, "new_post", "新しい投稿", `${authorName}さんが投稿しました`, authorId);
+        await saveNotification(followerId, "new_post", "新しい投稿", `${authorName}さんが投稿しました`, authorId, snap.id);
         await sendPush(token, "新しい投稿", `${authorName}さんが投稿しました`, { type: "new_post", post_id: snap.id, author_id: authorId });
     });
     await Promise.all(sendTasks);
@@ -111,7 +112,7 @@ exports.onLikeCreated = functions
     const token = await getFcmToken(postOwnerId);
     if (!token)
         return;
-    await saveNotification(postOwnerId, "like", "いいね！", `${likerName}さんがあなたの投稿にいいねしました`, likerId);
+    await saveNotification(postOwnerId, "like", "いいね！", `${likerName}さんがあなたの投稿にいいねしました`, likerId, postId);
     await sendPush(token, "いいね！", `${likerName}さんがあなたの投稿にいいねしました`, { type: "like", post_id: postId, liker_id: likerId });
 });
 // =============================================================================

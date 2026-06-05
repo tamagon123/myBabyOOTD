@@ -22,10 +22,15 @@ struct AuthView: View {
     @State private var password: String = ""               // パスワード入力値
     @State private var authMode: AuthMode = .login       // 現在のモード（ログイン/新規登録）
     @State private var showResetPassword: Bool = false   // パスワードリセットアラートの表示状態
+    @State private var agreedToTerms: Bool = false       // 利用規約同意チェックボックス状態
+    @State private var showTerms: Bool = false           // 利用規約シート表示フラグ
+    @State private var showPrivacy: Bool = false         // プライバシーポリシーシート表示フラグ
 
-    // 計算プロパティ: メールとパスワードが空でないか（送信ボタンの有効化判定）
+    // 計算プロパティ: メールとパスワードが空でないか＋新規登録時は利用規約同意必須
     private var canSubmit: Bool {
-        !email.isEmpty && !password.isEmpty
+        guard !email.isEmpty && !password.isEmpty else { return false }
+        if authMode == .signUp { return agreedToTerms }
+        return true
     }
 
     // =============================================================================
@@ -64,7 +69,7 @@ struct AuthView: View {
 
                         if authMode == .signUp {
                             Text("新規アカウントを作成")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -83,13 +88,13 @@ struct AuthView: View {
                                     ProgressView().tint(.white)
                                 } else {
                                     Text(authMode == .login ? "ログイン" : "アカウントを作成")
-                                        .font(.system(size: 17, weight: .bold))
+                                        .font(.appFont(.bold, size: 17))
                                 }
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 54)
-                            .background(Color.accentRed)
+                            .background(canSubmit ? Color.accentRed : Color.secondary.opacity(0.4))
                             .cornerRadius(16)
                         }
                         .disabled(!canSubmit || authViewModel.isLoading)
@@ -114,16 +119,58 @@ struct AuthView: View {
                             authViewModel.successMessage = nil
                         }) {
                             Text(authMode == .login ? "アカウントを作成する" : "既存アカウントでログイン")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.appFont(.medium, size: 14))
                                 .foregroundColor(.accentRed)
                         }
 
                         if authMode == .login {
                             Button(action: { showResetPassword = true }) {
                                 Text("パスワードを忘れた場合")
-                                    .font(.system(size: 13))
+                                    .font(.appFont(.regular, size: 13))
                                     .foregroundColor(.secondary)
                             }
+                        }
+
+                        if authMode == .signUp {
+                            HStack(alignment: .top, spacing: 10) {
+                                Button {
+                                    agreedToTerms.toggle()
+                                } label: {
+                                    Image(systemName: agreedToTerms ? "checkmark.square.fill" : "square")
+                                        .font(.appFont(.regular, size: 20))
+                                        .foregroundColor(agreedToTerms ? .accentRed : .secondary)
+                                }
+                                .buttonStyle(.plain)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 0) {
+                                        Button { showTerms = true } label: {
+                                            Text("利用規約")
+                                                .font(.appFont(.medium, size: 12))
+                                                .foregroundColor(.accentRed)
+                                                .underline()
+                                        }
+                                        .buttonStyle(.plain)
+                                        Text("および")
+                                            .font(.appFont(.medium, size: 12))
+                                            .foregroundColor(.secondary)
+                                        Button { showPrivacy = true } label: {
+                                            Text("プライバシーポリシー")
+                                                .font(.appFont(.regular, size: 12))
+                                                .foregroundColor(.accentRed)
+                                                .underline()
+                                        }
+                                        .buttonStyle(.plain)
+                                        Text("に同意します")
+                                            .font(.appFont(.regular, size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Text("アカウント作成には同意が必要です")
+                                        .font(.appFont(.regular, size: 10))
+                                        .foregroundColor(agreedToTerms ? .clear : .red.opacity(0.8))
+                                }
+                            }
+                            .padding(.vertical, 4)
                         }
                     }
 
@@ -154,11 +201,11 @@ struct AuthView: View {
                                     .tint(Color(red: 0.26, green: 0.52, blue: 0.96))
                             } else {
                                 Image(systemName: "globe")
-                                    .font(.system(size: 18, weight: .medium))
+                                    .font(.appFont(.medium, size: 18))
                                     .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
                             }
                             Text("Googleでサインイン")
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.appFont(.medium, size: 16))
                                 .foregroundColor(.primary)
                         }
                         .frame(maxWidth: .infinity)
@@ -174,20 +221,54 @@ struct AuthView: View {
 
                     Toggle(isOn: $authViewModel.autoLogin) {
                         Text("次回から自動ログイン")
-                            .font(.system(size: 14))
+                            .font(.appFont(.medium, size: 14))
                             .foregroundColor(.secondary)
                     }
                     .tint(.accentRed)
 
-                    Text("利用することでプライバシーポリシーと利用規約に同意したことになります")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                    HStack(spacing: 0) {
+                        Text("利用することで")
+                            .font(.appFont(.regular, size: 10))
+                            .foregroundColor(.secondary)
+                        Button { showPrivacy = true } label: {
+                            Text("プライバシーポリシー")
+                                .font(.appFont(.regular, size: 10))
+                                .foregroundColor(.accentRed)
+                                .underline()
+                        }
+                        .buttonStyle(.plain)
+                        Text("と")
+                            .font(.appFont(.medium, size: 10))
+                            .foregroundColor(.secondary)
+                        Button { showTerms = true } label: {
+                            Text("利用規約")
+                                .font(.appFont(.regular, size: 10))
+                                .foregroundColor(.accentRed)
+                                .underline()
+                        }
+                        .buttonStyle(.plain)
+                        Text("に同意したことになります")
+                            .font(.appFont(.regular, size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    .multilineTextAlignment(.center)
 
                     Spacer().frame(height: 20)
                 }
                 .padding(.horizontal, 28)
             }
+        }
+        .sheet(isPresented: $showTerms) {
+            NavigationView {
+                TermsOfServiceView()
+            }
+            .navigationViewStyle(StackNavigationViewStyle())
+        }
+        .sheet(isPresented: $showPrivacy) {
+            NavigationView {
+                PrivacyPolicyView()
+            }
+            .navigationViewStyle(StackNavigationViewStyle())
         }
         .alert("パスワードリセット", isPresented: $showResetPassword) {
             TextField("メールアドレス", text: $email)

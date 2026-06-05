@@ -71,13 +71,13 @@ struct PublicCalendarView: View {
                 displayedMonth = Calendar.current.date(byAdding: .month, value: -1, to: displayedMonth) ?? displayedMonth
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.appFont(.medium, size: 18))
                     .foregroundColor(.accentRed)
                     .padding(10)
             }
             Spacer()
             Text(monthTitle)
-                .font(.system(size: 18, weight: .bold))
+                .font(.appFont(.bold, size: 18))
             Spacer()
             Button {
                 let next = Calendar.current.date(byAdding: .month, value: 1, to: displayedMonth) ?? displayedMonth
@@ -85,7 +85,7 @@ struct PublicCalendarView: View {
             } label: {
                 let next = Calendar.current.date(byAdding: .month, value: 1, to: displayedMonth) ?? displayedMonth
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.appFont(.medium, size: 18))
                     .foregroundColor(next > Date() ? Color(.systemGray4) : .accentRed)
                     .padding(10)
             }
@@ -104,7 +104,7 @@ struct PublicCalendarView: View {
         return HStack(spacing: 0) {
             ForEach(0..<7, id: \.self) { i in
                 Text(labels[i])
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.appFont(.medium, size: 12))
                     .foregroundColor(i == 0 ? .accentRed : i == 6 ? .accentBlue : Color(.systemGray))
                     .frame(maxWidth: .infinity)
             }
@@ -160,7 +160,7 @@ struct PublicCalendarView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(selectedDayTitle(date))
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.appFont(.bold, size: 16))
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -170,7 +170,7 @@ struct PublicCalendarView: View {
             if let posts = postsByDate[key], !posts.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("この日の投稿 \(posts.count)件")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.appFont(.medium, size: 14))
                         .foregroundColor(.primary)
                         .padding(.horizontal, 16)
                     ForEach(posts, id: \.post_id) { post in
@@ -186,17 +186,17 @@ struct PublicCalendarView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             if let w = entry.weather_type.flatMap({ WeatherType(rawValue: $0) }) {
                                 HStack(spacing: 4) {
-                                    Text(w.emoji).font(.system(size: 16))
+                                    Text(w.emoji).font(.appFont(.regular, size: 16))
                                     if let max = entry.temp_max, let min = entry.temp_min {
                                         Text("\(Int(max.rounded()))° / \(Int(min.rounded()))°")
-                                            .font(.system(size: 13))
+                                            .font(.appFont(.regular, size: 13))
                                             .foregroundColor(Color(.systemGray))
                                     }
                                 }
                             }
                             if !entry.comment.isEmpty {
                                 Text(entry.comment)
-                                    .font(.system(size: 14))
+                                    .font(.appFont(.regular, size: 14))
                                     .lineLimit(4)
                                     .foregroundColor(.primary)
                             }
@@ -220,7 +220,7 @@ struct PublicCalendarView: View {
                 .padding(.horizontal, 12)
             } else {
                 Text("この日の記録はありません")
-                    .font(.system(size: 13))
+                    .font(.appFont(.regular, size: 13))
                     .foregroundColor(Color(.systemGray))
                     .padding(.horizontal, 16)
             }
@@ -340,14 +340,14 @@ struct PublicCalendarDayCell: View {
                         .frame(width: 32, height: 32)
                 }
                 Text("\(Calendar.current.component(.day, from: date))")
-                    .font(.system(size: 14, weight: isToday ? .bold : .regular))
+                    .font(.appFont(isToday ? .bold : .regular, size: 14))
                     .foregroundColor(dayTextColor)
             }
             .frame(width: 32, height: 32)
 
             if let w = entry?.weather_type.flatMap({ WeatherType(rawValue: $0) }) {
                 Text(w.emoji)
-                    .font(.system(size: 10))
+                    .font(.appFont(.bold, size: 10))
             } else {
                 Color.clear.frame(height: 12)
             }
@@ -355,12 +355,12 @@ struct PublicCalendarDayCell: View {
             HStack(spacing: 4) {
                 if let max = entry?.temp_max {
                     Text("\(Int(max.rounded()))°")
-                        .font(.system(size: 9))
+                        .font(.appFont(.regular, size: 9))
                         .foregroundColor(Color(.systemGray2))
                 }
                 if postCount > 0 {
                     Text("\(postCount)")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.appFont(.regular, size: 9))
                         .foregroundColor(.white)
                         .frame(width: 14, height: 14)
                         .background(Color.accentBlue)

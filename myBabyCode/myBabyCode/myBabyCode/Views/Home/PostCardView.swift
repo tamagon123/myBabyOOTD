@@ -20,7 +20,8 @@ struct PostCardView: View {
 
     // === 内部状態 ===
     @State private var currentImageIndex: Int = 0     // 写真カルーセルの現在表示インデックス
-    @State private var showReportAlert = false        // 通報確認アラートの表示状態
+    @State private var showReportAlert = false        // 通報確認アラートの表示状態（後方互換）
+    @State private var showReportSheet = false        // 通報シート表示フラグ
     @State private var navigateToProfile = false      // プロフィール画面へのナビゲーションフラグ
     @State private var showPostDetail = false         // 投稿詳細シートの表示状態
     @State private var showItemTags = false           // アイテムタグの表示/非表示
@@ -30,6 +31,7 @@ struct PostCardView: View {
     @State private var isFirstImageLoaded: Bool = false  // 初回画像読み込み済みフラグ
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
+    @ObservedObject private var blockService = BlockService.shared
 
     // postsViewModelから現在のいいね状態を動的に読み取る（UIが確実に更新されるため）
     private var postId: String { post.id ?? post.post_id }
@@ -62,6 +64,15 @@ struct PostCardView: View {
     //   6. フッター: いいねボタン＋通報ボタン
     // =============================================================================
     var body: some View {
+        if blockService.isBlocked(post.user_id) {
+            EmptyView()
+        } else {
+            cardContent
+        }
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Card header
             NavigationLink(destination: ProfileView(userId: post.user_id), isActive: $navigateToProfile) {
@@ -86,7 +97,7 @@ struct PostCardView: View {
                                     .scaledToFill()
                             } else {
                                 Image(systemName: "person.fill")
-                                    .font(.system(size: 20))
+                                    .font(.appFont(.regular, size: 20))
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -98,12 +109,12 @@ struct PostCardView: View {
                             // 1行目: 表示名 + グレーのユーザーID + 日記バッジ
                             HStack(spacing: 4) {
                                 Text(post.posterDisplayName ?? "名前未設定")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.appFont(.bold, size: 14))
                                     .foregroundColor(.primary)
                                     .lineLimit(1)
                                 if let uid = post.posterUniqueUserId, !uid.isEmpty {
                                     Text("@\(uid)")
-                                        .font(.system(size: 12))
+                                        .font(.appFont(.medium, size: 12))
                                         .foregroundColor(.secondary)
                                         .lineLimit(1)
                                 }
@@ -111,9 +122,9 @@ struct PostCardView: View {
                                 if post.is_calendar_post == true {
                                     HStack(spacing: 2) {
                                         Image(systemName: "book.closed")
-                                            .font(.system(size: 8))
+                                            .font(.appFont(.regular, size: 8))
                                         Text("日記")
-                                            .font(.system(size: 9, weight: .medium))
+                                            .font(.appFont(.regular, size: 9))
                                     }
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 5)
@@ -140,7 +151,7 @@ struct PostCardView: View {
                                 Text("・\(timeAgo(ts: post.created_at))")
                                     .lineLimit(1)
                             }
-                            .font(.system(size: 11))
+                            .font(.appFont(.regular, size: 11))
                             .foregroundColor(.secondary)
                         }
                     }
@@ -176,7 +187,7 @@ struct PostCardView: View {
                                 Image(systemName: effectiveIsLiked ? "heart.fill" : "heart")
                                     .foregroundColor(effectiveIsLiked ? .pink : .white)
                                 Text("\(effectiveLikes)")
-                                    .font(.system(size: 14, weight: .bold))
+                                    .font(.appFont(.bold, size: 14))
                                     .foregroundColor(effectiveIsLiked ? .pink : .white)
                             }
                             .padding(.horizontal, 10)
@@ -195,7 +206,7 @@ struct PostCardView: View {
                                     Image(systemName: showItemTags ? "tag.fill" : "tag")
                                     Text("アイテム")
                                 }
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.appFont(.bold, size: 11))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
@@ -208,10 +219,10 @@ struct PostCardView: View {
                         Spacer()
 
                         Button {
-                            showReportAlert = true
+                            showReportSheet = true
                         } label: {
                             Label("通報", systemImage: "exclamationmark.triangle")
-                                .font(.system(size: 11))
+                                .font(.appFont(.regular, size: 11))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
@@ -234,7 +245,7 @@ struct PostCardView: View {
             // Description
             if !post.description.isEmpty {
                 Text(post.description)
-                    .font(.system(size: 13))
+                    .font(.appFont(.regular, size: 13))
                     .foregroundColor(.secondary)
                     .lineLimit(3)
                     .padding(.horizontal, 16)
@@ -255,15 +266,18 @@ struct PostCardView: View {
         .shadow(color: .black.opacity(0.04), radius: 12, y: 4)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
-        .alert("この投稿を通報しますか？", isPresented: $showReportAlert) {
-            Button("通報する", role: .destructive, action: onReport)
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("不適切なコンテンツとして報告されます。")
+        .sheet(isPresented: $showReportSheet) {
+            ReportSheetView(
+                targetType: .post,
+                targetId: postId
+            ) {
+                postsViewModel.posts.removeAll { ($0.id ?? $0.post_id) == postId }
+            }
         }
         .sheet(isPresented: $showPostDetail) {
             PostDetailView(
                 post: post,
+                postId: post.id ?? post.post_id,
                 isLiked: effectiveIsLiked,
                 onLike: onLike,
                 onDeleted: { _ in }
@@ -397,11 +411,11 @@ struct PostCardView: View {
             if let item = item {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.custom_name)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.appFont(.medium, size: 11))
                         .foregroundColor(.white)
                         .lineLimit(1)
                     Text(sizeLabel(item.size_value))
-                        .font(.system(size: 10))
+                        .font(.appFont(.regular, size: 10))
                         .foregroundColor(.white.opacity(0.95))
                 }
                 .padding(.horizontal, 8)
@@ -460,7 +474,7 @@ struct PostCardView: View {
             .frame(height: currentImageHeight)
             .overlay(
                 Image(systemName: "photo")
-                    .font(.system(size: 40))
+                    .font(.appFont(.regular, size: 40))
                     .foregroundColor(.secondary.opacity(0.4))
             )
             .padding(.horizontal, 16)
@@ -490,7 +504,7 @@ struct PostCardView: View {
             }
         }()
         return Label("\(Int(post.temp_max))℃ / \(Int(post.temp_min))℃", systemImage: wt?.sfSymbol ?? "cloud.sun")
-            .font(.system(size: 11, weight: .bold))
+            .font(.appFont(.bold, size: 11))
             .foregroundColor(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -575,12 +589,12 @@ struct PostCardView: View {
             ForEach(untaggedItems) { item in
                 HStack(spacing: 8) {
                     Text(item.custom_name)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.appFont(.medium, size: 12))
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     Spacer()
                     Text(sizeLabel(item.size_value))
-                        .font(.system(size: 11))
+                        .font(.appFont(.regular, size: 11))
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -591,7 +605,7 @@ struct PostCardView: View {
                         showPostDetail = true
                     } label: {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.appFont(.medium, size: 11))
                             .foregroundColor(.accentRed)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -613,7 +627,7 @@ struct PostCardView: View {
 private extension View {
     func tagStyle(bg: Color, fg: Color) -> some View {
         self
-            .font(.system(size: 11, weight: .bold))
+            .font(.appFont(.bold, size: 11))
             .foregroundColor(fg)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

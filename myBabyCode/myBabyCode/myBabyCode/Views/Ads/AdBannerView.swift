@@ -80,6 +80,14 @@ struct GADBannerViewRepresentable: UIViewRepresentable {
         banner.adUnitID = adUnitId
         banner.rootViewController = Self.topViewController()
 
+        // テストデバイス設定（シミュレーターは自動的にテストモード）
+        #if DEBUG
+        // デバッグビルド時のテストデバイスID（実機のIDを追加）
+        GADMobileAds.sharedInstance().requestConfiguration.testDeviceIdentifiers = [
+            "f7671d9ea600506b12f1442247a1f6f8"  // iPhone実機
+        ]
+        #endif
+
         // COPPA: child-directed treatment
         let request = GADRequest()
         let extras = GADExtras()

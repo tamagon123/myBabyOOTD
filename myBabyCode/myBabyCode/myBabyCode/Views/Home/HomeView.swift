@@ -61,16 +61,16 @@ struct HomeView: View {
                 if postsViewModel.isSearchActive {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 12))
+                            .font(.appFont(.medium, size: 12))
                             .foregroundColor(.accentRed)
                         Text("検索結果を表示中")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.appFont(.regular, size: 13))
                         Spacer()
                         Button {
                             postsViewModel.clearSearch()
                         } label: {
                             Text("クリア")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.appFont(.medium, size: 13))
                                 .foregroundColor(.accentRed)
                         }
                     }
@@ -90,7 +90,7 @@ struct HomeView: View {
                         }
                     } label: {
                         Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
-                            .font(.system(size: 18))
+                            .font(.appFont(.regular, size: 18))
                             .foregroundColor(.accentRed)
                             .frame(width: 36, height: 36)
                             .background(Color.white)
@@ -113,7 +113,7 @@ struct HomeView: View {
                     Spacer()
                     VStack(spacing: 12) {
                         Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 48))
+                            .font(.appFont(.regular, size: 48))
                             .foregroundColor(.secondary.opacity(0.5))
                         Text("投稿がありません")
                             .foregroundColor(.secondary)
@@ -132,6 +132,7 @@ struct HomeView: View {
             .navigationBarHidden(true)
             // 画面初回表示時に投稿といいねデータを取得
             .task {
+                await BlockService.shared.fetchBlockedUsers()
                 await postsViewModel.fetchPosts(user: authViewModel.currentUser)
                 await postsViewModel.fetchLikedPosts()
             }
@@ -145,6 +146,7 @@ struct HomeView: View {
             .sheet(item: $selectedPost) { post in
                 PostDetailView(
                     post: post,
+                    postId: post.id ?? post.post_id,
                     isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
                     onLike: { Task { await postsViewModel.toggleLike(post: post) } },
                     onDeleted: { _ in }
@@ -200,6 +202,7 @@ struct HomeView: View {
             }
             // Pull-to-refresh: 画面を下に引っ張って更新
             .refreshable {
+                await BlockService.shared.fetchBlockedUsers()
                 await postsViewModel.fetchPosts(user: authViewModel.currentUser)
                 await postsViewModel.fetchLikedPosts()
             }
@@ -261,6 +264,7 @@ struct HomeView: View {
             }
             // Pull-to-refresh: 画面を下に引っ張って更新
             .refreshable {
+                await BlockService.shared.fetchBlockedUsers()
                 await postsViewModel.fetchPosts(user: authViewModel.currentUser)
                 await postsViewModel.fetchLikedPosts()
             }
@@ -302,7 +306,7 @@ struct AppHeaderView: View {
                     Spacer()
                     NavigationLink(destination: SearchView()) {
                         Image(systemName: isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
-                            .font(.system(size: 20))
+                            .font(.appFont(.regular, size: 20))
                             .foregroundColor(.accentRed)
                     }
                 }
@@ -333,7 +337,7 @@ struct TimelineTabBar: View {
                 } label: {
                     VStack(spacing: 4) {
                         Text(tab.rawValue)
-                            .font(.system(size: 13, weight: selected == tab ? .bold : .regular))
+                            .font(.appFont(selected == tab ? .bold : .regular, size: 13))
                             .foregroundColor(selected == tab ? .accentRed : .gray)
                             .padding(.vertical, 8)
                         // 選択中のタブのみ下線（朱色）を表示

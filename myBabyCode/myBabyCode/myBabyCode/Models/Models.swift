@@ -287,6 +287,7 @@ struct AppNotification: Identifiable, Codable {
     var title: String             // 通知タイトル
     var body: String              // 通知本文
     var related_id: String?       // 関連ID（投稿者UID/いいねした人/フォロワー/日付キー）
+    var post_id: String?          // 投稿ID（new_post/like通知用）
     var is_read: Bool             // 既読フラグ
     var created_at: Timestamp     // 作成日時
 }

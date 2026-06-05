@@ -35,7 +35,7 @@ struct ShoppingView: View {
                                 .padding(.top, 40)
                         } else if filteredPortals.isEmpty {
                             Text("リンクがありません")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(.secondary)
                                 .padding(.top, 40)
                         } else {
@@ -137,7 +137,7 @@ struct CategoryChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                .font(.appFont(isSelected ? .medium : .regular, size: 13))
                 .foregroundColor(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -166,7 +166,7 @@ struct PortalLinkCard: View {
                         .frame(width: 60, height: 60)
 
                     Image(systemName: portalIcon)
-                        .font(.system(size: 24))
+                        .font(.appFont(.regular, size: 24))
                         .foregroundColor(portalColor)
                 }
 
@@ -174,12 +174,12 @@ struct PortalLinkCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(portal.title)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.appFont(.medium, size: 15))
                             .foregroundColor(.primary)
 
                         if let badge = portal.badge {
                             Text(badge)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.appFont(.medium, size: 10))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -189,7 +189,7 @@ struct PortalLinkCard: View {
                     }
 
                     Text(portal.description)
-                        .font(.system(size: 12))
+                        .font(.appFont(.medium, size: 12))
                         .foregroundColor(.secondary)
                         .lineLimit(2)
                 }
@@ -198,7 +198,7 @@ struct PortalLinkCard: View {
 
                 // 矢印
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.appFont(.regular, size: 14))
                     .foregroundColor(.secondary)
             }
             .padding(12)

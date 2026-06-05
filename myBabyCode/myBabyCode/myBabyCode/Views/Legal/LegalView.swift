@@ -61,9 +61,9 @@ struct TermsOfServiceView: View {
     private func legalSection(title: String, body: () -> String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 14, weight: .bold))
+                .font(.appFont(.bold, size: 14))
             Text(body())
-                .font(.system(size: 13))
+                .font(.appFont(.regular, size: 13))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -117,9 +117,9 @@ struct PrivacyPolicyView: View {
     private func legalSection(title: String, body: () -> String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 14, weight: .bold))
+                .font(.appFont(.bold, size: 14))
             Text(body())
-                .font(.system(size: 13))
+                .font(.appFont(.regular, size: 13))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

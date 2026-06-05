@@ -46,7 +46,8 @@ async function saveNotification(
   type: string,
   title: string,
   body: string,
-  relatedId?: string
+  relatedId?: string,
+  postId?: string
 ): Promise<string> {
   const docRef = await db.collection("notifications").add({
     user_id: userId,
@@ -54,6 +55,7 @@ async function saveNotification(
     title,
     body,
     related_id: relatedId ?? null,
+    post_id: postId ?? null,
     is_read: false,
     created_at: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -90,7 +92,7 @@ export const onPostCreated = functions
       if (!followerId || followerId === authorId) return;
       const token = await getFcmToken(followerId);
       if (!token) return;
-      await saveNotification(followerId, "new_post", "新しい投稿", `${authorName}さんが投稿しました`, authorId);
+      await saveNotification(followerId, "new_post", "新しい投稿", `${authorName}さんが投稿しました`, authorId, snap.id);
       await sendPush(
         token,
         "新しい投稿",
@@ -130,7 +132,7 @@ export const onLikeCreated = functions
     const token = await getFcmToken(postOwnerId);
     if (!token) return;
 
-    await saveNotification(postOwnerId, "like", "いいね！", `${likerName}さんがあなたの投稿にいいねしました`, likerId);
+    await saveNotification(postOwnerId, "like", "いいね！", `${likerName}さんがあなたの投稿にいいねしました`, likerId, postId);
     await sendPush(
       token,
       "いいね！",

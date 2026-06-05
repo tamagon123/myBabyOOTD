@@ -63,10 +63,6 @@ final class SubscriptionManager: ObservableObject {
     // 目的: StoreKit 2 から商品情報を取得し、価格を UI に反映する
     // =============================================================================
     func loadProduct() async {
-        #if DEBUG
-        if !_isStoreKitTestingAvailable { return }
-        #endif
-
         do {
             let products = try await Product.products(for: [PremiumConfig.productId])
             if let product = products.first {
@@ -86,15 +82,6 @@ final class SubscriptionManager: ObservableObject {
         isPurchasing = true
         defer { isPurchasing = false }
         errorMessage = nil
-
-        // DEBUG ビルドでかつ StoreKit Testing 未設定の場合はモック動作
-        #if DEBUG
-        if !_isStoreKitTestingAvailable {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            setPremium(true)
-            return
-        }
-        #endif
 
         do {
             let products = try await Product.products(for: [PremiumConfig.productId])
@@ -133,14 +120,6 @@ final class SubscriptionManager: ObservableObject {
         isPurchasing = true
         defer { isPurchasing = false }
         errorMessage = nil
-
-        #if DEBUG
-        if !_isStoreKitTestingAvailable {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            errorMessage = "デバッグ環境では復元できません（StoreKit Testing未設定）"
-            return
-        }
-        #endif
 
         do {
             try await AppStore.sync()
@@ -204,22 +183,4 @@ final class SubscriptionManager: ObservableObject {
         }
     }
 
-    // =============================================================================
-    // 【プロパティ】_isStoreKitTestingAvailable
-    // 目的: DEBUG ビルド時に StoreKit Testing（Configuration File）が使えるか判定
-    // 備考: StoreKit Configuration File を設定している場合はモックをスキップして
-    //       実際の StoreKit 2 API を呼び出す
-    // =============================================================================
-    #if DEBUG
-    private var _isStoreKitTestingAvailable: Bool {
-        // StoreKit Testing 環境かどうかを判定
-        // Configuration File を使う場合、processInfo などで判定可能
-        // 簡易判定: シミュレータなら Testing 可能とみなす（実際には SKTestSession 等で確認）
-        #if targetEnvironment(simulator)
-        return true
-        #else
-        return false
-        #endif
-    }
-    #endif
 }

@@ -74,9 +74,9 @@ struct ProfileSetupView: View {
                     // Header
                     VStack(spacing: 8) {
                         Text("プロフィール設定")
-                            .font(.system(size: 24, weight: .bold))
+                            .font(.appFont(.bold, size: 24))
                         Text("アカウント作成を完了するために、以下の情報を入力してください")
-                            .font(.system(size: 13))
+                            .font(.appFont(.regular, size: 13))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
@@ -167,7 +167,7 @@ struct ProfileSetupView: View {
 
                     // Privacy notice
                     Text("※ アバター画像は他のユーザーに公開されます。個人が特定される写真は避けてください。")
-                        .font(.system(size: 11))
+                        .font(.appFont(.regular, size: 11))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 20)
@@ -179,7 +179,7 @@ struct ProfileSetupView: View {
                                 ProgressView().tint(.white)
                             } else {
                                 Text("プロフィールを保存")
-                                    .font(.system(size: 17, weight: .bold))
+                                    .font(.appFont(.bold, size: 17))
                             }
                         }
                         .foregroundColor(.white)
@@ -220,12 +220,13 @@ struct ProfileSetupView: View {
             .sheet(isPresented: $showAvatarPicker) {
                 AvatarPickerView(selectedAvatarId: $avatarId, isPresented: $showAvatarPicker)
             }
-            // 使い方ページ表示（初回登録時）
+            // 使い方ページ表示（初回登録時のみ）
             .sheet(isPresented: $showAppGuide) {
                 NavigationView {
                     AppGuideView(
                         isFirstLaunch: true,
                         onComplete: {
+                            UserDefaults.standard.set(true, forKey: "hasSeenAppGuide")
                             showAppGuide = false
                             dismiss()
                         }
@@ -267,7 +268,7 @@ struct ProfileSetupView: View {
                             .padding(12)
                     } else {
                         Image(systemName: "person.fill")
-                            .font(.system(size: 48))
+                            .font(.appFont(.regular, size: 48))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -278,7 +279,7 @@ struct ProfileSetupView: View {
                 .shadow(radius: 4)
 
                 Text("プレビュー")
-                    .font(.system(size: 11))
+                    .font(.appFont(.regular, size: 11))
                     .foregroundColor(.secondary)
             }
 
@@ -315,7 +316,7 @@ struct ProfileSetupView: View {
                 showImagePicker = true
             } label: {
                 Label("写真ライブラリから選択", systemImage: "photo")
-                    .font(.system(size: 13))
+                    .font(.appFont(.regular, size: 13))
                     .foregroundColor(.accentRed)
             }
 
@@ -347,7 +348,7 @@ struct ProfileSetupView: View {
         VStack(spacing: 16) {
             HStack {
                 Text("子供の情報（任意）")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.appFont(.medium, size: 16))
                 Spacer()
                 Toggle("", isOn: $showChildInput)
                     .tint(.accentRed)
@@ -428,8 +429,12 @@ struct ProfileSetupView: View {
                 children: children
             )
             if success {
-                // プロフィール設定完了後、使い方ページを表示
-                showAppGuide = true
+                // プロフィール設定完了後、初回のみ使い方ページを表示
+                if UserDefaults.standard.bool(forKey: "hasSeenAppGuide") == false {
+                    showAppGuide = true
+                } else {
+                    dismiss()
+                }
             } else {
                 showError = true
             }
@@ -450,7 +455,7 @@ struct AvatarPickerView: View {
                     if !avatarImageNames.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("キャラクター")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.appFont(.medium, size: 16))
                                 .padding(.horizontal)
 
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 80))], spacing: 16) {
@@ -465,7 +470,7 @@ struct AvatarPickerView: View {
                     // Emoji Avatars Section
                     VStack(alignment: .leading, spacing: 12) {
                         Text("アイコン")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.appFont(.medium, size: 16))
                             .padding(.horizontal)
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 60))], spacing: 12) {
@@ -521,7 +526,7 @@ struct AvatarPickerView: View {
             isPresented = false
         } label: {
             Text(emoji)
-                .font(.system(size: 40))
+                .font(.appFont(.regular, size: 40))
                 .frame(width: 60, height: 60)
                 .background(Color.white)
                 .cornerRadius(12)

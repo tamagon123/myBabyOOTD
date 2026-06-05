@@ -36,12 +36,12 @@ struct AffiliateLinkRow: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12))
+                        .font(.appFont(.medium, size: 12))
                     Text(linkLabel)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.appFont(.regular, size: 12))
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11))
+                        .font(.appFont(.regular, size: 11))
                         .foregroundColor(.secondary)
                 }
                 .foregroundColor(.primary)
@@ -93,14 +93,14 @@ struct AffiliateTimelineCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     Image(systemName: "tag.fill")
-                        .font(.system(size: 11))
+                        .font(.appFont(.medium, size: 11))
                         .foregroundColor(.accentRed)
                     Text("「\(keyword)」を探す")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.appFont(.regular, size: 13))
                         .foregroundColor(.primary)
                     Spacer()
                     Text("PR")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.appFont(.bold, size: 10))
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -113,12 +113,12 @@ struct AffiliateTimelineCard: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 13))
+                            .font(.appFont(.medium, size: 13))
                         Text(cardLabel)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.appFont(.regular, size: 13))
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
+                            .font(.appFont(.regular, size: 12))
                     }
                     .foregroundColor(.primary)
                     .padding(.horizontal, 14)

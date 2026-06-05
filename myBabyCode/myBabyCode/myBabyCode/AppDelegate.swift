@@ -40,6 +40,16 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         UNUserNotificationCenter.current().delegate = self
         Messaging.messaging().delegate = self
 
+        // 通知許可をリクエストし、許可後にリモート通知を登録
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            if let error = error {
+                print("[Push] Authorization request error: \(error.localizedDescription)")
+            }
+            DispatchQueue.main.async {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        }
+
         // AdMob 初期化と ATT 許可要求（非同期）
         requestATTAndInitializeAdMob()
 

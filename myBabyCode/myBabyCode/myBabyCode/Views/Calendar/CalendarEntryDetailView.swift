@@ -141,10 +141,10 @@ struct CalendarEntryDetailView: View {
             .overlay(
                 VStack(spacing: 12) {
                     Image(systemName: "photo")
-                        .font(.system(size: 48))
+                        .font(.appFont(.regular, size: 48))
                         .foregroundColor(.secondary.opacity(0.4))
                     Text("写真はありません")
-                        .font(.system(size: 14))
+                        .font(.appFont(.regular, size: 14))
                         .foregroundColor(.secondary)
                 }
             )
@@ -155,7 +155,7 @@ struct CalendarEntryDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             // 日付
             Text(displayDate)
-                .font(.system(size: 18, weight: .bold))
+                .font(.appFont(.bold, size: 18))
                 .foregroundColor(.primary)
 
             // 天気・気温バッジ
@@ -164,9 +164,9 @@ struct CalendarEntryDetailView: View {
                 if let wt = weatherType {
                     HStack(spacing: 4) {
                         Image(systemName: wt.sfSymbol)
-                            .font(.system(size: 14))
+                            .font(.appFont(.regular, size: 14))
                         Text(wt.rawValue)
-                            .font(.system(size: 13))
+                            .font(.appFont(.regular, size: 13))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -179,13 +179,13 @@ struct CalendarEntryDetailView: View {
                 if let max = entry.temp_max, let min = entry.temp_min {
                     HStack(spacing: 4) {
                         Text("\(Int(max.rounded()))°")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.appFont(.medium, size: 13))
                             .foregroundColor(.red.opacity(0.7))
                         Text("/")
-                            .font(.system(size: 13))
+                            .font(.appFont(.medium, size: 13))
                             .foregroundColor(.secondary)
                         Text("\(Int(min.rounded()))°")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.appFont(.regular, size: 13))
                             .foregroundColor(.blue.opacity(0.7))
                     }
                     .padding(.horizontal, 10)
@@ -203,11 +203,11 @@ struct CalendarEntryDetailView: View {
         if !entry.comment.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("コメント")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.appFont(.bold, size: 14))
                     .foregroundColor(.secondary)
 
                 Text(entry.comment)
-                    .font(.system(size: 15))
+                    .font(.appFont(.regular, size: 15))
                     .foregroundColor(.primary)
                     .lineSpacing(4)
                     .frame(maxWidth: .infinity, alignment: .leading)

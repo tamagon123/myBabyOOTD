@@ -23,6 +23,12 @@ struct MainTabView: View {
     @State private var showNewPost = false                     // 新規投稿シートの表示状態
     @State private var profileRefreshId = UUID()               // プロフィールViewの強制再描画用ID
     @State private var unreadCount: Int = 0                    // 未読通知数
+    
+    // === 通知タップによる詳細画面表示用 ===
+    @State private var showPostDetail = false                  // 投稿詳細画面表示
+    @State private var targetPostId: String? = nil            // 表示対象の投稿ID
+    @State private var showProfile = false                      // プロフィール画面表示
+    @State private var targetUserId: String? = nil             // 表示対象のユーザーID
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -109,7 +115,7 @@ struct MainTabView: View {
                 refreshUnreadCount()
             }
         }
-        // プッシュ通知タップ時に対応するタブへ遷移
+        // プッシュ通知タップ時に対応する画面へ遷移
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NotificationTapped"))) { notification in
             guard let userInfo = notification.userInfo,
                   let type = userInfo["type"] as? String else { return }
@@ -117,14 +123,55 @@ struct MainTabView: View {
             print("[MainTabView] Notification tapped: type=\(type)")
 
             switch type {
-            case "new_post", "like":
-                selectedTab = 0  // ホーム
+            case "new_post":
+                // フォロー中のアカウントの新規投稿 → 該当投稿の詳細画面へ
+                if let postId = userInfo["post_id"] as? String {
+                    targetPostId = postId
+                    showPostDetail = true
+                } else {
+                    selectedTab = 0  // 投稿IDがない場合はホームへ
+                }
+            case "like":
+                // いいね通知 → 該当投稿の詳細画面へ
+                if let postId = userInfo["post_id"] as? String {
+                    targetPostId = postId
+                    showPostDetail = true
+                } else {
+                    selectedTab = 0  // 投稿IDがない場合はホームへ
+                }
             case "follow":
-                selectedTab = 3  // マイページ
+                // フォローされた通知 → フォローした相手のプロフィールへ
+                if let followerId = userInfo["follower_id"] as? String {
+                    targetUserId = followerId
+                    showProfile = true
+                } else {
+                    selectedTab = 3  // フォロワーIDがない場合はマイページへ
+                }
             case "diary_reminder":
                 selectedTab = 1  // カレンダー
             default:
                 break
+            }
+        }
+        // 投稿詳細画面（通知タップ時）
+        .sheet(isPresented: $showPostDetail) {
+            if let postId = targetPostId {
+                NavigationView {
+                    PostDetailView(post: nil, postId: postId)
+                        .environmentObject(authViewModel)
+                }
+                .navigationViewStyle(StackNavigationViewStyle())
+            }
+        }
+        // プロフィール画面（通知タップ時：フォローされた相手）
+        .sheet(isPresented: $showProfile) {
+            if let userId = targetUserId {
+                NavigationView {
+                    ProfileView(userId: userId)
+                        .environmentObject(authViewModel)
+                        .environmentObject(postsViewModel)
+                }
+                .navigationViewStyle(StackNavigationViewStyle())
             }
         }
         // 任意のタブへの遷移（カレンダーなどからの検索結果表示用）
@@ -182,7 +229,7 @@ struct BottomNavBar: View {
                         .shadow(color: Color.accentRed.opacity(0.3), radius: 8, y: 4)
                     Image(systemName: "plus")
                         .foregroundColor(.white)
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.appFont(.bold, size: 24))
                 }
             }
             .offset(y: -12)
@@ -218,9 +265,9 @@ struct BottomNavBar: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 22))
+                    .font(.appFont(.regular, size: 22))
                 Text(label)
-                    .font(.system(size: 10))
+                    .font(.appFont(.regular, size: 10))
             }
             // 選択中のタブは朱色、未選択はグレー
             .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
@@ -235,15 +282,15 @@ struct BottomNavBar: View {
             ZStack {
                 VStack(spacing: 4) {
                     Image(systemName: icon)
-                        .font(.system(size: 22))
+                        .font(.appFont(.bold, size: 22))
                     Text(label)
-                        .font(.system(size: 10))
+                        .font(.appFont(.regular, size: 10))
                 }
                 .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
 
                 if badge > 0 {
                     Text("\(badge)")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.appFont(.regular, size: 10))
                         .foregroundColor(.white)
                         .frame(minWidth: 16, minHeight: 16)
                         .background(Color.accentRed)

@@ -55,6 +55,9 @@ struct SettingsView: View {
                     NavigationLink(destination: EditProfileView().environmentObject(authViewModel)) {
                         Label("プロフィールを編集", systemImage: "person.crop.circle")
                     }
+                    NavigationLink(destination: BlockListView()) {
+                        Label("ブロックリスト", systemImage: "hand.raised")
+                    }
                 } header: {
                     Text("アカウント")
                 }
@@ -72,7 +75,7 @@ struct SettingsView: View {
                             let count = draftManager.drafts.count
                             if count > 0 {
                                 Text("\(count)")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.appFont(.medium, size: 12))
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 3)
@@ -127,7 +130,7 @@ struct SettingsView: View {
                                 .foregroundColor(.accentGreen)
                             Spacer()
                             Text("プレミアム")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.appFont(.medium, size: 12))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
@@ -152,7 +155,7 @@ struct SettingsView: View {
                                     ProgressView().scaleEffect(0.8)
                                 } else if let price = subscriptionManager.productPrice {
                                     Text(price)
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(.appFont(.medium, size: 13))
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
@@ -160,7 +163,7 @@ struct SettingsView: View {
                                         .cornerRadius(10)
                                 } else {
                                     Text("購入")
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.appFont(.medium, size: 12))
                                         .foregroundColor(.secondary)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
@@ -186,6 +189,15 @@ struct SettingsView: View {
                         .font(.caption)
                 }
 
+                // --- 通知設定セクション ---
+                Section {
+                    NavigationLink(destination: NotificationSettingsView().environmentObject(authViewModel)) {
+                        Label("通知の設定", systemImage: "bell")
+                    }
+                } header: {
+                    Text("通知")
+                }
+
                 // --- 法的情報セクション ---
                 Section {
                     NavigationLink(destination: TermsOfServiceView()) {
@@ -198,20 +210,28 @@ struct SettingsView: View {
                     Text("法的情報")
                 }
 
-                // --- その他セクション ---
+                // --- ログアウトセクション ---
                 Section {
                     Button(role: .destructive) {
                         showSignOutAlert = true
                     } label: {
                         Label("ログアウト", systemImage: "rectangle.portrait.and.arrow.right")
                     }
+                } header: {
+                    Text("ログアウト")
+                }
+
+                // --- アカウント削除セクション（分離）---
+                Section {
                     Button(role: .destructive) {
                         showDeleteAccountAlert = true
                     } label: {
                         Label("アカウントを削除", systemImage: "person.crop.circle.badge.minus")
                     }
                 } header: {
-                    Text("その他")
+                    Text("危険な操作")
+                } footer: {
+                    Text("アカウントを削除すると、投稿・フォロワー情報など全データが失われます。この操作は取り消せません。")
                 }
             }
             .navigationTitle("設定")
@@ -380,7 +400,7 @@ struct DraftListView: View {
                     Spacer()
                     VStack(spacing: 12) {
                         Image(systemName: "doc.text")
-                            .font(.system(size: 36))
+                            .font(.appFont(.regular, size: 36))
                             .foregroundColor(.secondary.opacity(0.4))
                         Text("下書きはありません")
                             .foregroundColor(.secondary)
@@ -398,21 +418,21 @@ struct DraftListView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(draft.description.isEmpty ? "（説明なし）" : draft.description)
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(.primary)
                                 .lineLimit(2)
                             HStack(spacing: 10) {
                                 Text(formattedDate(draft.savedAt))
-                                    .font(.system(size: 11))
+                                    .font(.appFont(.regular, size: 11))
                                     .foregroundColor(.secondary)
                                 if !draft.items.isEmpty {
                                     Text("\(draft.items.count)アイテム")
-                                        .font(.system(size: 11))
+                                        .font(.appFont(.regular, size: 11))
                                         .foregroundColor(.accentBlue)
                                 }
                                 let wt = WeatherType(rawValue: draft.weatherType)
                                 Label("\(draft.tempMax)℃/\(draft.tempMin)℃", systemImage: wt?.sfSymbol ?? "cloud.sun")
-                                    .font(.system(size: 11))
+                                    .font(.appFont(.regular, size: 11))
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -461,15 +481,15 @@ struct PremiumBannerCard: View {
                 VStack(spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 22))
+                            .font(.appFont(.bold, size: 22))
                             .foregroundColor(.yellow)
                         Text("プレミアムプラン")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.appFont(.regular, size: 20))
                             .foregroundColor(.white)
                     }
 
                     Text("買い切り型プレミアムプラン\n一度購入するだけで永久利用できます")
-                        .font(.system(size: 14))
+                        .font(.appFont(.regular, size: 14))
                         .foregroundColor(.white.opacity(0.9))
                         .multilineTextAlignment(.center)
 
@@ -496,10 +516,10 @@ struct PremiumBannerCard: View {
                                 .scaleEffect(0.9)
                         } else {
                             Image(systemName: "star.fill")
-                                .font(.system(size: 15))
+                                .font(.appFont(.bold, size: 15))
                         }
                         Text(isPurchasing ? "処理中..." : "プレミアムを購入する")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.appFont(.regular, size: 16))
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -512,7 +532,7 @@ struct PremiumBannerCard: View {
 
                 Button(action: onRestore) {
                     Text("購入を復元する")
-                        .font(.system(size: 13))
+                        .font(.appFont(.regular, size: 13))
                         .foregroundColor(.secondary)
                 }
                 .disabled(isPurchasing)
@@ -546,9 +566,9 @@ struct CalendarPublicToggle: View {
                     .foregroundColor(isPublic ? .accentBlue : Color(.systemGray))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("カレンダーを公開する")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.appFont(.medium, size: 15))
                     Text(isPublic ? "フォロワーがあなたのカレンダーを見られます" : "自分だけがカレンダーを見られます")
-                        .font(.system(size: 12))
+                        .font(.appFont(.medium, size: 12))
                         .foregroundColor(Color(.systemGray))
                 }
             }
@@ -595,11 +615,11 @@ private struct PremiumFeatureRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.appFont(.regular, size: 13))
                 .foregroundColor(.yellow)
                 .frame(width: 20)
             Text(text)
-                .font(.system(size: 13))
+                .font(.appFont(.regular, size: 13))
                 .foregroundColor(.white)
         }
     }
@@ -621,9 +641,9 @@ struct PostPublicToggle: View {
                     .foregroundColor(isPublic ? .accentBlue : Color(.systemGray))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("投稿を公開する")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.appFont(.medium, size: 15))
                     Text(isPublic ? "タイムラインに表示されます" : "投稿は非公開です")
-                        .font(.system(size: 12))
+                        .font(.appFont(.regular, size: 12))
                         .foregroundColor(Color(.systemGray))
                 }
             }

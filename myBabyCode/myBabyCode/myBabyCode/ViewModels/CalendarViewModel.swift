@@ -25,6 +25,7 @@ class CalendarViewModel: ObservableObject {
     private let storage = Storage.storage()
     private var lastFetchedMonth: String? = nil                 // キャッシュ用: 最後に取得した月
     private var lastFetchedRegion: String? = nil                // キャッシュ用: 最後に取得した地域
+    private var lastFetchedToday: String? = nil                 // キャッシュ用: 最後に取得した当日日付
     
     // 都道府県コード → 名称マッピング
     let prefectureNames: [String: String] = [
@@ -53,9 +54,9 @@ class CalendarViewModel: ObservableObject {
         return f
     }()
 
-    // 編集可能な最大過去日数（無課金: 2日前まで、プレミアム: 365日=1年前まで）
+    // 編集可能な最大過去日数（無課金: 1日前（前日）まで、プレミアム: 365日=1年前まで）
     func maxEditableDays(isSubscribed: Bool) -> Int {
-        isSubscribed ? 365 : 2
+        isSubscribed ? 365 : 1
     }
 
     // 指定日が編集可能かどうか
@@ -202,8 +203,10 @@ class CalendarViewModel: ObservableObject {
     // 月全体の天気データを取得（キャッシュ機能付き）
     func fetchMonthlyWeather(regionCode: String, month: Date) async {
         let monthKey = Self.dateKeyFormatter.string(from: month)
-        // 同じ月・同じ地域なら再取得しない
-        if lastFetchedMonth == monthKey && lastFetchedRegion == regionCode && !monthlyWeather.isEmpty {
+        let todayKey = Self.dateKeyFormatter.string(from: Date())
+        // 同じ月・同じ地域・同じ日付なら再取得しない（日付が変わったら未来予報を再取得）
+        if lastFetchedMonth == monthKey && lastFetchedRegion == regionCode
+            && lastFetchedToday == todayKey && !monthlyWeather.isEmpty {
             print("[DEBUG] fetchMonthlyWeather: using cached data for \(monthKey)")
             return
         }
@@ -216,6 +219,7 @@ class CalendarViewModel: ObservableObject {
         monthlyWeather = weatherData
         lastFetchedMonth = monthKey
         lastFetchedRegion = regionCode
+        lastFetchedToday = todayKey
         print("[DEBUG] fetchMonthlyWeather: cached \(weatherData.count) days")
     }
 
