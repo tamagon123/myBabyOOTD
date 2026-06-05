@@ -68,7 +68,7 @@ struct EditProfileView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     sectionLabel("ユーザーID")
                     Text(uniqueUserId.isEmpty ? "未設定" : "@\(uniqueUserId)")
-                        .font(.system(size: 15))
+                        .font(.appFont(.regular, size: 15))
                         .foregroundColor(.primary)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,7 +121,7 @@ struct EditProfileView: View {
                                     .padding(12)
                             } else {
                                 Image(systemName: "person.fill")
-                                    .font(.system(size: 48))
+                                    .font(.appFont(.regular, size: 48))
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -132,7 +132,7 @@ struct EditProfileView: View {
                         .shadow(radius: 4)
 
                         Text("プレビュー")
-                            .font(.system(size: 11))
+                            .font(.appFont(.regular, size: 11))
                             .foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -142,7 +142,7 @@ struct EditProfileView: View {
                         showAvatarImagePicker = true
                     } label: {
                         Label("ライブラリから写真を選ぶ", systemImage: "photo")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.appFont(.medium, size: 14))
                             .foregroundColor(.accentBlue)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
@@ -223,7 +223,7 @@ struct EditProfileView: View {
                             children.append(ChildProfile(name: "", birthday: Date(), gender: 0))
                         } label: {
                             Label("追加", systemImage: "plus.circle.fill")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.appFont(.medium, size: 13))
                                 .foregroundColor(.accentGreen)
                         }
                     }
@@ -273,7 +273,7 @@ struct EditProfileView: View {
                     Task { await save() }
                 } label: {
                     Text(isSaving ? "保存中..." : "保存する")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.appFont(.bold, size: 16))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
@@ -298,7 +298,7 @@ struct EditProfileView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 15, weight: .bold))
+            .font(.appFont(.bold, size: 15))
     }
 
     private func loadExistingData() {
@@ -354,7 +354,7 @@ struct ChildProfileRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("お子様").font(.system(size: 13, weight: .semibold))
+                Text("お子様").font(.appFont(.medium, size: 13))
                 Spacer()
                 Button(action: onRemove) {
                     Image(systemName: "minus.circle.fill")

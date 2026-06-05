@@ -12,10 +12,17 @@ import FirebaseAuth
 
 struct NotificationsView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @EnvironmentObject var postsViewModel: PostsViewModel
     @State private var notifications: [AppNotification] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showDeleteConfirm = false
+
+    // === 通知タップによる詳細画面表示用 ===
+    @State private var showPostDetail = false
+    @State private var targetPostId: String? = nil
+    @State private var showProfile = false
+    @State private var targetUserId: String? = nil
 
     private var uid: String { Auth.currentUID }
 
@@ -33,7 +40,7 @@ struct NotificationsView: View {
                         Spacer()
                         VStack(spacing: 12) {
                             Image(systemName: "bell.slash")
-                                .font(.system(size: 36))
+                                .font(.appFont(.regular, size: 36))
                                 .foregroundColor(.secondary.opacity(0.4))
                             Text("通知はありません")
                                 .foregroundColor(.secondary)
@@ -85,15 +92,40 @@ struct NotificationsView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        // 投稿詳細画面（通知タップ時）
+        .sheet(isPresented: $showPostDetail) {
+            if let postId = targetPostId {
+                NavigationView {
+                    PostDetailView(post: nil, postId: postId)
+                        .environmentObject(authViewModel)
+                        .environmentObject(postsViewModel)
+                }
+                .navigationViewStyle(StackNavigationViewStyle())
+            }
+        }
+        // プロフィール画面（通知タップ時：フォローされた相手）
+        .sheet(isPresented: $showProfile) {
+            if let userId = targetUserId {
+                NavigationView {
+                    ProfileView(userId: userId)
+                        .environmentObject(authViewModel)
+                        .environmentObject(postsViewModel)
+                }
+                .navigationViewStyle(StackNavigationViewStyle())
+            }
+        }
     }
 
     // MARK: - Row
 
     private func notificationRow(_ notif: AppNotification) -> some View {
-        HStack(spacing: 12) {
+        Button {
+            handleNotificationTap(notif)
+        } label: {
+            HStack(spacing: 12) {
             // アイコン
             Image(systemName: iconForType(notif.type))
-                .font(.system(size: 22))
+                .font(.appFont(.regular, size: 22))
                 .foregroundColor(colorForType(notif.type))
                 .frame(width: 40, height: 40)
                 .background(colorForType(notif.type).opacity(0.12))
@@ -101,14 +133,14 @@ struct NotificationsView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(notif.title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.appFont(.medium, size: 15))
                 Text(notif.body)
-                    .font(.system(size: 13))
+                    .font(.appFont(.regular, size: 13))
                     .foregroundColor(.secondary)
                     .lineLimit(2)
                 if let date = notif.created_at.dateValue() as Date? {
                     Text(timeAgo(from: date))
-                        .font(.system(size: 11))
+                        .font(.appFont(.regular, size: 11))
                         .foregroundColor(.secondary.opacity(0.7))
                 }
             }
@@ -121,9 +153,39 @@ struct NotificationsView: View {
                     .fill(Color.accentRed)
                     .frame(width: 8, height: 8)
             }
+            }
+            .padding(.vertical, 4)
+            .background(notif.is_read ? Color.clear : Color.accentRed.opacity(0.03))
         }
-        .padding(.vertical, 4)
-        .background(notif.is_read ? Color.clear : Color.accentRed.opacity(0.03))
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Navigation
+
+    private func handleNotificationTap(_ notif: AppNotification) {
+        switch notif.type {
+        case "new_post", "like":
+            // 投稿詳細画面へ
+            if let postId = notif.post_id {
+                targetPostId = postId
+                showPostDetail = true
+            }
+        case "follow":
+            // フォロワーのプロフィール画面へ
+            if let followerId = notif.related_id {
+                targetUserId = followerId
+                showProfile = true
+            }
+        case "diary_reminder":
+            // カレンダータブへ遷移（NotificationCenter経由）
+            NotificationCenter.default.post(
+                name: Notification.Name("SwitchToTab"),
+                object: nil,
+                userInfo: ["tabIndex": 1]
+            )
+        default:
+            break
+        }
     }
 
     // MARK: - Load

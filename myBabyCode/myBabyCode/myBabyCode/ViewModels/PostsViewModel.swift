@@ -206,6 +206,9 @@ class PostsViewModel: ObservableObject {
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
             // カレンダー投稿（日記）はタイムラインに表示しない（通常投稿のみ）
             fetched = fetched.filter { !($0.is_calendar_post ?? false) }
+            // ブロック済みユーザーの投稿を除外
+            let blockedIds = await BlockService.shared.blockedUserIds
+            fetched = fetched.filter { !blockedIds.contains($0.user_id) }
             fetched = await enrichWithPosterInfo(fetched)
             posts = fetched
             let postIds = fetched.map { $0.post_id }
@@ -279,6 +282,9 @@ class PostsViewModel: ObservableObject {
             var fetched = try snapshot.documents.map { try $0.data(as: Post.self) }
             // カレンダー投稿（日記）はタイムラインに表示しない
             fetched = fetched.filter { !($0.is_calendar_post ?? false) }
+            // ブロック済みユーザーの投稿を除外
+            let blockedIdsMore = await BlockService.shared.blockedUserIds
+            fetched = fetched.filter { !blockedIdsMore.contains($0.user_id) }
             fetched = await enrichWithPosterInfo(fetched)
             print("[DEBUG] fetchMorePosts: appending \(fetched.count) posts, lastDoc=\(lastDoc.documentID)")
             posts.append(contentsOf: fetched)

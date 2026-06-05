@@ -67,26 +67,30 @@ actor WeatherService {
             print("[WeatherService] regionCode not found: \(regionCode)")
             return nil
         }
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&forecast_days=1"
-        guard let url = URL(string: urlString) else { return nil }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let raw = String(data: data, encoding: .utf8) {
-                print("[WeatherService] response: \(raw.prefix(300))")
+        let params = "latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&forecast_days=1"
+        let hosts = ["api.open-meteo.com", "forecast.open-meteo.com", "api2.open-meteo.com"]
+        for host in hosts {
+            guard let url = URL(string: "https://\(host)/v1/forecast?\(params)") else { continue }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                guard statusCode == 200 else {
+                    print("[WeatherService] fetch host=\(host) status=\(statusCode), trying next...")
+                    continue
+                }
+                let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
+                guard let tempMax = json.daily.temperature_2m_max.first,
+                      let tempMin = json.daily.temperature_2m_min.first,
+                      let code = json.daily.weather_code.first else {
+                    print("[WeatherService] fetch host=\(host) missing fields")
+                    continue
+                }
+                return WeatherResult(tempMax: tempMax, tempMin: tempMin, weatherType: mapWeatherCode(code))
+            } catch {
+                print("[WeatherService] fetch host=\(host) error: \(error)")
             }
-            let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
-            guard let tempMax = json.daily.temperature_2m_max.first,
-                  let tempMin = json.daily.temperature_2m_min.first,
-                  let code = json.daily.weather_code.first else {
-                print("[WeatherService] missing fields in response")
-                return nil
-            }
-            let weatherType = mapWeatherCode(code)
-            return WeatherResult(tempMax: tempMax, tempMin: tempMin, weatherType: weatherType)
-        } catch {
-            print("[WeatherService] error: \(error)")
-            return nil
         }
+        return nil
     }
 
     // =============================================================================
@@ -158,6 +162,7 @@ actor WeatherService {
             print("[WeatherService] regionCode not found: \(regionCode)")
             return [:]
         }
+        print("[WeatherService] fetchMonthly start: region=\(regionCode), lat=\(coord.lat), lon=\(coord.lon)")
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         fmt.timeZone = TimeZone(identifier: "Asia/Tokyo")
@@ -174,12 +179,15 @@ actor WeatherService {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
         let archiveEnd = min(endDay, yesterday)
         
-        // 未来予報の範囲（今日から向こう6日間＝7日間まで）
+        // 未来予報の範囲（今日から向こう14日間まで）
         let forecastStart = max(startDay, today)
-        let maxForecastDate = calendar.date(byAdding: .day, value: 6, to: today) ?? today
+        let maxForecastDate = calendar.date(byAdding: .day, value: 13, to: today) ?? today
         let forecastEnd = min(endDay, maxForecastDate)
         
         print("[WeatherService] fetchMonthly ranges: archive=\(fmt.string(from: archiveStart))~\(fmt.string(from: archiveEnd)), forecast=\(fmt.string(from: forecastStart))~\(fmt.string(from: forecastEnd))")
+        let archiveDays = max(0, (calendar.dateComponents([.day], from: archiveStart, to: archiveEnd).day ?? -1) + 1)
+        let forecastDays = max(0, (calendar.dateComponents([.day], from: forecastStart, to: forecastEnd).day ?? -1) + 1)
+        print("[WeatherService] fetchMonthly day counts: archiveDays=\(archiveDays), forecastDays=\(forecastDays)")
         
         var results: [String: WeatherResult] = [:]
         
@@ -188,13 +196,16 @@ actor WeatherService {
             let startStr = fmt.string(from: archiveStart)
             let endStr = fmt.string(from: archiveEnd)
             let urlString = "https://archive-api.open-meteo.com/v1/archive?latitude=\(coord.lat)&longitude=\(coord.lon)&start_date=\(startStr)&end_date=\(endStr)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo"
+            print("[WeatherService] fetchMonthly archive URL: \(urlString)")
             print("[WeatherService] fetchMonthly archive: \(startStr) to \(endStr)")
             
             if let url = URL(string: urlString) {
                 do {
                     let (data, _) = try await URLSession.shared.data(from: url)
                     let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
+                    print("[WeatherService] archive arrays: max=\(json.daily.temperature_2m_max.count), min=\(json.daily.temperature_2m_min.count), code=\(json.daily.weather_code.count)")
                     var currentDate = archiveStart
+                    var archiveInserted = 0
                     for i in 0..<json.daily.temperature_2m_max.count {
                         let dateKey = fmt.string(from: currentDate)
                         results[dateKey] = WeatherResult(
@@ -202,46 +213,62 @@ actor WeatherService {
                             tempMin: json.daily.temperature_2m_min[i],
                             weatherType: mapWeatherCode(json.daily.weather_code[i])
                         )
+                        archiveInserted += 1
                         currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
                     }
-                    print("[WeatherService] fetchMonthly archive: got \(json.daily.temperature_2m_max.count) days")
+                    print("[WeatherService] fetchMonthly archive inserted: \(archiveInserted) items, first=\(fmt.string(from: archiveStart)), last=\(fmt.string(from: archiveEnd))")
                 } catch {
                     print("[WeatherService] fetchMonthly archive error: \(error)")
                 }
             }
         }
         
-        // 2. 未来予報を取得（forecast API、最大16日）
+        // 2. 未来予報を取得（forecast API、複数ドメインをフォールバック）
         if forecastStart <= forecastEnd {
-            let startStr = fmt.string(from: forecastStart)
-            let endStr = fmt.string(from: forecastEnd)
-            // forecast API: start_dateとend_dateの両方が必要
-            let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coord.lat)&longitude=\(coord.lon)&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&start_date=\(startStr)&end_date=\(endStr)"
-            print("[WeatherService] fetchMonthly forecast: \(startStr) to \(endStr)")
-            
-            if let url = URL(string: urlString) {
+            let neededDays = min(7, (Calendar.current.dateComponents([.day], from: today, to: forecastEnd).day ?? 0) + 1)
+            let query = "daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo&forecast_days=\(neededDays)"
+            let params = "latitude=\(coord.lat)&longitude=\(coord.lon)&\(query)"
+            // api.open-meteo.com が 502 の場合に備え複数ドメインを順に試す
+            let hosts = [
+                "api.open-meteo.com",
+                "forecast.open-meteo.com",
+                "api2.open-meteo.com",
+            ]
+            var inserted = false
+            for host in hosts {
+                guard !inserted,
+                      let url = URL(string: "https://\(host)/v1/forecast?\(params)") else { continue }
+                print("[WeatherService] forecast trying host=\(host), days=\(neededDays)")
                 do {
-                    print("[WeatherService] forecast API URL: \(urlString)")
-                    let (data, _) = try await URLSession.shared.data(from: url)
-                    if let raw = String(data: data, encoding: .utf8) {
-                        print("[WeatherService] forecast API raw response (first 500): \(raw.prefix(500))")
+                    let (data, response) = try await URLSession.shared.data(from: url)
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    guard statusCode == 200 else {
+                        print("[WeatherService] forecast host=\(host) status=\(statusCode), trying next...")
+                        continue
                     }
-                    let json = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
-                    print("[WeatherService] forecast API decoded: max=\(json.daily.temperature_2m_max), min=\(json.daily.temperature_2m_min), codes=\(json.daily.weather_code)")
-                    var currentDate = forecastStart
-                    for i in 0..<json.daily.temperature_2m_max.count {
-                        let dateKey = fmt.string(from: currentDate)
-                        results[dateKey] = WeatherResult(
-                            tempMax: json.daily.temperature_2m_max[i],
-                            tempMin: json.daily.temperature_2m_min[i],
-                            weatherType: mapWeatherCode(json.daily.weather_code[i])
-                        )
-                        currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+                    let json = try JSONDecoder().decode(OpenMeteoForecastResponse.self, from: data)
+                    let times = json.daily.time
+                    var forecastInserted = 0
+                    for i in 0..<min(times.count, json.daily.temperature_2m_max.count) {
+                        let dateKey = times[i]
+                        if let date = fmt.date(from: dateKey),
+                           date >= forecastStart, date <= forecastEnd {
+                            results[dateKey] = WeatherResult(
+                                tempMax: json.daily.temperature_2m_max[i],
+                                tempMin: json.daily.temperature_2m_min[i],
+                                weatherType: mapWeatherCode(json.daily.weather_code[i])
+                            )
+                            forecastInserted += 1
+                        }
                     }
-                    print("[WeatherService] fetchMonthly forecast: got \(json.daily.temperature_2m_max.count) days, results keys: \(results.keys.sorted())")
+                    print("[WeatherService] forecast host=\(host) success: inserted=\(forecastInserted), times=\(times.first ?? "-")~\(times.last ?? "-")")
+                    inserted = true
                 } catch {
-                    print("[WeatherService] fetchMonthly forecast error: \(error)")
+                    print("[WeatherService] forecast host=\(host) error: \(error)")
                 }
+            }
+            if !inserted {
+                print("[WeatherService] forecast failed on all hosts")
             }
         }
         
@@ -249,13 +276,24 @@ actor WeatherService {
         return results
     }
 
-    // OpenMeteoResponse: Open-Meteo APIから返されるJSONの構造をSwiftの型にマッピングしたもの。
+    // OpenMeteoResponse: archive APIなど日付配列不要の場合に使用
     private struct OpenMeteoResponse: Decodable {
         let daily: DailyData
         struct DailyData: Decodable {
-            let temperature_2m_max: [Double]  // 日次の最高気温配列
-            let temperature_2m_min: [Double]  // 日次の最低気温配列
-            let weather_code: [Int]           // 日次の天気コード配列
+            let temperature_2m_max: [Double]
+            let temperature_2m_min: [Double]
+            let weather_code: [Int]
+        }
+    }
+
+    // OpenMeteoForecastResponse: forecast APIのレスポンス（time配列付き）
+    private struct OpenMeteoForecastResponse: Decodable {
+        let daily: DailyData
+        struct DailyData: Decodable {
+            let time: [String]               // ["2026-06-04", "2026-06-05", ...]
+            let temperature_2m_max: [Double]
+            let temperature_2m_min: [Double]
+            let weather_code: [Int]
         }
     }
 }

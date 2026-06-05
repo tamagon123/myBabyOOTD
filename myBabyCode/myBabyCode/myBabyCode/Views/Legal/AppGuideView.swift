@@ -27,10 +27,10 @@ struct AppGuideView: View {
                 // ようこそメッセージ
                 VStack(spacing: 8) {
                     Text("ようこそ！")
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.appFont(.bold, size: 24))
                         .foregroundColor(.primary)
                     Text("赤ちゃんの毎日のファッションを記録・共有するアプリ")
-                        .font(.system(size: 14))
+                        .font(.appFont(.regular, size: 14))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -85,7 +85,7 @@ struct AppGuideView: View {
                         dismiss()
                     } label: {
                         Text("はじめる")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.appFont(.medium, size: 16))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -115,21 +115,21 @@ struct GuideSection: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 18))
+                    .font(.appFont(.regular, size: 18))
                     .foregroundColor(.white)
                     .frame(width: 32, height: 32)
                     .background(iconColor)
                     .cornerRadius(8)
                 
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.appFont(.bold, size: 17))
                     .foregroundColor(.primary)
                 
                 Spacer()
             }
             
             Text(content)
-                .font(.system(size: 14))
+                .font(.appFont(.regular, size: 14))
                 .foregroundColor(.primary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)

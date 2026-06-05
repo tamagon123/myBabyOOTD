@@ -157,7 +157,7 @@ struct MainTabView: View {
         .sheet(isPresented: $showPostDetail) {
             if let postId = targetPostId {
                 NavigationView {
-                    PostDetailView(postId: postId)
+                    PostDetailView(post: nil, postId: postId)
                         .environmentObject(authViewModel)
                 }
                 .navigationViewStyle(StackNavigationViewStyle())
@@ -229,7 +229,7 @@ struct BottomNavBar: View {
                         .shadow(color: Color.accentRed.opacity(0.3), radius: 8, y: 4)
                     Image(systemName: "plus")
                         .foregroundColor(.white)
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.appFont(.bold, size: 24))
                 }
             }
             .offset(y: -12)
@@ -265,9 +265,9 @@ struct BottomNavBar: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 22))
+                    .font(.appFont(.regular, size: 22))
                 Text(label)
-                    .font(.system(size: 10))
+                    .font(.appFont(.regular, size: 10))
             }
             // 選択中のタブは朱色、未選択はグレー
             .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
@@ -282,15 +282,15 @@ struct BottomNavBar: View {
             ZStack {
                 VStack(spacing: 4) {
                     Image(systemName: icon)
-                        .font(.system(size: 22))
+                        .font(.appFont(.bold, size: 22))
                     Text(label)
-                        .font(.system(size: 10))
+                        .font(.appFont(.regular, size: 10))
                 }
                 .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
 
                 if badge > 0 {
                     Text("\(badge)")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.appFont(.regular, size: 10))
                         .foregroundColor(.white)
                         .frame(minWidth: 16, minHeight: 16)
                         .background(Color.accentRed)

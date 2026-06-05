@@ -121,7 +121,7 @@ struct NewPostView: View {
             .overlay(alignment: .top) {
                 if showDraftSavedBanner {
                     Text("下書きを保存しました")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.appFont(.medium, size: 14))
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
@@ -354,7 +354,7 @@ struct NewPostView: View {
             saveDraft()
         } label: {
             Label("下書きとして保存", systemImage: "square.and.arrow.down")
-                .font(.system(size: 15, weight: .medium))
+                .font(.appFont(.medium, size: 15))
                 .foregroundColor(draftSaved ? .secondary : Color.accentGreen)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -375,7 +375,7 @@ struct NewPostView: View {
             Task { await submitPost() }
         } label: {
             Text(isSubmitting ? "投稿中..." : "投稿する")
-                .font(.system(size: 16, weight: .bold))
+                .font(.appFont(.bold, size: 16))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
@@ -451,7 +451,7 @@ struct NewPostView: View {
                         HStack {
                             Spacer()
                             Image(systemName: "pencil.circle.fill")
-                                .font(.system(size: 22))
+                                .font(.appFont(.regular, size: 22))
                                 .foregroundColor(.white)
                                 .shadow(radius: 2)
                                 .padding(6)
@@ -460,7 +460,7 @@ struct NewPostView: View {
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "camera.fill")
-                            .font(.system(size: 28))
+                            .font(.appFont(.regular, size: 28))
                             .foregroundColor(.secondary)
                         Text(title)
                             .font(.caption)
@@ -495,7 +495,7 @@ struct NewPostView: View {
                             selectedChildIndex = idx
                         } label: {
                             Text(child.name.isEmpty ? "子供\(idx+1)" : child.name)
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.appFont(.medium, size: 13))
                                 .foregroundColor(selectedChildIndex == idx ? .white : .primary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
@@ -596,8 +596,8 @@ struct NewPostView: View {
                     } label: {
                         VStack(spacing: 2) {
                             Image(systemName: w.sfSymbol)
-                                .font(.system(size: 18))
-                            Text(w.label).font(.system(size: 10))
+                                .font(.appFont(.regular, size: 18))
+                            Text(w.label).font(.appFont(.regular, size: 10))
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
@@ -654,7 +654,7 @@ struct NewPostView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.accentGreen)
-                        .font(.system(size: 22))
+                        .font(.appFont(.regular, size: 22))
                 }
             }
 
@@ -691,7 +691,7 @@ struct NewPostView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("「\(entry?.brandName.isEmpty == false ? entry!.brandName : entry?.category.rawValue ?? "アイテム")」の位置をタップ")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.appFont(.medium, size: 13))
                     .foregroundColor(.white)
                 Spacer()
                 Button {
@@ -713,7 +713,7 @@ struct NewPostView: View {
                             taggingSide = side
                         } label: {
                             Text(side == "front" ? "フロント" : "バック")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.appFont(.medium, size: 12))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(taggingSide == side ? Color.accentBlue : Color(.systemGray5))
@@ -778,11 +778,11 @@ struct NewPostView: View {
                 HStack(spacing: 2) {
                     // カテゴリアイコン
                     Image(systemName: categoryIcon(for: items[i].category))
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.appFont(.bold, size: 10))
                         .foregroundColor(.accentRed)
                     // 番号
                     Text("\(i + 1)")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.appFont(.bold, size: 10))
                         .foregroundColor(.primary)
                 }
                 .padding(.horizontal, 6)
@@ -827,7 +827,7 @@ struct NewPostView: View {
     // 戻り値: some View
     // =============================================================================
     private func sectionLabel(_ text: String) -> some View {
-        Text(text).font(.system(size: 15, weight: .bold)).foregroundColor(.primary)
+        Text(text).font(.appFont(.bold, size: 15)).foregroundColor(.primary)
     }
 
     // =============================================================================
@@ -1126,7 +1126,7 @@ struct ItemEntryRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(entry.category.rawValue)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.appFont(.medium, size: 11))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(Color.accentBlue.opacity(0.1))
@@ -1137,12 +1137,12 @@ struct ItemEntryRow: View {
                 Button(action: onTag) {
                     HStack(spacing: 4) {
                         Image(systemName: entry.tagPosition != nil ? "tag.fill" : "tag")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.appFont(.medium, size: 11))
                         Text("タグ付け")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.appFont(.medium, size: 12))
                         if entry.tagPosition != nil {
                             Text(entry.tagSide == "front" ? "F" : "B")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.appFont(.bold, size: 10))
                         }
                     }
                     .foregroundColor(entry.tagPosition != nil ? .white : .accentBlue)
@@ -1167,7 +1167,7 @@ struct ItemEntryRow: View {
                         showBrandSearch = true
                     } label: {
                         Text("検索")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.appFont(.medium, size: 12))
                             .foregroundColor(.white)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 8)
@@ -1272,7 +1272,7 @@ struct BrandSearchSheet: View {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.accentBlue)
                             Text("「\(canonicalBrand)」を使用する")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(.accentBlue)
                             Spacer()
                         }
@@ -1288,7 +1288,7 @@ struct BrandSearchSheet: View {
                 List {
                     if filteredBrands.isEmpty {
                         Text("該当するブランドが見つかりません")
-                            .font(.system(size: 14))
+                            .font(.appFont(.regular, size: 14))
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, 20)
@@ -1302,10 +1302,10 @@ struct BrandSearchSheet: View {
                                 } label: {
                                     HStack {
                                         Text(brand.name)
-                                            .font(.system(size: 15))
+                                            .font(.appFont(.regular, size: 15))
                                             .foregroundColor(.primary)
                                         Text(brand.reading)
-                                            .font(.system(size: 12))
+                                            .font(.appFont(.regular, size: 12))
                                             .foregroundColor(.secondary)
                                             .padding(.leading, 4)
                                         Spacer()
@@ -1471,7 +1471,7 @@ struct PhotoEditorView: View {
                         onDone(finalImage)
                         dismiss()
                     } label: {
-                        Text("完了").font(.system(size: 15, weight: .bold))
+                        Text("完了").font(.appFont(.bold, size: 15))
                     }
                 }
             }
@@ -1518,7 +1518,7 @@ struct PhotoEditorView: View {
                         selectedKind = kind
                     } label: {
                         Image(systemName: sym.rawValue)
-                            .font(.system(size: 24))
+                            .font(.appFont(.regular, size: 24))
                             .foregroundColor(sym.color)
                             .frame(width: 44, height: 44)
                             .background(selectedKind == kind ? Color(UIColor.systemGray4).opacity(0.6) : Color(.systemGray6))
@@ -1791,7 +1791,7 @@ struct StampView: View {
             switch stamp.kind {
             case .symbol(let sym):
                 Image(systemName: sym.rawValue)
-                    .font(.system(size: baseSize))
+                    .font(.appFont(.regular, size: baseSize))
                     .foregroundColor(sym.color)
             case .image(let name):
                 Image(name)
@@ -1815,7 +1815,7 @@ struct StampView: View {
                         Spacer()
                         // 拡縮ハンドル（右上）
                         Image(systemName: "arrow.up.and.down")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.appFont(.bold, size: 11))
                             .foregroundColor(.white)
                             .padding(5)
                             .background(Color.black.opacity(0.72))
@@ -1839,7 +1839,7 @@ struct StampView: View {
                         // 削除ボタン（ゴミ箱アイコン、右下）
                         Button(action: onRemove) {
                             Image(systemName: "trash.fill")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.appFont(.bold, size: 11))
                                 .foregroundColor(.white)
                                 .padding(5)
                                 .background(Color.red.opacity(0.8))
@@ -1905,7 +1905,7 @@ struct TagPlacementView: View {
                                 taggingSide = side
                             } label: {
                                 Text(side == "front" ? "フロント" : "バック")
-                                    .font(.system(size: 14, weight: .medium))
+                                    .font(.appFont(.medium, size: 14))
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 8)
                                     .background(taggingSide == side ? Color.accentBlue : Color(.systemGray5))
@@ -1993,10 +1993,10 @@ struct TagPlacementView: View {
 
             HStack(spacing: 2) {
                 Image(systemName: categoryIcon(for: items[i].category))
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.appFont(.bold, size: 10))
                     .foregroundColor(i == itemIndex ? .white : .accentRed)
                 Text("\(i + 1)")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.appFont(.bold, size: 10))
                     .foregroundColor(i == itemIndex ? .white : .primary)
             }
             .padding(.horizontal, 6)

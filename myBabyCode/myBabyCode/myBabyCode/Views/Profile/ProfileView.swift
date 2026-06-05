@@ -40,6 +40,9 @@ struct ProfileView: View {
     @State private var calendarIsPublic: Bool = false   // カレンダー公開設定
     @State private var showPublicCalendar: Bool = false  // 公開カレンダー表示フラグ
     @State private var publicCalendarUserId: String? = nil // 公開カレンダーの対象UID
+    @State private var showBlockAlert: Bool = false       // ブロック確認アラート
+    @State private var showReportSheet: Bool = false      // ユーザー通報シート
+    @ObservedObject private var blockService = BlockService.shared
 
     // ProfileTab: マイページ内の「投稿」/「いいね」タブ
     enum ProfileTab: String, CaseIterable {
@@ -82,7 +85,7 @@ struct ProfileView: View {
                             withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
                         } label: {
                             Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
-                                .font(.system(size: 18))
+                                .font(.appFont(.regular, size: 18))
                                 .foregroundColor(.accentRed)
                                 .frame(width: 36, height: 36)
                                 .background(Color.white)
@@ -116,6 +119,7 @@ struct ProfileView: View {
             await loadUserPosts()
             if isOwnProfile { await loadLikedPosts() }
             if !isOwnProfile { await checkFollowing() }
+            await blockService.fetchBlockedUsers()
         }
         // 画面表示時にデータ取得
         .task {
@@ -126,6 +130,7 @@ struct ProfileView: View {
                 await loadFollowingUsers()
             }
             if !isOwnProfile { await checkFollowing() }
+            await blockService.fetchBlockedUsers()
         }
         .sheet(isPresented: $showEditProfile) {
             NavigationView {
@@ -156,9 +161,36 @@ struct ProfileView: View {
                 PublicCalendarView(userId: targetUid)
             }
         }
+        .sheet(isPresented: $showReportSheet) {
+            ReportSheetView(targetType: .user, targetId: userId)
+        }
+        .alert(
+            blockService.isBlocked(userId) ? "ブロックを解除しますか？" : "\(profileUser?.display_name ?? "このユーザー")をブロックしますか？",
+            isPresented: $showBlockAlert
+        ) {
+            Button(blockService.isBlocked(userId) ? "解除する" : "ブロックする", role: .destructive) {
+                Task {
+                    do {
+                        if blockService.isBlocked(userId) {
+                            try await blockService.unblockUser(targetUserId: userId)
+                        } else {
+                            try await blockService.blockUser(targetUserId: userId)
+                        }
+                    } catch {
+                        errorMessage = "操作に失敗しました: \(error.localizedDescription)"
+                    }
+                }
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text(blockService.isBlocked(userId)
+                ? "ブロックを解除するとこのユーザーの投稿が表示されるようになります。"
+                : "ブロックするとこのユーザーの投稿がフィードに表示されなくなります。")
+        }
         .sheet(item: $selectedPost) { post in
             PostDetailView(
                 post: post,
+                postId: post.id ?? post.post_id,
                 isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
                 onLike: { Task { await postsViewModel.toggleLike(post: post) } },
                 onDeleted: { deletedPost in
@@ -200,7 +232,7 @@ struct ProfileView: View {
                                     .scaledToFill()
                             } else {
                                 Text(avatarId)
-                                    .font(.system(size: 72))
+                                    .font(.appFont(.regular, size: 72))
                             }
                         }
                         .frame(width: 100, height: 100)
@@ -215,13 +247,13 @@ struct ProfileView: View {
                         // Display name
                         if let name = profileUser?.display_name, !name.isEmpty {
                             Text(name)
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.appFont(.bold, size: 18))
                                 .foregroundColor(.primary)
                         }
                         // Unique user ID
                         if let uid = profileUser?.unique_user_id, !uid.isEmpty {
                             Text("@\(uid)")
-                                .font(.system(size: 13))
+                                .font(.appFont(.medium, size: 13))
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -234,7 +266,7 @@ struct ProfileView: View {
                                 showNotifications = true
                             } label: {
                                 Image(systemName: "bell")
-                                    .font(.system(size: 18, weight: .medium))
+                                    .font(.appFont(.regular, size: 18))
                                     .foregroundColor(.secondary)
                                     .frame(width: 36, height: 36)
                                     .background(Color(.systemGray6))
@@ -244,7 +276,7 @@ struct ProfileView: View {
                                 showSettings = true
                             } label: {
                                 Image(systemName: "gearshape")
-                                    .font(.system(size: 18, weight: .medium))
+                                    .font(.appFont(.medium, size: 18))
                                     .foregroundColor(.secondary)
                                     .frame(width: 36, height: 36)
                                     .background(Color(.systemGray6))
@@ -265,9 +297,9 @@ struct ProfileView: View {
                                 let ageText = childAgeText(child)
                                 HStack(spacing: 4) {
                                     Image(systemName: "figure.child")
-                                        .font(.system(size: 12))
+                                        .font(.appFont(.medium, size: 12))
                                     Text("\(name) \(ageText)")
-                                        .font(.system(size: 12, weight: .medium))
+                                        .font(.appFont(.regular, size: 12))
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
@@ -280,41 +312,46 @@ struct ProfileView: View {
                     .padding(.horizontal, 8)
                 }
 
-                // プロフィール編集ボタン（自分のプロフィール時のみ）
-                if isOwnProfile {
-                    Button {
-                        showEditProfile = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 13, weight: .medium))
-                            Text("プロフィールを編集")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                    }
-                }
-
                 // フォローボタン（他ユーザーの場合）
                 if !isOwnProfile {
-                    Button {
-                        Task { await toggleFollow() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isFollowing ? "checkmark" : "person.badge.plus")
-                                .font(.system(size: 13, weight: .medium))
-                            Text(isFollowing ? "フォロー中" : "フォローする")
-                                .font(.system(size: 14, weight: .bold))
+                    HStack(spacing: 10) {
+                        Button {
+                            Task { await toggleFollow() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: isFollowing ? "checkmark" : "person.badge.plus")
+                                    .font(.appFont(.medium, size: 13))
+                                Text(isFollowing ? "フォロー中" : "フォローする")
+                                    .font(.appFont(.bold, size: 14))
+                            }
+                            .foregroundColor(isFollowing ? .secondary : .white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(isFollowing ? Color(.systemGray5) : Color.accentBlue)
+                            .cornerRadius(12)
                         }
-                        .foregroundColor(isFollowing ? .secondary : .white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(isFollowing ? Color(.systemGray5) : Color.accentBlue)
-                        .cornerRadius(12)
+
+                        Button {
+                            showReportSheet = true
+                        } label: {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.appFont(.regular, size: 14))
+                                .foregroundColor(.secondary)
+                                .frame(width: 40, height: 40)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(10)
+                        }
+
+                        Button {
+                            showBlockAlert = true
+                        } label: {
+                            Image(systemName: blockService.isBlocked(userId) ? "hand.raised.slash" : "hand.raised")
+                                .font(.appFont(.regular, size: 14))
+                                .foregroundColor(blockService.isBlocked(userId) ? .red : .secondary)
+                                .frame(width: 40, height: 40)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(10)
+                        }
                     }
                 }
             }
@@ -345,10 +382,12 @@ struct ProfileView: View {
             }
             .padding(.vertical, 12)
 
-            // ── カレンダー設定 / 公開カレンダー閲覧 ──
-            calendarSettingsRow
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+            // ── 他ユーザーのカレンダー閲覧（自分のプロフィール時は設定画面から） ──
+            if !isOwnProfile {
+                calendarSettingsRow
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            }
         }
         .background(Color.white)
         .cornerRadius(20)
@@ -367,13 +406,13 @@ struct ProfileView: View {
     private func statCardContent(count: Int, label: String, icon: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.appFont(.bold, size: 16))
                 .foregroundColor(.accentRed)
             Text("\(count)")
-                .font(.system(size: 18, weight: .bold))
+                .font(.appFont(.regular, size: 18))
                 .foregroundColor(.primary)
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.appFont(.medium, size: 11))
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -392,32 +431,32 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 18))
+                    .font(.appFont(.regular, size: 18))
                     .foregroundColor(.accentRed)
                     .frame(width: 32, height: 32)
                     .background(Color.accentRed.opacity(0.1))
                     .cornerRadius(8)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(isOwnProfile ? "カレンダー設定" : "カレンダーを見る")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.appFont(.medium, size: 14))
                         .foregroundColor(.primary)
                     if isOwnProfile {
                         Text(calendarIsPublic ? "公開中：他のユーザーにカレンダーが表示されます" : "非公開：カレンダーは自分だけが見られます")
-                            .font(.system(size: 11))
+                            .font(.appFont(.medium, size: 11))
                             .foregroundColor(Color(.systemGray))
                     } else if calendarIsPublic {
                         Text("このユーザーのカレンダーを閲覧できます")
-                            .font(.system(size: 11))
+                            .font(.appFont(.regular, size: 11))
                             .foregroundColor(Color(.systemGray))
                     } else {
                         Text("カレンダーは非公開に設定されています")
-                            .font(.system(size: 11))
+                            .font(.appFont(.regular, size: 11))
                             .foregroundColor(Color(.systemGray3))
                     }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.appFont(.regular, size: 12))
                     .foregroundColor(Color(.systemGray3))
             }
             .padding(.vertical, 8)
@@ -433,14 +472,14 @@ struct ProfileView: View {
     private func emptyStateView(icon: String, title: String, message: String?) -> some View {
         VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 48))
+                .font(.appFont(.medium, size: 48))
                 .foregroundColor(Color(.systemGray4))
             Text(title)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.appFont(.regular, size: 16))
                 .foregroundColor(.secondary)
             if let message = message {
                 Text(message)
-                    .font(.system(size: 13))
+                    .font(.appFont(.regular, size: 13))
                     .foregroundColor(Color(.systemGray3))
                     .multilineTextAlignment(.center)
             }
@@ -481,9 +520,9 @@ struct ProfileView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: tab == .posts ? "photo.on.rectangle" : "heart.fill")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                             Text(tab.rawValue)
-                                .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium))
+                                .font(.appFont(selectedTab == tab ? .medium : .regular, size: 14))
                         }
                         .foregroundColor(selectedTab == tab ? .white : .secondary)
                         .padding(.horizontal, 20)
@@ -507,7 +546,7 @@ struct ProfileView: View {
                 }
             } label: {
                 Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
-                    .font(.system(size: 18))
+                    .font(.appFont(.regular, size: 18))
                     .foregroundColor(.accentRed)
                     .frame(width: 36, height: 36)
                     .background(Color.white)
@@ -802,7 +841,7 @@ struct FollowingListView: View {
                                         Image(avatarId).resizable().scaledToFill()
                                     } else {
                                         Text(avatarId)
-                                            .font(.system(size: 24))
+                                            .font(.appFont(.regular, size: 24))
                                     }
                                 }
                                 .frame(width: 48, height: 48)
@@ -811,10 +850,10 @@ struct FollowingListView: View {
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(user.display_name ?? "名前未設定")
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .font(.appFont(.medium, size: 15))
                                     if let uid = user.unique_user_id, !uid.isEmpty {
                                         Text("@\(uid)")
-                                            .font(.system(size: 13))
+                                            .font(.appFont(.regular, size: 13))
                                             .foregroundColor(.secondary)
                                     }
                                 }
@@ -822,7 +861,7 @@ struct FollowingListView: View {
                                 Spacer()
 
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 14))
+                                    .font(.appFont(.regular, size: 14))
                                     .foregroundColor(.secondary)
                             }
                             .contentShape(Rectangle())
@@ -980,6 +1019,7 @@ struct UserPostsSheet: View {
             .sheet(item: $selectedPost) { post in
                 PostDetailView(
                     post: post,
+                    postId: post.id ?? post.post_id,
                     isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
                     onLike: { Task { await postsViewModel.toggleLike(post: post) } },
                     onDeleted: { _ in }

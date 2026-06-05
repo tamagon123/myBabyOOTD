@@ -38,6 +38,9 @@ struct PostDetailView: View {
     @State private var showItemTags = false         // アイテムタグの表示/非表示
     @State private var imageHeights: [Int: CGFloat] = [:]  // 各画像インデックス→実際の表示高さ
 
+    // 通報関連
+    @State private var showReportSheet = false      // 投稿通報シート表示フラグ
+
     // スタンプ編集関連
     @State private var showStampEditor = false      // スタンプ編集画面表示フラグ
     @State private var editingImage: UIImage? = nil // 編集中の画像
@@ -126,7 +129,7 @@ struct PostDetailView: View {
                             Spacer().frame(height: 100)
                             ProgressView()
                             Text("読み込み中...")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(.secondary)
                             Spacer()
                         }
@@ -135,10 +138,10 @@ struct PostDetailView: View {
                         VStack(spacing: 20) {
                             Spacer().frame(height: 100)
                             Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 48))
+                                .font(.appFont(.regular, size: 48))
                                 .foregroundColor(.secondary)
                             Text("投稿が見つかりません")
-                                .font(.system(size: 16))
+                                .font(.appFont(.regular, size: 16))
                                 .foregroundColor(.secondary)
                             Spacer()
                         }
@@ -154,7 +157,7 @@ struct PostDetailView: View {
                                 .frame(height: UIScreen.main.bounds.width)
                                 .overlay(
                                     Image(systemName: "photo")
-                                        .font(.system(size: 48))
+                                        .font(.appFont(.regular, size: 48))
                                         .foregroundColor(.secondary.opacity(0.4))
                                 )
                         } else {
@@ -166,18 +169,18 @@ struct PostDetailView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(p.posterDisplayName ?? "名前未設定")
-                                        .font(.system(size: 15, weight: .bold))
+                                        .font(.appFont(.bold, size: 15))
                                     HStack(spacing: 6) {
                                         if let childName = p.posterChildAgeName, !childName.isEmpty {
                                             Text(childName)
-                                                .font(.system(size: 12))
+                                                .font(.appFont(.medium, size: 12))
                                                 .foregroundColor(.secondary)
                                             Text("・")
-                                                .font(.system(size: 12))
+                                                .font(.appFont(.regular, size: 12))
                                                 .foregroundColor(.secondary)
                                         }
                                         Text(ageLabel(months: p.child_age_months))
-                                            .font(.system(size: 12))
+                                            .font(.appFont(.regular, size: 12))
                                             .foregroundColor(.secondary)
                                     }
                                 }
@@ -188,10 +191,10 @@ struct PostDetailView: View {
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: effectiveIsLiked ? "heart.fill" : "heart")
-                                            .font(.system(size: 20))
+                                            .font(.appFont(.regular, size: 20))
                                             .foregroundColor(effectiveIsLiked ? .red : .gray)
                                         Text("\(effectiveLikes)")
-                                            .font(.system(size: 14, weight: .medium))
+                                            .font(.appFont(.regular, size: 14))
                                             .foregroundColor(.secondary)
                                     }
                                 }
@@ -202,11 +205,11 @@ struct PostDetailView: View {
                             let wt = WeatherType(rawValue: p.weather_type)
                             HStack(spacing: 8) {
                                 Label(wt?.label ?? "", systemImage: wt?.sfSymbol ?? "cloud.sun")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.appFont(.medium, size: 13))
                                     .foregroundColor(.blue)
                                 Spacer()
                                 Text("最高 \(Int(p.temp_max))℃  最低 \(Int(p.temp_min))℃")
-                                    .font(.system(size: 13))
+                                    .font(.appFont(.regular, size: 13))
                                     .foregroundColor(.secondary)
                             }
                             .padding(12)
@@ -219,13 +222,13 @@ struct PostDetailView: View {
                                 return prefectures[idx - 1]
                             }()
                             Label(region, systemImage: "mappin.and.ellipse")
-                                .font(.system(size: 13))
+                                .font(.appFont(.regular, size: 13))
                                 .foregroundColor(.secondary)
 
                             // Description
                             if !p.description.isEmpty {
                                 Text(p.description)
-                                    .font(.system(size: 15))
+                                    .font(.appFont(.regular, size: 15))
                                     .foregroundColor(.primary)
                             }
 
@@ -252,8 +255,8 @@ struct PostDetailView: View {
                     Button("閉じる") { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if isMyPost {
-                        Menu {
+                    Menu {
+                        if isMyPost {
                             Button {
                                 Task { await openStampEditor() }
                             } label: {
@@ -264,11 +267,17 @@ struct PostDetailView: View {
                             } label: {
                                 Label("削除", systemImage: "trash")
                             }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
+                        } else {
+                            Button(role: .destructive) {
+                                showReportSheet = true
+                            } label: {
+                                Label("通報する", systemImage: "exclamationmark.triangle")
+                            }
                         }
-                        .disabled(isDeleting || isLoadingImage)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
+                    .disabled(isDeleting || isLoadingImage)
                 }
             }
             .sheet(isPresented: $showStampEditor, onDismiss: {
@@ -288,6 +297,14 @@ struct PostDetailView: View {
                         },
                         existingStamps: p.stamps?.filter { $0.image_side == editingImageSide } ?? []
                     )
+                }
+            }
+            .sheet(isPresented: $showReportSheet) {
+                ReportSheetView(
+                    targetType: .post,
+                    targetId: effectivePostId
+                ) {
+                    dismiss()
                 }
             }
             .alert("投稿を削除", isPresented: $showDeleteConfirm) {
@@ -316,7 +333,7 @@ struct PostDetailView: View {
     private var itemsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("アイテム")
-                .font(.system(size: 15, weight: .bold))
+                .font(.appFont(.bold, size: 15))
 
             ForEach(postItems.indices, id: \.self) { idx in
                 let item = postItems[idx]
@@ -326,10 +343,10 @@ struct PostDetailView: View {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.custom_name)
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.appFont(.medium, size: 14))
                                 .foregroundColor(.primary)
                             Text(item.category)
-                                .font(.system(size: 11))
+                                .font(.appFont(.regular, size: 11))
                                 .foregroundColor(.accentGreen)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
@@ -338,7 +355,7 @@ struct PostDetailView: View {
                         }
                         Spacer()
                         Text(sizeLabel(item.size_value))
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.appFont(.medium, size: 13))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
@@ -350,10 +367,10 @@ struct PostDetailView: View {
                             ForEach(tags) { tag in
                                 HStack(spacing: 3) {
                                     Image(systemName: "mappin.circle.fill")
-                                        .font(.system(size: 11))
+                                        .font(.appFont(.regular, size: 11))
                                         .foregroundColor(.pink)
                                     Text(tag.image_side == "front" ? "フロント" : "バック")
-                                        .font(.system(size: 11))
+                                        .font(.appFont(.regular, size: 11))
                                         .foregroundColor(.secondary)
                                 }
                                 .padding(.horizontal, 8)
@@ -535,11 +552,11 @@ struct PostDetailView: View {
             if let item = item {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.custom_name)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.appFont(.medium, size: 11))
                         .foregroundColor(.white)
                         .lineLimit(1)
                     Text(sizeLabel(item.size_value))
-                        .font(.system(size: 10))
+                        .font(.appFont(.regular, size: 10))
                         .foregroundColor(.white.opacity(0.95))
                 }
                 .padding(.horizontal, 8)

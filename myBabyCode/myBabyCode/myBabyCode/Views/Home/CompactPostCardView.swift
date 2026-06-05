@@ -45,7 +45,7 @@ struct CompactPostCardView: View {
                             .scaledToFill()
                     } else {
                         Image(systemName: "person.fill")
-                            .font(.system(size: 16))
+                            .font(.appFont(.regular, size: 16))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -55,17 +55,17 @@ struct CompactPostCardView: View {
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(post.posterDisplayName ?? "名前未設定")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.appFont(.medium, size: 13))
                         .foregroundColor(.primary)
                     
                     HStack(spacing: 4) {
                         if let childName = post.posterChildAgeName, !childName.isEmpty {
                             Text(childName)
-                                .font(.system(size: 11))
+                                .font(.appFont(.regular, size: 11))
                                 .foregroundColor(.secondary)
                         }
                         Text(postDate)
-                            .font(.system(size: 11))
+                            .font(.appFont(.regular, size: 11))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -75,7 +75,7 @@ struct CompactPostCardView: View {
                 // 天気アイコン
                 if let weatherType = WeatherType(rawValue: post.weather_type) {
                     Image(systemName: weatherType.sfSymbol)
-                        .font(.system(size: 16))
+                        .font(.appFont(.regular, size: 16))
                         .foregroundColor(.secondary)
                 }
             }
@@ -100,7 +100,7 @@ struct CompactPostCardView: View {
                                         .frame(width: geo.size.width, height: geo.size.height)
                                         .overlay(
                                             Image(systemName: "photo")
-                                                .font(.system(size: 40))
+                                                .font(.appFont(.regular, size: 40))
                                                 .foregroundColor(.secondary.opacity(0.4))
                                         )
                                 }
@@ -125,7 +125,7 @@ struct CompactPostCardView: View {
                                 .frame(width: geo.size.width, height: geo.size.height)
                                 .overlay(
                                     Image(systemName: "photo")
-                                        .font(.system(size: 40))
+                                        .font(.appFont(.regular, size: 40))
                                         .foregroundColor(.secondary.opacity(0.4))
                                 )
                         }
@@ -150,12 +150,12 @@ struct CompactPostCardView: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.appFont(.medium, size: 18))
                             .foregroundColor(isLiked ? .accentRed : .primary)
                             .scaleEffect(showingLikeAnimation ? 1.3 : 1.0)
                         if post.likes_count > 0 {
                             Text("\(post.likes_count)")
-                                .font(.system(size: 13))
+                                .font(.appFont(.regular, size: 13))
                                 .foregroundColor(.primary)
                         }
                     }
@@ -168,7 +168,7 @@ struct CompactPostCardView: View {
                 if let onReport = onReport {
                     Button(action: onReport) {
                         Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 16))
+                            .font(.appFont(.regular, size: 16))
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -180,7 +180,7 @@ struct CompactPostCardView: View {
             // 説明文（3行制限）
             if !post.description.isEmpty {
                 Text(post.description)
-                    .font(.system(size: 13))
+                    .font(.appFont(.regular, size: 13))
                     .foregroundColor(.primary)
                     .lineLimit(3)
                     .padding(.horizontal, 12)

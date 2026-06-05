@@ -67,7 +67,7 @@ struct SearchView: View {
                         if let err = errorMessage {
                             Text(err)
                                 .foregroundColor(.red)
-                                .font(.system(size: 13))
+                                .font(.appFont(.regular, size: 13))
                                 .padding()
                         } else if isLoading {
                             HStack { Spacer(); ProgressView(); Spacer() }
@@ -115,7 +115,7 @@ struct SearchView: View {
     private var filterSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("絞り込み検索")
-                .font(.system(size: 17, weight: .bold))
+                .font(.appFont(.bold, size: 17))
                 .padding(.horizontal)
 
             // Region
@@ -140,12 +140,12 @@ struct SearchView: View {
                                 ForEach(Array(selectedRegionIndices).sorted(), id: \.self) { idx in
                                     HStack(spacing: 4) {
                                         Text(prefectures[idx])
-                                            .font(.system(size: 12))
+                                            .font(.appFont(.regular, size: 12))
                                         Button {
                                             selectedRegionIndices.remove(idx)
                                         } label: {
                                             Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 12))
+                                                .font(.appFont(.regular, size: 12))
                                         }
                                     }
                                     .padding(.horizontal, 10)
@@ -190,7 +190,7 @@ struct SearchView: View {
                             }
                         } label: {
                             Label(w.label, systemImage: w.sfSymbol)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.appFont(.medium, size: 12))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(selectedWeathers.contains(w.rawValue) ? Color.accentRed : Color(.systemGray6))
@@ -258,7 +258,7 @@ struct SearchView: View {
                             showBrandSearch = true
                         } label: {
                             Text("検索")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.appFont(.medium, size: 13))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
@@ -272,12 +272,12 @@ struct SearchView: View {
                                 ForEach(Array(selectedBrandNames), id: \.self) { name in
                                     HStack(spacing: 4) {
                                         Text(name)
-                                            .font(.system(size: 12))
+                                            .font(.appFont(.regular, size: 12))
                                         Button {
                                             selectedBrandNames.remove(name)
                                         } label: {
                                             Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 12))
+                                                .font(.appFont(.regular, size: 12))
                                         }
                                     }
                                     .padding(.horizontal, 10)
@@ -319,11 +319,11 @@ struct SearchView: View {
                     } label: {
                         HStack {
                             Text(startDate != nil ? formatDate(startDate!) : "開始日を選択")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(startDate != nil ? .primary : Color(.systemGray))
                             Spacer()
                             Image(systemName: "calendar")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(.accentRed)
                         }
                         .padding(.horizontal, 12)
@@ -349,11 +349,11 @@ struct SearchView: View {
                     } label: {
                         HStack {
                             Text(endDate != nil ? formatDate(endDate!) : "終了日を選択")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(endDate != nil ? .primary : Color(.systemGray))
                             Spacer()
                             Image(systemName: "calendar")
-                                .font(.system(size: 14))
+                                .font(.appFont(.regular, size: 14))
                                 .foregroundColor(.accentRed)
                         }
                         .padding(.horizontal, 12)
@@ -381,7 +381,7 @@ struct SearchView: View {
                             showEndDatePicker = false
                         } label: {
                             Text("日付をクリア")
-                                .font(.system(size: 12))
+                                .font(.appFont(.regular, size: 12))
                                 .foregroundColor(.accentRed)
                         }
                     }
@@ -408,7 +408,7 @@ struct SearchView: View {
             Task { await executeSearch() }
         } label: {
             Label("検索する", systemImage: "magnifyingglass")
-                .font(.system(size: 15, weight: .bold))
+                .font(.appFont(.bold, size: 15))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -434,7 +434,7 @@ struct SearchView: View {
     private func chipButton(label: String, active: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .font(.appFont(.medium, size: 12))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(active ? Color.accentRed : Color(.systemGray6))

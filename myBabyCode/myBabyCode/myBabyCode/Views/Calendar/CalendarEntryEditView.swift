@@ -128,7 +128,7 @@ struct CalendarEntryEditView: View {
         let fmt = DateFormatter()
         let _ = { fmt.dateFormat = "yyyy年M月d日（E）"; fmt.locale = Locale(identifier: "ja_JP") }()
         return Text(fmt.string(from: date))
-            .font(.system(size: 18, weight: .bold))
+            .font(.appFont(.bold, size: 18))
             .foregroundColor(.primary)
     }
 
@@ -136,7 +136,7 @@ struct CalendarEntryEditView: View {
         let entry = existingEntry
         return VStack(alignment: .leading, spacing: 8) {
             Text("天気・気温")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.appFont(.medium, size: 13))
                 .foregroundColor(Color(.systemGray))
 
             HStack(spacing: 12) {
@@ -146,11 +146,11 @@ struct CalendarEntryEditView: View {
                     } icon: {
                         Text(w.emoji)
                     }
-                    .font(.system(size: 15))
+                    .font(.appFont(.regular, size: 15))
                 }
                 if let max = entry?.temp_max, let min = entry?.temp_min {
                     Text("最高 \(Int(max.rounded()))° / 最低 \(Int(min.rounded()))°")
-                        .font(.system(size: 14))
+                        .font(.appFont(.medium, size: 14))
                         .foregroundColor(Color(.systemGray))
                 }
                 Spacer()
@@ -165,7 +165,7 @@ struct CalendarEntryEditView: View {
                         }
                         Text(entry?.weather_type == nil ? "取得" : "更新")
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.appFont(.regular, size: 12))
                     .foregroundColor(.accentBlue)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -183,7 +183,7 @@ struct CalendarEntryEditView: View {
     private var commentSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("日記コメント")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.appFont(.medium, size: 13))
                 .foregroundColor(Color(.systemGray))
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $comment)
@@ -193,7 +193,7 @@ struct CalendarEntryEditView: View {
                     .cornerRadius(12)
                 if comment.isEmpty {
                     Text("今日のコーデや出来事を記録しましょう...")
-                        .font(.system(size: 14))
+                        .font(.appFont(.regular, size: 14))
                         .foregroundColor(Color(.systemGray3))
                         .padding(.top, 16)
                         .padding(.leading, 12)
@@ -206,7 +206,7 @@ struct CalendarEntryEditView: View {
     private var photoSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("写真")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.appFont(.medium, size: 13))
                 .foregroundColor(Color(.systemGray))
             Button {
                 showPhotoSourceSheet = true
@@ -235,9 +235,9 @@ struct CalendarEntryEditView: View {
                             .overlay(
                                 VStack(spacing: 8) {
                                     Image(systemName: "camera")
-                                        .font(.system(size: 24))
+                                        .font(.appFont(.regular, size: 24))
                                     Text("写真を追加（任意）")
-                                        .font(.system(size: 13))
+                                        .font(.appFont(.regular, size: 13))
                                 }
                                 .foregroundColor(Color(.systemGray3))
                             )
@@ -254,7 +254,7 @@ struct CalendarEntryEditView: View {
             HStack {
                 Spacer()
                 Label("この日記を削除", systemImage: "trash")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.appFont(.medium, size: 14))
                     .foregroundColor(.red)
                 Spacer()
             }

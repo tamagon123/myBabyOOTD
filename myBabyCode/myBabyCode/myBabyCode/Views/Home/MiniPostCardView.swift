@@ -96,7 +96,7 @@ struct MiniPostCardView: View {
                             .scaledToFill()
                     } else {
                         Image(systemName: "person.fill")
-                            .font(.system(size: 12))
+                            .font(.appFont(.regular, size: 12))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -106,7 +106,7 @@ struct MiniPostCardView: View {
                 
                 // 表示名（短縮）
                 Text(post.posterDisplayName ?? "名前未設定")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.appFont(.medium, size: 11))
                     .foregroundColor(.white)
                     .lineLimit(1)
                 } // showInfo
@@ -124,7 +124,7 @@ struct MiniPostCardView: View {
                     }
                 }) {
                     Image(systemName: isLiked ? "heart.fill" : "heart")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.appFont(.medium, size: 14))
                         .foregroundColor(isLiked ? .accentRed : .white)
                         .scaleEffect(showingLikeAnimation ? 1.3 : 1.0)
                 }
