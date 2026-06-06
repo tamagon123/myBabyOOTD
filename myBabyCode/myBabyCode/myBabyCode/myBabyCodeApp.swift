@@ -20,6 +20,7 @@ struct myBabyCodeApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     // 認証状態を管理するViewModel。アプリ全体で共有される。
     @StateObject private var authViewModel = AuthViewModel()
+    @Environment(\.scenePhase) var scenePhase
 
     // =============================================================================
     // 【関数サマリー】init
@@ -79,6 +80,15 @@ struct myBabyCodeApp: App {
                 // 未ログイン: 認証画面を表示
                 AuthView()
                     .environmentObject(authViewModel)
+            }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                // UIが完全にアクティブになってから1秒後にATTダイアログを表示
+                // （iOS 15以降では即時呼び出しだとシステムに無視される場合があるため遅延）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    appDelegate.requestATT()
+                }
             }
         }
     }

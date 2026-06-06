@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InstaGrid Splitter - Instagram縦型グリッド分割</title>
+  <link rel="stylesheet" href="style.css?v=2">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>InstaGrid Splitter</h1>
+      <p>Instagram縦型レイアウト対応のグリッド分割ツール</p>
+    </header>
+
+    <section class="upload-section" id="uploadSection">
+      <div class="drop-zone" id="dropZone">
+        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <p class="drop-text">画像をドラッグ&ドロップ</p>
+        <p class="drop-sub">または <span class="clickable">クリックして選択</span></p>
+        <input type="file" id="fileInput" accept="image/*" hidden>
+      </div>
+    </section>
+
+    <!-- Crop Editor: User drags/zooms image inside fixed-ratio frame -->
+    <section class="crop-editor-section hidden" id="cropEditorSection">
+      <div class="crop-editor-header">
+        <h2>トリミング位置を調整</h2>
+        <p class="crop-hint">枠内で画像をドラッグして移動、ホイールで拡大縮小</p>
+      </div>
+
+      <div class="crop-editor-wrap" id="cropEditorWrap">
+        <canvas id="editorCanvas"></canvas>
+        <div class="crop-frame" id="cropFrame">
+          <div class="crop-frame-border"></div>
+          <div class="crop-grid" id="editorGridOverlay"></div>
+        </div>
+      </div>
+
+      <div class="crop-controls">
+        <div class="zoom-row">
+          <span class="zoom-label">ズーム</span>
+          <input type="range" id="zoomSlider" min="100" max="500" value="100" step="1">
+          <span class="zoom-value" id="zoomValue">100%</span>
+        </div>
+        <div class="crop-btns">
+          <button class="crop-btn secondary" id="fitBtn">画面に合わせる</button>
+          <button class="crop-btn secondary" id="fillBtn">枠に合わせる</button>
+          <button class="crop-btn primary" id="confirmCrop">この範囲で確定</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="controls-section hidden" id="controlsSection">
+      <div class="control-group">
+        <label>グリッドサイズ</label>
+        <div class="grid-presets">
+          <button class="preset-btn active" data-cols="3" data-rows="2">3 × 2</button>
+          <button class="preset-btn" data-cols="3" data-rows="3">3 × 3</button>
+          <button class="preset-btn" data-cols="2" data-rows="2">2 × 2</button>
+          <button class="preset-btn" data-cols="4" data-rows="4">4 × 4</button>
+          <button class="preset-btn" data-cols="3" data-rows="1">3 × 1</button>
+          <button class="preset-btn" data-cols="1" data-rows="3">1 × 3</button>
+        </div>
+        <div class="custom-grid">
+          <input type="number" id="customCols" min="1" max="10" value="3" placeholder="列">
+          <span>×</span>
+          <input type="number" id="customRows" min="1" max="10" value="2" placeholder="行">
+          <button class="apply-btn" id="applyCustom">適用</button>
+        </div>
+      </div>
+
+      <div class="info-panel">
+        <div class="info-item">
+          <span class="info-label">元画像目標比</span>
+          <span class="info-value" id="targetRatio">9 : 8</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">セルサイズ</span>
+          <span class="info-value" id="cellSize">4 : 5</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">余白</span>
+          <span class="info-value" id="paddingInfo">左右 3.125%</span>
+        </div>
+      </div>
+
+      <div class="crop-start-row" id="cropStartRow">
+        <button class="crop-btn primary" id="startCropBtn">トリミングを開始</button>
+      </div>
+
+      <div class="preview-wrapper hidden" id="previewWrapper">
+        <p class="preview-label">トリミングプレビュー</p>
+        <div class="crop-preview" id="cropPreview">
+          <canvas id="cropCanvas"></canvas>
+          <div class="grid-overlay" id="gridOverlay"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="result-section hidden" id="resultSection">
+      <div class="result-header">
+        <h2>分割結果 <span class="post-order">（右下 → 左上が投稿順）</span></h2>
+        <div class="download-btns">
+          <button class="dl-btn secondary" id="dlAll">個別ダウンロード</button>
+          <button class="dl-btn primary" id="dlZip">ZIP一括ダウンロード</button>
+        </div>
+      </div>
+      <div class="tiles-grid" id="tilesGrid"></div>
+    </section>
+  </div>
+
+  <script src="app.js?v=2"></script>
+</body>
+</html>

@@ -320,7 +320,7 @@ struct NewPostView: View {
             sectionLabel(isFromCalendar ? "日記コメント" : "服装のポイント")
             if #available(iOS 16.0, *) {
                 TextField(
-                    isFromCalendar ? "例：今日は公園に行きました" : "例：気温が上がったので半西デビュー！",
+                    isFromCalendar ? "例：今日は公園に行きました" : "例：気温が上がったので半袖デビュー！",
                     text: $description,
                     axis: .vertical
                 )
