@@ -50,27 +50,27 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
 
-        // AdMob 初期化と ATT 許可要求（非同期）
-        requestATTAndInitializeAdMob()
+        // AdMob SDK 初期化（ATT許可要求はscenePhaseがactiveになってから行う）
+        startAdMob()
 
         return true
     }
 
     // =============================================================================
-    // 【関数サマリー】requestATTAndInitializeAdMob
-    // 目的: iOS 14.5 以降の ATT（App Tracking Transparency）許可を求め、
-    //       レスポンス後に Google Mobile Ads SDK を初期化する
+    // 【関数サマリー】requestATT
+    // 目的: iOS 14.5 以降の ATT（App Tracking Transparency）許可ダイアログを表示する
     // 引数: なし
     // 戻り値: なし
     // 処理の流れ:
-    //   1. iOS 14 以上なら ATT 許可ダイアログを表示
-    //   2. ユーザーが許可/拒否しても MobileAds.shared.start() を呼び出し
+    //   1. ATT ステータスが未決定（notDetermined）の場合のみダイアログを表示
+    //   2. アプリがアクティブになった後（scenePhase == .active）に呼び出すこと
     // 備考:
-    //   - ATT 未許可でも広告は表示されるが、ターゲティング精度が低下する
-    //   - 子供向けアプリでは tagForChildDirectedTreatment を設定すべき
+    //   - didFinishLaunchingWithOptions ではUIが未準備のためダイアログが無視される
+    //   - 複数回呼ばれても notDetermined の時のみ表示されるため安全
     // =============================================================================
-    private func requestATTAndInitializeAdMob() {
+    func requestATT() {
         if #available(iOS 14, *) {
+            guard ATTrackingManager.trackingAuthorizationStatus == .notDetermined else { return }
             ATTrackingManager.requestTrackingAuthorization { status in
                 DispatchQueue.main.async {
                     switch status {
@@ -85,16 +85,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
                     @unknown default:
                         break
                     }
-                    self.startAdMob()
                 }
             }
-        } else {
-            // iOS 13 以前は ATT 不要
-            startAdMob()
         }
     }
 
-    private func startAdMob() {
+    func startAdMob() {
         // AdMob SDK 初期化（v11+ API）
         GADMobileAds.sharedInstance().start { initializationStatus in
             let adapterStatuses = initializationStatus.adapterStatusesByClassName
