@@ -29,6 +29,11 @@ struct SettingsView: View {
     @State private var showAppleReauthSheet = false  // Apple Sign In再認証シート
     @State private var showUnsubscribeAlert = false   // プレミアム解除確認アラート
     @State private var reminderEnabled: Bool = false  // 日記リマインダー ON/OFF
+    @State private var showEmailChangeSheet = false   // メールアドレス変更シート
+    @State private var newEmail: String = ""          // 変更後のメールアドレス
+    @State private var emailChangePassword: String = ""  // メール変更時の再認証パスワード
+    @State private var emailChangeMessage: String? = nil  // メール変更結果メッセージ
+    @State private var isChangingEmail = false        // メール変更中フラグ
     @State private var reminderTime: Date = {         // 日記リマインダー時刻
         var cal = Calendar.current
         var comps = DateComponents()
@@ -57,6 +62,40 @@ struct SettingsView: View {
                     }
                     NavigationLink(destination: BlockListView()) {
                         Label("ブロックリスト", systemImage: "hand.raised")
+                    }
+
+                    // ログイン方法表示
+                    HStack {
+                        Label("ログイン方法", systemImage: "key.fill")
+                        Spacer()
+                        Text(loginMethodLabel)
+                            .font(.appFont(.regular, size: 14))
+                            .foregroundColor(.secondary)
+                    }
+
+                    // メールアドレス表示（全ユーザー共通）
+                    if let email = FirebaseAuth.Auth.auth().currentUser?.email, !email.isEmpty {
+                        HStack {
+                            Label("メールアドレス", systemImage: "envelope")
+                            Spacer()
+                            Text(email)
+                                .font(.appFont(.regular, size: 13))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        // メールアドレス変更（メールログインのみ）
+                        if authViewModel.isEmailUser {
+                            Button {
+                                newEmail = ""
+                                emailChangePassword = ""
+                                emailChangeMessage = nil
+                                showEmailChangeSheet = true
+                            } label: {
+                                Label("メールアドレスを変更", systemImage: "envelope.badge")
+                                    .foregroundColor(.accentBlue)
+                            }
+                        }
                     }
                 } header: {
                     Text("アカウント")
@@ -353,8 +392,113 @@ struct SettingsView: View {
                     Spacer()
                 }
             }
+            // メールアドレス変更シート（メールログインのみ）
+            .sheet(isPresented: $showEmailChangeSheet) {
+                NavigationView {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            Text("現在のメールアドレス")
+                                .font(.appFont(.bold, size: 15))
+                            Text(FirebaseAuth.Auth.auth().currentUser?.email ?? "")
+                                .font(.appFont(.regular, size: 15))
+                                .foregroundColor(.secondary)
+                                .padding(.top, -16)
+
+                            Divider()
+
+                            Text("新しいメールアドレス")
+                                .font(.appFont(.bold, size: 15))
+                            TextField("新しいメールアドレス", text: $newEmail)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+
+                            Text("現在のパスワード（確認用）")
+                                .font(.appFont(.bold, size: 15))
+                            SecureField("パスワード", text: $emailChangePassword)
+                                .textFieldStyle(.roundedBorder)
+
+                            if let msg = emailChangeMessage {
+                                Text(msg)
+                                    .font(.appFont(.regular, size: 13))
+                                    .foregroundColor(msg.contains("成功") || msg.contains("送信") ? .accentGreen : .red)
+                                    .multilineTextAlignment(.leading)
+                            }
+
+                            Button {
+                                Task { await performEmailChange() }
+                            } label: {
+                                Group {
+                                    if isChangingEmail {
+                                        ProgressView().tint(.white)
+                                    } else {
+                                        Text("変更する")
+                                            .font(.appFont(.bold, size: 16))
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(newEmail.isEmpty || emailChangePassword.isEmpty ? Color.gray : Color.accentBlue)
+                                .cornerRadius(12)
+                            }
+                            .disabled(newEmail.isEmpty || emailChangePassword.isEmpty || isChangingEmail)
+
+                            Text("メールアドレスを変更すると、確認メールが新しいアドレスに送信されます。確認リンクをタップすることで変更が完了します。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(20)
+                    }
+                    .navigationTitle("メールアドレス変更")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("閉じる") { showEmailChangeSheet = false }
+                        }
+                    }
+                }
+                .navigationViewStyle(StackNavigationViewStyle())
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    // MARK: - ログイン方法ラベル
+    private var loginMethodLabel: String {
+        if authViewModel.isAppleUser { return "Apple" }
+        if authViewModel.isGoogleUser { return "Google" }
+        if authViewModel.isEmailUser { return "メール/パスワード" }
+        return "不明"
+    }
+
+    // MARK: - メールアドレス変更処理
+    private func performEmailChange() async {
+        guard let user = FirebaseAuth.Auth.auth().currentUser,
+              let currentEmail = user.email else {
+            emailChangeMessage = "ログイン状態を確認できません"
+            return
+        }
+        isChangingEmail = true
+        do {
+            let credential = FirebaseAuth.EmailAuthProvider.credential(withEmail: currentEmail, password: emailChangePassword)
+            try await user.reauthenticate(with: credential)
+            try await user.sendEmailVerification(beforeUpdatingEmail: newEmail)
+            emailChangeMessage = "確認メールを \(newEmail) に送信しました。メール内のリンクをタップすると変更が完了します。"
+            emailChangePassword = ""
+        } catch let error as NSError {
+            if error.code == AuthErrorCode.wrongPassword.rawValue {
+                emailChangeMessage = "パスワードが正しくありません"
+            } else if error.code == AuthErrorCode.emailAlreadyInUse.rawValue {
+                emailChangeMessage = "このメールアドレスは既に使用されています"
+            } else if error.code == AuthErrorCode.invalidEmail.rawValue {
+                emailChangeMessage = "メールアドレスの形式が正しくありません"
+            } else {
+                emailChangeMessage = "変更に失敗しました: \(error.localizedDescription)"
+            }
+        }
+        isChangingEmail = false
     }
 
     // MARK: - リマインダー設定の保存・読み込み

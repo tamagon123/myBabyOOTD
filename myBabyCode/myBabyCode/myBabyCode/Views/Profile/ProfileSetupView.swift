@@ -113,12 +113,14 @@ struct ProfileSetupView: View {
                                     .autocapitalization(.none)
                                     .disableAutocorrection(true)
                                     .onChange(of: uniqueUserId) { val in
+                                        let filtered = val.filter { $0.isLetter && $0.isASCII || $0.isNumber || $0 == "_" }
+                                        if filtered != val { uniqueUserId = filtered }
                                         idAvailable = nil
-                                        guard !val.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                                        guard !filtered.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                                         isCheckingId = true
                                         Task {
                                             try? await Task.sleep(nanoseconds: 600_000_000)
-                                            idAvailable = await authViewModel.checkUniqueUserIdAvailable(val.trimmingCharacters(in: .whitespaces))
+                                            idAvailable = await authViewModel.checkUniqueUserIdAvailable(filtered.trimmingCharacters(in: .whitespaces))
                                             isCheckingId = false
                                         }
                                     }
@@ -133,6 +135,10 @@ struct ProfileSetupView: View {
                             .background(Color.white)
                             .cornerRadius(14)
                             .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+                            Text("半角英数字とアンダースコア（_）のみ使用できます")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 4)
                             if idAvailable == false {
                                 Text("そのユーザーIDは既に使われています")
                                     .font(.caption2)

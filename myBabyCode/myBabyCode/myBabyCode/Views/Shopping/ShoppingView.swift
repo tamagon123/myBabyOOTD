@@ -93,22 +93,22 @@ struct ShoppingView: View {
     /// Firestore未接続時のローカルフォールバック
     private var fallbackPortals: [ShoppingPortal] {
         [
-            ShoppingPortal(id: "amazon_baby", title: "Amazon ベビーストア", description: "ベビー用品が豊富なAmazonのベビー専門ストア", url: "https://www.amazon.co.jp/baby", platform: "amazon", category: "ベビー用品", badge: "おすすめ", order: 0, isActive: true),
-            ShoppingPortal(id: "rakuten_baby", title: "楽天 ベビー・キッズ", description: "ポイント還元率が高い楽天のベビー・キッズ用品", url: "https://www.rakuten.co.jp/baby", platform: "rakuten", category: "ベビー用品", badge: nil, order: 1, isActive: true),
-            ShoppingPortal(id: "shimamura", title: "しまむらオンライン", description: "プチプラベビー服のしまむら。オンラインで便利に", url: "https://www.shimamura.gr.jp/", platform: "other", category: "ベビー服", badge: "プチプラ", order: 2, isActive: true),
-            ShoppingPortal(id: "nishimatsuya", title: "西松屋オンライン", description: "赤ちゃんのデパート西松屋。定番アイテムが充実", url: "https://www.nishimatsuya.co.jp/", platform: "other", category: "ベビー服", badge: "定番", order: 3, isActive: true),
-            ShoppingPortal(id: "hm_kids", title: "H&M キッズ", description: "おしゃれな北欧デザインの子供服", url: "https://www2.hm.com/ja_jp/kids.html", platform: "other", category: "キッズ服", badge: "おしゃれ", order: 4, isActive: true),
-            ShoppingPortal(id: "gu_kids", title: "GU キッズ", description: "リーズナブルで着やすい子供服", url: "https://www.gu-global.com/jp/ja/kids", platform: "other", category: "キッズ服", badge: "リーズナブル", order: 5, isActive: true),
-            ShoppingPortal(id: "ifme", title: "IFME イフミー", description: "足育を応援する子供靴の専門ブランド", url: "https://www.ifmeshoes.com/", platform: "other", category: "靴", badge: "足育", order: 6, isActive: true),
-            ShoppingPortal(id: "mikihouse", title: "MIKI HOUSE", description: "高品質な日本製子供靴", url: "https://www.mikihouse.co.jp/", platform: "other", category: "靴", badge: "日本製", order: 7, isActive: true),
-            ShoppingPortal(id: "toysrus", title: "トイザらス", description: "おもちゃが豊富なトイザらスオンライン", url: "https://www.toysrus.co.jp/", platform: "other", category: "おもちゃ", badge: "豊富", order: 8, isActive: true),
-            ShoppingPortal(id: "bornerund", title: "ボーネルンド", description: "知育玩具と北欧雑貨のセレクトショップ", url: "https://www.borneLund.com/", platform: "other", category: "おもちゃ", badge: "知育", order: 9, isActive: true),
-            ShoppingPortal(id: "akachan", title: "アカチャンホンポ", description: "ベビー用品が充実する総合専門店", url: "https://www.akachan.co.jp/", platform: "other", category: "ベビー用品", badge: "総合", order: 10, isActive: true),
-            ShoppingPortal(id: "angeliebe", title: "エンジェリーベ", description: "マタニティウェアとベビー用品の通販", url: "https://www.angeliebe.co.jp/", platform: "other", category: "マタニティ", badge: "マタニティ", order: 11, isActive: true),
-            ShoppingPortal(id: "wacoal_mat", title: "ワコールマタニティ", description: "機能性に優れたマタニティインナー", url: "https://www.wacoal.co.jp/maternity/", platform: "other", category: "マタニティ", badge: "機能性", order: 12, isActive: true),
-            ShoppingPortal(id: "babiesrus", title: "ベビーザらス", description: "ベビー用品の大型専門店", url: "https://www.babiesrus.co.jp/", platform: "other", category: "ベビー用品", badge: "大型店", order: 13, isActive: true),
-            ShoppingPortal(id: "combi", title: "コンビ公式", description: "ベビーカーやチャイルドシートの老舗メーカー", url: "https://www.combi.co.jp/", platform: "other", category: "ベビー用品", badge: "老舗", order: 14, isActive: true),
-            ShoppingPortal(id: "aprica", title: "アップリカ", description: "ベビーカーとチャイルドシートの専門メーカー", url: "https://www.aprica.com/", platform: "other", category: "ベビー用品", badge: "専門メーカー", order: 15, isActive: true),
+            ShoppingPortal(id: "amazon_baby", title: "Amazon ベビーストア", description: "ベビー用品が豊富なAmazonのベビー専門ストア", url: "https://www.amazon.co.jp/baby", platform: "amazon", category: "ベビー用品", badge: "おすすめ", order: 0, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "rakuten_baby", title: "楽天 ベビー・キッズ", description: "ポイント還元率が高い楽天のベビー・キッズ用品", url: "https://www.rakuten.co.jp/baby", platform: "rakuten", category: "ベビー用品", badge: nil, order: 1, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "shimamura", title: "しまむらオンライン", description: "プチプラベビー服のしまむら。オンラインで便利に", url: "https://www.shimamura.gr.jp/", platform: "other", category: "ベビー服", badge: "プチプラ", order: 2, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "nishimatsuya", title: "西松屋オンライン", description: "赤ちゃんのデパート西松屋。定番アイテムが充実", url: "https://www.nishimatsuya.co.jp/", platform: "other", category: "ベビー服", badge: "定番", order: 3, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "hm_kids", title: "H&M キッズ", description: "おしゃれな北欧デザインの子供服", url: "https://www2.hm.com/ja_jp/kids.html", platform: "other", category: "キッズ服", badge: "おしゃれ", order: 4, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "gu_kids", title: "GU キッズ", description: "リーズナブルで着やすい子供服", url: "https://www.gu-global.com/jp/ja/kids", platform: "other", category: "キッズ服", badge: "リーズナブル", order: 5, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "ifme", title: "IFME イフミー", description: "足育を応援する子供靴の専門ブランド", url: "https://www.ifmeshoes.com/", platform: "other", category: "靴", badge: "足育", order: 6, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "mikihouse", title: "MIKI HOUSE", description: "高品質な日本製子供靴", url: "https://www.mikihouse.co.jp/", platform: "other", category: "靴", badge: "日本製", order: 7, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "toysrus", title: "トイザらス", description: "おもちゃが豊富なトイザらスオンライン", url: "https://www.toysrus.co.jp/", platform: "other", category: "おもちゃ", badge: "豊富", order: 8, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "bornerund", title: "ボーネルンド", description: "知育玩具と北欧雑貨のセレクトショップ", url: "https://www.borneLund.com/", platform: "other", category: "おもちゃ", badge: "知育", order: 9, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "akachan", title: "アカチャンホンポ", description: "ベビー用品が充実する総合専門店", url: "https://www.akachan.co.jp/", platform: "other", category: "ベビー用品", badge: "総合", order: 10, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "angeliebe", title: "エンジェリーベ", description: "マタニティウェアとベビー用品の通販", url: "https://www.angeliebe.co.jp/", platform: "other", category: "マタニティ", badge: "マタニティ", order: 11, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "wacoal_mat", title: "ワコールマタニティ", description: "機能性に優れたマタニティインナー", url: "https://www.wacoal.co.jp/maternity/", platform: "other", category: "マタニティ", badge: "機能性", order: 12, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "babiesrus", title: "ベビーザらス", description: "ベビー用品の大型専門店", url: "https://www.babiesrus.co.jp/", platform: "other", category: "ベビー用品", badge: "大型店", order: 13, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "combi", title: "コンビ公式", description: "ベビーカーやチャイルドシートの老舗メーカー", url: "https://www.combi.co.jp/", platform: "other", category: "ベビー用品", badge: "老舗", order: 14, isActive: true, iconName: nil, themeColor: nil),
+            ShoppingPortal(id: "aprica", title: "アップリカ", description: "ベビーカーとチャイルドシートの専門メーカー", url: "https://www.aprica.com/", platform: "other", category: "ベビー用品", badge: "専門メーカー", order: 15, isActive: true, iconName: nil, themeColor: nil),
         ]
     }
 }
@@ -177,7 +177,7 @@ struct PortalLinkCard: View {
                             .font(.appFont(.medium, size: 15))
                             .foregroundColor(.primary)
 
-                        if let badge = portal.badge {
+                        if let badge = portal.badge, !badge.isEmpty {
                             Text(badge)
                                 .font(.appFont(.medium, size: 10))
                                 .foregroundColor(.white)
@@ -213,6 +213,9 @@ struct PortalLinkCard: View {
     }
 
     private var portalIcon: String {
+        if let iconName = portal.iconName, !iconName.isEmpty {
+            return iconName
+        }
         switch portal.platform.lowercased() {
         case "rakuten": return "cart.fill"
         case "amazon": return "shippingbox.fill"
@@ -221,6 +224,9 @@ struct PortalLinkCard: View {
     }
 
     private var portalColor: Color {
+        if let themeColor = portal.themeColor, !themeColor.isEmpty {
+            return Color(hex: themeColor) ?? .accentRed
+        }
         switch portal.platform.lowercased() {
         case "rakuten": return Color(hex: "#BF0000") ?? .accentRed
         case "amazon": return Color(hex: "#FF9900") ?? .orange

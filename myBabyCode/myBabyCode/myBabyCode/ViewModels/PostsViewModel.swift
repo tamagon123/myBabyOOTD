@@ -588,7 +588,8 @@ class PostsViewModel: ObservableObject {
         items: [PostItem],
         user: AppUser,
         isPublic: Bool = true,
-        isCalendarPost: Bool = false
+        isCalendarPost: Bool = false,
+        overrideAgeMonths: Int? = nil
     ) async -> Bool {
         print("[DEBUG] uploadPost: isCalendarPost=\(isCalendarPost)")
         let itemTags = pendingItemTags
@@ -605,7 +606,7 @@ class PostsViewModel: ObservableObject {
 
         do {
             let postId = UUID().uuidString
-            let ageMonths = Calendar.current.dateComponents([.month], from: user.child_birthday, to: Date()).month ?? 0
+            let ageMonths = overrideAgeMonths ?? (Calendar.current.dateComponents([.month], from: user.child_birthday, to: Date()).month ?? 0)
             let tempCat = tempCategoryKey(max: tempMax, min: tempMin)
             let uid = FirebaseAuth.Auth.auth().currentUser?.uid ?? user.user_id
 

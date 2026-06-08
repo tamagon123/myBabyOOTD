@@ -37,11 +37,17 @@ def apply_edits(db, collection_name, original_df, edited_df, key_column='id', ex
     if exclude_columns is None:
         exclude_columns = ['id']
 
+    st.write(f"[DEBUG] original_df shape: {original_df.shape}, edited_df shape: {edited_df.shape}")
+    st.write(f"[DEBUG] original_df columns: {list(original_df.columns)}")
+    st.write(f"[DEBUG] edited_df columns: {list(edited_df.columns)}")
+
     changed_rows = 0
     for idx in edited_df.index:
         doc_id = edited_df.loc[idx, key_column]
         orig_row = original_df[original_df[key_column] == doc_id]
+        st.write(f"[DEBUG] idx={idx}, doc_id={doc_id}, orig_row.empty={orig_row.empty}")
         if orig_row.empty:
+            st.warning(f"[DEBUG] doc_id={doc_id} の元データが見つかりません")
             continue
         orig_row = orig_row.iloc[0]
 
@@ -51,17 +57,29 @@ def apply_edits(db, collection_name, original_df, edited_df, key_column='id', ex
                 continue
             new_val = edited_df.loc[idx, col]
             old_val = orig_row.get(col)
-            if pd.isna(new_val) and pd.isna(old_val):
+            new_val_type = type(new_val).__name__
+            old_val_type = type(old_val).__name__
+            is_na_new = pd.isna(new_val)
+            is_na_old = pd.isna(old_val)
+            st.write(f"[DEBUG] col={col}: new_val={repr(new_val)} ({new_val_type}, isna={is_na_new}) | old_val={repr(old_val)} ({old_val_type}, isna={is_na_old})")
+            if is_na_new and is_na_old:
+                st.write(f"[DEBUG]   → skip (both na)")
                 continue
-            if pd.isna(new_val) and not pd.isna(old_val):
+            if is_na_new and not is_na_old:
+                st.write(f"[DEBUG]   → set to None")
                 update_data[col] = None
             elif str(new_val) != str(old_val):
+                st.write(f"[DEBUG]   → changed: '{old_val}' -> '{new_val}'")
                 update_data[col] = new_val
+            else:
+                st.write(f"[DEBUG]   → same value, skip")
 
+        st.write(f"[DEBUG] doc_id={doc_id}: update_data = {update_data}")
         if update_data:
             update_document(db, collection_name, doc_id, update_data)
             changed_rows += 1
 
+    st.write(f"[DEBUG] 変更行数: {changed_rows}")
     if changed_rows > 0:
         st.success(f"✅ {changed_rows} 件を更新しました")
         st.rerun()
@@ -79,11 +97,34 @@ def add_document(db, collection_name, data):
     st.rerun()
 
 
+def _normalize_value(value):
+    """pandas/numpy型をFirestore対応のPythonネイティブ型に変換"""
+    import numpy as np
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, pd.Series):
+        return value.tolist()
+    return value
+
+
 def update_document(db, collection_name, doc_id, data):
     """既存ドキュメントを更新"""
+    st.write(f"[DEBUG] update_document called: doc_id={doc_id}, data={data}")
     data['updated_at'] = datetime.now().isoformat()
-    db.collection(collection_name).document(doc_id).update(data)
-    st.success(f"✅ ID: {doc_id} を更新しました")
+    # numpy型をPythonネイティブ型に変換
+    normalized = {k: _normalize_value(v) for k, v in data.items()}
+    st.write(f"[DEBUG] normalized data: {normalized}")
+    try:
+        db.collection(collection_name).document(doc_id).update(normalized)
+        st.success(f"✅ ID: {doc_id} を更新しました")
+    except Exception as e:
+        st.error(f"[DEBUG] Firestore更新エラー: {e}")
     st.rerun()
 
 

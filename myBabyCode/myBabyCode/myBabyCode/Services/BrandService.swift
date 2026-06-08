@@ -38,6 +38,8 @@ struct ShoppingPortal: Codable, Identifiable {
     let badge: String?
     let order: Int
     let isActive: Bool
+    let iconName: String?         // SF Symbols名（カスタムアイコン）
+    let themeColor: String?       // HEX色コード（カスタム色）
 }
 
 final class BrandService: ObservableObject {
@@ -191,7 +193,9 @@ final class BrandService: ObservableObject {
                     category: data["category"] as? String ?? "all",
                     badge: data["badge"] as? String,
                     order: data["order"] as? Int ?? 0,
-                    isActive: data["isActive"] as? Bool ?? true
+                    isActive: data["isActive"] as? Bool ?? true,
+                    iconName: data["iconName"] as? String,
+                    themeColor: data["themeColor"] as? String
                 )
             }
 
@@ -227,23 +231,23 @@ final class BrandService: ObservableObject {
     // MARK: - shopping_portals 一括アップロード（初回移行用）
     func uploadDefaultShoppingPortals() async {
         let db = Firestore.firestore()
-        let portals: [(id: String, title: String, desc: String, url: String, platform: String, category: String, badge: String?, order: Int)] = [
-            ("amazon_baby", "Amazon ベビーストア", "ベビー用品が豊富なAmazonのベビー専門ストア", "https://www.amazon.co.jp/baby", "amazon", "ベビー用品", "おすすめ", 0),
-            ("rakuten_baby", "楽天 ベビー・キッズ", "ポイント還元率が高い楽天のベビー・キッズ用品", "https://www.rakuten.co.jp/baby", "rakuten", "ベビー用品", nil, 1),
-            ("shimamura", "しまむらオンライン", "プチプラベビー服のしまむら。オンラインで便利に", "https://www.shimamura.gr.jp/", "other", "ベビー服", "プチプラ", 2),
-            ("nishimatsuya", "西松屋オンライン", "赤ちゃんのデパート西松屋。定番アイテムが充実", "https://www.nishimatsuya.co.jp/", "other", "ベビー服", "定番", 3),
-            ("hm_kids", "H&M キッズ", "おしゃれな北欧デザインの子供服", "https://www2.hm.com/ja_jp/kids.html", "other", "キッズ服", "おしゃれ", 4),
-            ("gu_kids", "GU キッズ", "リーズナブルで着やすい子供服", "https://www.gu-global.com/jp/ja/kids", "other", "キッズ服", "リーズナブル", 5),
-            ("ifme", "IFME イフミー", "足育を応援する子供靴の専門ブランド", "https://www.ifmeshoes.com/", "other", "靴", "足育", 6),
-            ("mikihouse", "MIKI HOUSE", "高品質な日本製子供靴", "https://www.mikihouse.co.jp/", "other", "靴", "日本製", 7),
-            ("toysrus", "トイザらス", "おもちゃが豊富なトイザらスオンライン", "https://www.toysrus.co.jp/", "other", "おもちゃ", "豊富", 8),
-            ("bornerund", "ボーネルンド", "知育玩具と北欧雑貨のセレクトショップ", "https://www.borneLund.com/", "other", "おもちゃ", "知育", 9),
-            ("akachan", "アカチャンホンポ", "ベビー用品が充実する総合専門店", "https://www.akachan.co.jp/", "other", "ベビー用品", "総合", 10),
-            ("angeliebe", "エンジェリーベ", "マタニティウェアとベビー用品の通販", "https://www.angeliebe.co.jp/", "other", "マタニティ", "マタニティ", 11),
-            ("wacoal_mat", "ワコールマタニティ", "機能性に優れたマタニティインナー", "https://www.wacoal.co.jp/maternity/", "other", "マタニティ", "機能性", 12),
-            ("babiesrus", "ベビーザらス", "ベビー用品の大型専門店", "https://www.babiesrus.co.jp/", "other", "ベビー用品", "大型店", 13),
-            ("combi", "コンビ公式", "ベビーカーやチャイルドシートの老舗メーカー", "https://www.combi.co.jp/", "other", "ベビー用品", "老舗", 14),
-            ("aprica", "アップリカ", "ベビーカーとチャイルドシートの専門メーカー", "https://www.aprica.com/", "other", "ベビー用品", "専門メーカー", 15),
+        let portals: [(id: String, title: String, desc: String, url: String, platform: String, category: String, badge: String?, order: Int, iconName: String?, themeColor: String?)] = [
+            ("amazon_baby", "Amazon ベビーストア", "ベビー用品が豊富なAmazonのベビー専門ストア", "https://www.amazon.co.jp/baby", "amazon", "ベビー用品", "おすすめ", 0, nil, nil),
+            ("rakuten_baby", "楽天 ベビー・キッズ", "ポイント還元率が高い楽天のベビー・キッズ用品", "https://www.rakuten.co.jp/baby", "rakuten", "ベビー用品", nil, 1, nil, nil),
+            ("shimamura", "しまむらオンライン", "プチプラベビー服のしまむら。オンラインで便利に", "https://www.shimamura.gr.jp/", "other", "ベビー服", "プチプラ", 2, nil, nil),
+            ("nishimatsuya", "西松屋オンライン", "赤ちゃんのデパート西松屋。定番アイテムが充実", "https://www.nishimatsuya.co.jp/", "other", "ベビー服", "定番", 3, nil, nil),
+            ("hm_kids", "H&M キッズ", "おしゃれな北欧デザインの子供服", "https://www2.hm.com/ja_jp/kids.html", "other", "キッズ服", "おしゃれ", 4, nil, nil),
+            ("gu_kids", "GU キッズ", "リーズナブルで着やすい子供服", "https://www.gu-global.com/jp/ja/kids", "other", "キッズ服", "リーズナブル", 5, nil, nil),
+            ("ifme", "IFME イフミー", "足育を応援する子供靴の専門ブランド", "https://www.ifmeshoes.com/", "other", "靴", "足育", 6, nil, nil),
+            ("mikihouse", "MIKI HOUSE", "高品質な日本製子供靴", "https://www.mikihouse.co.jp/", "other", "靴", "日本製", 7, nil, nil),
+            ("toysrus", "トイザらス", "おもちゃが豊富なトイザらスオンライン", "https://www.toysrus.co.jp/", "other", "おもちゃ", "豊富", 8, nil, nil),
+            ("bornerund", "ボーネルンド", "知育玩具と北欧雑貨のセレクトショップ", "https://www.borneLund.com/", "other", "おもちゃ", "知育", 9, nil, nil),
+            ("akachan", "アカチャンホンポ", "ベビー用品が充実する総合専門店", "https://www.akachan.co.jp/", "other", "ベビー用品", "総合", 10, nil, nil),
+            ("angeliebe", "エンジェリーベ", "マタニティウェアとベビー用品の通販", "https://www.angeliebe.co.jp/", "other", "マタニティ", "マタニティ", 11, nil, nil),
+            ("wacoal_mat", "ワコールマタニティ", "機能性に優れたマタニティインナー", "https://www.wacoal.co.jp/maternity/", "other", "マタニティ", "機能性", 12, nil, nil),
+            ("babiesrus", "ベビーザらス", "ベビー用品の大型専門店", "https://www.babiesrus.co.jp/", "other", "ベビー用品", "大型店", 13, nil, nil),
+            ("combi", "コンビ公式", "ベビーカーやチャイルドシートの老舗メーカー", "https://www.combi.co.jp/", "other", "ベビー用品", "老舗", 14, nil, nil),
+            ("aprica", "アップリカ", "ベビーカーとチャイルドシートの専門メーカー", "https://www.aprica.com/", "other", "ベビー用品", "専門メーカー", 15, nil, nil),
         ]
 
         for portal in portals {
@@ -256,6 +260,8 @@ final class BrandService: ObservableObject {
                 "badge": portal.badge as Any,
                 "order": portal.order,
                 "isActive": true,
+                "iconName": portal.iconName as Any,
+                "themeColor": portal.themeColor as Any,
                 "createdAt": FieldValue.serverTimestamp()
             ]
             do {

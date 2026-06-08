@@ -69,6 +69,11 @@ struct NewPostView: View {
     // === 子供選択 ===
     @State private var selectedChildIndex: Int = 0        // 選択中の子供インデックス
 
+    // === 月齢カスタマイズ ===
+    @State private var useCustomAge: Bool = false          // カスタム月齢を使用するか
+    @State private var customAgeYears: Int = 0             // カスタム年齢（年）
+    @State private var customAgeMonths: Int = 0            // カスタム年齢（月）
+
     // === アイテム登録 ===
     // デフォルトで3つのアイテム（トップス・ボトムス・アクセサリー）を初期表示
     @State private var items: [NewItemEntry] = [
@@ -86,13 +91,23 @@ struct NewPostView: View {
     @State private var showDraftSavedBanner = false       // 下書き保存成功バナー表示フラグ
     @State private var showDiscardAlert = false           // 変更破棄確認アラート
     @State private var editingDraftId: String? = nil      // 現在編集中の下書きID（上書き保存用）
+    @State private var showDraftCloseAlert = false        // 下書き保存後「閉じますか？」アラート
 
     // 計算プロパティ: ログイン中ユーザーの子供リスト（プロフィール設定時に登録）
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
     
-    // 変更があるかどうか
+    // 変更があるかどうか（閉じる時の確認用）
     private var hasChanges: Bool {
         frontImage != nil || backImage != nil || !items.isEmpty || !description.isEmpty
+    }
+
+    // 下書き保存ボタンを活性にする条件: 入力あり かつ 未保存
+    private var canSaveDraft: Bool {
+        let hasInput = frontImage != nil
+            || backImage != nil
+            || items.contains(where: { !$0.brandName.trimmingCharacters(in: .whitespaces).isEmpty })
+            || !description.trimmingCharacters(in: .whitespaces).isEmpty
+        return hasInput && !draftSaved
     }
 
     // =============================================================================
@@ -106,127 +121,49 @@ struct NewPostView: View {
     // =============================================================================
     var body: some View {
         NavigationView {
-            ScrollView {
-                mainForm
-                    .frame(maxWidth: .infinity)
-            }
-            .clipped()
-            .background(Color(.systemBackground))
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("完了") { dismissKeyboard() }
-                }
-            }
-            .overlay(alignment: .top) {
-                if showDraftSavedBanner {
-                    Text("下書きを保存しました")
-                        .font(.appFont(.medium, size: 14))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.black.opacity(0.82))
-                        .cornerRadius(20)
-                        .padding(.top, 16)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .animation(.spring(), value: showDraftSavedBanner)
-            .navigationTitle(navigationTitleText)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") {
-                        if hasChanges {
-                            showDiscardAlert = true
-                        } else {
-                            dismiss()
-                        }
-                    }
-                }
-            }
-            .alert("下書きを保存しますか？", isPresented: $showDiscardAlert) {
-                Button("保存する") {
-                    saveDraft()
-                    dismiss()
-                }
-                Button("保存しない", role: .destructive) {
-                    dismiss()
-                }
-                Button("キャンセル", role: .cancel) {}
-            } message: {
-                Text("編集内容を下書きとして保存できます。")
-            }
-            .onAppear { applyProfileDefaults() }
+            scrollContent
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    private var scrollContent: some View {
+        baseContent
             .confirmationDialog("写真を選択", isPresented: $showPhotoSourceSheet, titleVisibility: .visible) {
-                Button("カメラで撮影") {
-                    imagePickerSourceType = .camera
-                    showImagePicker = true
-                }
-                Button("ライブラリから選択") {
-                    imagePickerSourceType = .photoLibrary
-                    showImagePicker = true
-                }
+                Button("カメラで撮影") { imagePickerSourceType = .camera; showImagePicker = true }
+                Button("ライブラリから選択") { imagePickerSourceType = .photoLibrary; showImagePicker = true }
                 Button("キャンセル", role: .cancel) {}
             }
             .sheet(isPresented: $showImagePicker, onDismiss: {
-                if editingImage != nil {
-                    showEditConfirm = true
-                }
+                if editingImage != nil { showEditConfirm = true }
             }) {
-                ImagePickerView(sourceType: imagePickerSourceType) { img in
-                    editingImage = img
-                }
+                ImagePickerView(sourceType: imagePickerSourceType) { img in editingImage = img }
             }
             .confirmationDialog("この写真を編集しますか？", isPresented: $showEditConfirm, titleVisibility: .visible) {
                 Button("編集する（スタンプ）") {
-                    // オリジナル画像を保存
-                    if photoSourceTarget == .front {
-                        originalFrontImage = editingImage
-                    } else {
-                        originalBackImage = editingImage
-                    }
-                    editorReadyImage = editingImage
-                    editingImage = nil
-                    showImageEditor = true
+                    if photoSourceTarget == .front { originalFrontImage = editingImage } else { originalBackImage = editingImage }
+                    editorReadyImage = editingImage; editingImage = nil; showImageEditor = true
                 }
                 Button("そのまま使う") {
-                    if photoSourceTarget == .front {
-                        originalFrontImage = editingImage
-                        frontImage = editingImage
-                    } else {
-                        originalBackImage = editingImage
-                        backImage = editingImage
-                    }
+                    if photoSourceTarget == .front { originalFrontImage = editingImage; frontImage = editingImage }
+                    else { originalBackImage = editingImage; backImage = editingImage }
                     editingImage = nil
                 }
-                Button("キャンセル", role: .cancel) {
-                    editingImage = nil
-                }
+                Button("キャンセル", role: .cancel) { editingImage = nil }
             }
-            .sheet(isPresented: $showImageEditor, onDismiss: {
-                editorReadyImage = nil
-            }) {
+            .sheet(isPresented: $showImageEditor, onDismiss: { editorReadyImage = nil }) {
                 if let img = editorReadyImage {
-                    let currentSide = photoSourceTarget == .front ? "front" : "back"
-                    // 前回編集した同じ面のスタンプを取得
-                    let existingStamps = postsViewModel.pendingStamps.filter { $0.image_side == currentSide }
+                    let side = photoSourceTarget == .front ? "front" : "back"
+                    let existing = postsViewModel.pendingStamps.filter { $0.image_side == side }
                     PhotoEditorView(
-                        image: img,
-                        imageSide: currentSide,
+                        image: img, imageSide: side,
                         onDone: { edited in
-                            if photoSourceTarget == .front {
-                                frontImage = edited
-                            } else {
-                                backImage = edited
-                            }
+                            if photoSourceTarget == .front { frontImage = edited } else { backImage = edited }
                         },
                         onSaveStamps: { stamps in
-                            // 既存の同じ面のスタンプを削除して新しいスタンプを追加
-                            postsViewModel.pendingStamps.removeAll { $0.image_side == currentSide }
+                            postsViewModel.pendingStamps.removeAll { $0.image_side == side }
                             postsViewModel.pendingStamps.append(contentsOf: stamps)
                         },
-                        existingStamps: existingStamps
+                        existingStamps: existing
                     )
                 }
             }
@@ -238,35 +175,72 @@ struct NewPostView: View {
                     }
                     dismiss()
                 }
-            } message: {
-                Text("コーディネートを共有しました")
-            }
+            } message: { Text("コーディネートを共有しました") }
             .alert("エラー", isPresented: $showError) {
                 Button("OK") {}
-            } message: {
-                Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。")
-            }
+            } message: { Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。") }
             .alert("写真を選択してください", isPresented: $showNoPhotoAlert) {
                 Button("OK") {}
-            } message: {
-                Text("タグ付けを行う前に、コーディネートの写真を撮影または選択してください。")
-            }
+            } message: { Text("タグ付けを行う前に、コーディネートの写真を撮影または選択してください。") }
             .fullScreenCover(isPresented: Binding(
                 get: { taggingItemIndex != nil },
                 set: { if !$0 { taggingItemIndex = nil } }
             )) {
                 if let idx = taggingItemIndex {
-                    TagPlacementView(
-                        items: $items,
-                        itemIndex: idx,
-                        taggingSide: $taggingSide,
-                        frontImage: frontImage,
-                        backImage: backImage
-                    )
+                    TagPlacementView(items: $items, itemIndex: idx, taggingSide: $taggingSide, frontImage: frontImage, backImage: backImage)
+                }
+            }
+    }
+
+    private var baseContent: some View {
+        ScrollView {
+            mainForm.frame(maxWidth: .infinity)
+        }
+        .clipped()
+        .background(Color(.systemBackground))
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完了") { dismissKeyboard() }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("閉じる") {
+                    if hasChanges { showDiscardAlert = true } else { dismiss() }
                 }
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
+        .overlay(alignment: .top) {
+            if showDraftSavedBanner {
+                Text("下書きを保存しました")
+                    .font(.appFont(.medium, size: 14))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.82))
+                    .cornerRadius(20)
+                    .padding(.top, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(), value: showDraftSavedBanner)
+        .navigationTitle(navigationTitleText)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { applyProfileDefaults() }
+        .onChange(of: frontImage) { _ in draftSaved = false }
+        .onChange(of: backImage) { _ in draftSaved = false }
+        .onChange(of: description) { _ in draftSaved = false }
+        .onChange(of: items) { _ in draftSaved = false }
+        .alert("下書きを保存しますか？", isPresented: $showDiscardAlert) {
+            Button("保存する") { saveDraft(); dismiss() }
+            Button("保存しない", role: .destructive) { dismiss() }
+            Button("キャンセル", role: .cancel) {}
+        } message: { Text("編集内容を下書きとして保存できます。") }
+        .alert("このまま閉じますか？", isPresented: $showDraftCloseAlert) {
+            Button("閉じる") { dismiss() }
+            Button("続ける", role: .cancel) { draftSaved = false }
+        } message: { Text("下書きを保存しました。投稿画面を閉じますか？") }
     }
 
     // =============================================================================
@@ -282,11 +256,9 @@ struct NewPostView: View {
     // =============================================================================
     private var mainForm: some View {
         VStack(alignment: .leading, spacing: 28) {
-            if !children.isEmpty {
-                childSection
-                    .padding(.horizontal, 20)
-                Divider().padding(.horizontal, 20)
-            }
+            childSection
+                .padding(.horizontal, 20)
+            Divider().padding(.horizontal, 20)
             photoSection
             Divider().padding(.horizontal, 20)
             itemsSection
@@ -352,16 +324,17 @@ struct NewPostView: View {
     private var draftSaveButton: some View {
         Button {
             saveDraft()
+            showDraftCloseAlert = true
         } label: {
             Label("下書きとして保存", systemImage: "square.and.arrow.down")
                 .font(.appFont(.medium, size: 15))
-                .foregroundColor(draftSaved ? .secondary : Color.accentGreen)
+                .foregroundColor(canSaveDraft ? Color.accentGreen : .secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(draftSaved ? Color(.systemGray5) : Color.accentGreen.opacity(0.1))
+                .background(canSaveDraft ? Color.accentGreen.opacity(0.1) : Color(.systemGray5))
                 .cornerRadius(14)
         }
-        .disabled(draftSaved)
+        .disabled(!canSaveDraft)
     }
 
     // =============================================================================
@@ -479,6 +452,22 @@ struct NewPostView: View {
 
     // MARK: - Child Section
 
+    // カスタム月齢または自動計算月齢を返す
+    private var effectiveAgeMonths: Int {
+        if useCustomAge {
+            return customAgeYears * 12 + customAgeMonths
+        }
+        let selectedChild: ChildProfile? = children.indices.contains(selectedChildIndex) ? children[selectedChildIndex] : nil
+        let birthday = selectedChild?.birthday ?? authViewModel.currentUser?.child_birthday ?? Date()
+        return max(0, Calendar.current.dateComponents([.month], from: birthday, to: Date()).month ?? 0)
+    }
+
+    private func ageLabel(_ months: Int) -> String {
+        if months < 12 { return "生後\(months)ヶ月" }
+        let y = months / 12; let m = months % 12
+        return m == 0 ? "\(y)歳" : "\(y)歳\(m)ヶ月"
+    }
+
     // =============================================================================
     // 【Viewサマリー】childSection
     // 目的: 投稿に紐づける子供を選択する水平スクロールセクションを表示する
@@ -487,25 +476,86 @@ struct NewPostView: View {
     private var childSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("投稿するお子様")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(children.indices, id: \.self) { idx in
-                        let child = children[idx]
-                        Button {
-                            selectedChildIndex = idx
-                        } label: {
-                            Text(child.name.isEmpty ? "子供\(idx+1)" : child.name)
-                                .font(.appFont(.medium, size: 13))
-                                .foregroundColor(selectedChildIndex == idx ? .white : .primary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(selectedChildIndex == idx ? Color.accentRed : Color(.systemGray6))
-                            .cornerRadius(20)
+            if !children.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(children.indices, id: \.self) { idx in
+                            let child = children[idx]
+                            Button {
+                                selectedChildIndex = idx
+                                if !useCustomAge {
+                                    let bday = child.birthday
+                                    let auto = max(0, Calendar.current.dateComponents([.month], from: bday, to: Date()).month ?? 0)
+                                    customAgeYears = auto / 12
+                                    customAgeMonths = auto % 12
+                                }
+                            } label: {
+                                Text(child.name.isEmpty ? "子供\(idx+1)" : child.name)
+                                    .font(.appFont(.medium, size: 13))
+                                    .foregroundColor(selectedChildIndex == idx ? .white : .primary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(selectedChildIndex == idx ? Color.accentRed : Color(.systemGray6))
+                                .cornerRadius(20)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
+
+            // 月齢表示＋カスタマイズUI
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("投稿時の月齢: \(ageLabel(effectiveAgeMonths))")
+                        .font(.appFont(.medium, size: 13))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Toggle(isOn: $useCustomAge) {
+                        Text("変更する")
+                            .font(.appFont(.regular, size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .toggleStyle(.button)
+                    .tint(.accentBlue)
+                }
+                if useCustomAge {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("年齢（歳）")
+                                .font(.caption2).foregroundColor(.secondary)
+                            Picker("歳", selection: $customAgeYears) {
+                                ForEach(0...10, id: \.self) { y in
+                                    Text("\(y)歳").tag(y)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("月数（ヶ月）")
+                                .font(.caption2).foregroundColor(.secondary)
+                            Picker("ヶ月", selection: $customAgeMonths) {
+                                ForEach(0...11, id: \.self) { m in
+                                    Text("\(m)ヶ月").tag(m)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+                        }
+                    }
+                    Text("過去の服装を投稿する場合などにご利用ください")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -1056,7 +1106,8 @@ struct NewPostView: View {
             items: postItems,
             user: modUser,
             isPublic: shouldBePublic,
-            isCalendarPost: isCalendarPost
+            isCalendarPost: isCalendarPost,
+            overrideAgeMonths: useCustomAge ? effectiveAgeMonths : nil
         )
 
         if success {
@@ -1106,7 +1157,7 @@ enum PhotoTarget { case front, back }
 
 // MARK: - Item Entry
 
-struct NewItemEntry: Identifiable {
+struct NewItemEntry: Identifiable, Equatable {
     let id = UUID()
     var category: ItemCategory = .tops
     var brandName: String = ""

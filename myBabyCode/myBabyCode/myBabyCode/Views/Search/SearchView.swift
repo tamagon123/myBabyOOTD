@@ -34,6 +34,10 @@ struct SearchView: View {
     @State private var endDate: Date? = nil                    // 検索終了日
     @State private var showStartDatePicker = false             // 開始日Picker表示フラグ
     @State private var showEndDatePicker = false               // 終了日Picker表示フラグ
+    @State private var ageFilterMode: AgeFilterMode = .none    // 月齢フィルターモード
+    @State private var ageSingle: Int = 6                      // 単独指定の月齢
+    @State private var ageRangeMin: Int = 0                    // 範囲指定の最小月齢
+    @State private var ageRangeMax: Int = 12                   // 範囲指定の最大月齢
 
     // === 検索結果 ===
     @State private var results: [Post] = []        // 検索結果の投稿リスト
@@ -388,6 +392,76 @@ struct SearchView: View {
                 }
             }
 
+            // 月齢フィルター
+            filterRow(label: "月齢") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        chipButton(label: "指定なし", active: ageFilterMode == .none) {
+                            ageFilterMode = .none
+                        }
+                        chipButton(label: "単独指定", active: ageFilterMode == .single) {
+                            ageFilterMode = .single
+                        }
+                        chipButton(label: "範囲指定", active: ageFilterMode == .range) {
+                            ageFilterMode = .range
+                        }
+                    }
+                    if ageFilterMode == .single {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(ageSingleLabel(ageSingle))
+                                .font(.appFont(.medium, size: 14))
+                                .foregroundColor(.primary)
+                            Slider(value: Binding(
+                                get: { Double(ageSingle) },
+                                set: { ageSingle = Int($0) }
+                            ), in: 0...72, step: 1)
+                            .tint(.accentRed)
+                            HStack {
+                                Text("生後0ヶ月")
+                                    .font(.caption2).foregroundColor(.secondary)
+                                Spacer()
+                                Text("6歳")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    if ageFilterMode == .range {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(ageSingleLabel(ageRangeMin)) 〜 \(ageSingleLabel(ageRangeMax))")
+                                .font(.appFont(.medium, size: 14))
+                                .foregroundColor(.primary)
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("最小")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                    Slider(value: Binding(
+                                        get: { Double(ageRangeMin) },
+                                        set: { ageRangeMin = min(Int($0), ageRangeMax) }
+                                    ), in: 0...72, step: 1)
+                                    .tint(.accentBlue)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("最大")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                    Slider(value: Binding(
+                                        get: { Double(ageRangeMax) },
+                                        set: { ageRangeMax = max(Int($0), ageRangeMin) }
+                                    ), in: 0...72, step: 1)
+                                    .tint(.accentRed)
+                                }
+                            }
+                            HStack {
+                                Text("生後0ヶ月")
+                                    .font(.caption2).foregroundColor(.secondary)
+                                Spacer()
+                                Text("6歳")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
             // 投稿タイプフィルター
             filterRow(label: "表示タイプ") {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -538,6 +612,16 @@ struct SearchView: View {
                 }
             }
 
+            // 月齢フィルター適用
+            switch ageFilterMode {
+            case .single:
+                fetched = fetched.filter { $0.child_age_months == ageSingle }
+            case .range:
+                fetched = fetched.filter { $0.child_age_months >= ageRangeMin && $0.child_age_months <= ageRangeMax }
+            case .none:
+                break
+            }
+
             // 投稿タイプフィルター適用（投稿のみ/日記のみ/両方）
             switch selectedFilter {
             case .postsOnly:
@@ -567,4 +651,21 @@ struct SearchView: View {
         fmt.locale = Locale(identifier: "ja_JP")
         return fmt.string(from: date)
     }
+
+    private func ageSingleLabel(_ months: Int) -> String {
+        if months < 12 {
+            return "生後\(months)ヶ月"
+        } else {
+            let years = months / 12
+            let rem = months % 12
+            return rem == 0 ? "\(years)歳" : "\(years)歳\(rem)ヶ月"
+        }
+    }
+}
+
+// MARK: - AgeFilterMode
+enum AgeFilterMode: Equatable {
+    case none
+    case single
+    case range
 }

@@ -241,7 +241,7 @@ struct CalendarView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "lock.fill")
                             .font(.appFont(.regular, size: 12))
-                        Text(isSubscribed ? "編集期間外です（2日以上前）" : "プレミアムに登録すると１年前まで編集できます")
+                        Text(isSubscribed ? "編集期間外です（365日以上前）" : "プレミアムプランを購入すると365日前まで編集できます")
                             .font(.appFont(.regular, size: 13))
                     }
                     .foregroundColor(Color(.systemGray))
@@ -875,7 +875,7 @@ private struct CalendarViewSelectedDayPanel: View {
                 } else if !isEditable {
                     HStack(spacing: 6) {
                         Image(systemName: "lock.fill").font(.appFont(.regular, size: 12))
-                        Text(isSubscribed ? "編集期間外です（2日以上前）" : "サブスクに登録すると2日前まで編集できます").font(.appFont(.regular, size: 13))
+                        Text(isSubscribed ? "編集期間外です（365日以上前）" : "プレミアムプランを購入すると365日前まで編集できます").font(.appFont(.regular, size: 13))
                     }
                     .foregroundColor(Color(.systemGray)).padding(.horizontal, 16)
                 }
