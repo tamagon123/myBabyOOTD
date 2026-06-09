@@ -726,6 +726,7 @@ struct CalendarPublicToggle: View {
     }
 
     private func loadBothSettings() async {
+        guard !uid.isEmpty else { return }
         isLoading = true
         do {
             let doc = try await db.collection("users").document(uid).getDocument()
@@ -736,6 +737,7 @@ struct CalendarPublicToggle: View {
     }
 
     private func saveSetting(isPublic: Bool) async {
+        guard !uid.isEmpty else { return }
         isLoading = true
         // 投稿非公開の場合はカレンダー公開不可（カレンダーのみ公開は不可）
         guard postsArePublic else {
@@ -801,6 +803,7 @@ struct PostPublicToggle: View {
     }
 
     private func loadSetting() async {
+        guard !uid.isEmpty else { return }
         isLoading = true
         do {
             let doc = try await db.collection("users").document(uid).getDocument()
@@ -811,6 +814,7 @@ struct PostPublicToggle: View {
     }
 
     private func saveSetting(isPublic: Bool) async {
+        guard !uid.isEmpty else { return }
         isLoading = true
         do {
             // 投稿非公開にした場合、カレンダーも非公開にする（カレンダーのみ公開は不可）

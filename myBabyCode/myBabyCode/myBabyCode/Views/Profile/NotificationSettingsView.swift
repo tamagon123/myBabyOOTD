@@ -74,6 +74,7 @@ struct NotificationSettingsView: View {
     }
 
     private func loadSettings() async {
+        guard !uid.isEmpty else { return }
         isLoading = true
         do {
             let doc = try await db.collection("users").document(uid).getDocument()
@@ -87,6 +88,7 @@ struct NotificationSettingsView: View {
     }
 
     private func saveSettings() async {
+        guard !uid.isEmpty else { return }
         isSaving = true
         do {
             try await db.collection("users").document(uid).updateData([
