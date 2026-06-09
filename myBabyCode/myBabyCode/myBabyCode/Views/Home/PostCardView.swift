@@ -6,6 +6,7 @@
 //   写真カルーセル（TabView）、投稿者情報（アバター・名前・年齢・地域・時間）、
 //   アイテムタグ（写真上のドット表示）、天気バッジ、いいねボタン、通報ボタン、
 //   説明文などを含みます。タップでPostDetailView（詳細画面）へ遷移します。
+//   iPad対応: disableDetailSheetフラグで詳細遷移を制御し、fullScreenCoverで表示。
 // =============================================================================
 
 import SwiftUI
@@ -17,6 +18,7 @@ struct PostCardView: View {
     let isLiked: Bool           // 自分がいいね済みか（ハートの塗りつぶし判定）
     let onLike: () -> Void      // いいねボタンタップ時のコールバック
     let onReport: () -> Void    // 通報ボタンタップ時のコールバック
+    var disableDetailSheet: Bool = false  // iPadリスト表示時に詳細シートを無効化
 
     // === 内部状態 ===
     @State private var currentImageIndex: Int = 0     // 写真カルーセルの現在表示インデックス
@@ -75,7 +77,12 @@ struct PostCardView: View {
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Card header
-            NavigationLink(destination: ProfileView(userId: post.user_id), isActive: $navigateToProfile) {
+            NavigationLink(
+                destination: ProfileView(userId: post.user_id)
+                    .environmentObject(authViewModel)
+                    .environmentObject(postsViewModel),
+                isActive: $navigateToProfile
+            ) {
                 EmptyView()
             }
             HStack(spacing: 12) {
@@ -274,7 +281,7 @@ struct PostCardView: View {
                 postsViewModel.posts.removeAll { ($0.id ?? $0.post_id) == postId }
             }
         }
-        .sheet(isPresented: $showPostDetail) {
+        .fullScreenCover(isPresented: $showPostDetail) {
             PostDetailView(
                 post: post,
                 postId: post.id ?? post.post_id,
@@ -286,7 +293,7 @@ struct PostCardView: View {
                 .environmentObject(postsViewModel)
         }
         .onTapGesture {
-            showPostDetail = true
+            if !disableDetailSheet { showPostDetail = true }
         }
     }
 

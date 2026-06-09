@@ -80,31 +80,30 @@ struct PostDetailView: View {
         return [p.image_url_front, p.image_url_back].compactMap { $0 }.filter { !$0.isEmpty }
     }
 
-    private let screenW: CGFloat = UIScreen.main.bounds.width
-
     private var carouselH: CGFloat {
         imageHeights[currentImageIndex] ?? UIScreen.main.bounds.width
     }
 
-    private var imageCarousel: some View {
-        TabView(selection: $currentImageIndex) {
+    private func imageCarousel(availableWidth: CGFloat) -> some View {
+        let carH = imageHeights[currentImageIndex] ?? availableWidth
+        return TabView(selection: $currentImageIndex) {
             ForEach(imageURLs.indices, id: \.self) { idx in
                 CachedAsyncImageWithSize(url: imageURLs[idx]) { uiImage in
-                    detailImageSlide(uiImage: uiImage, idx: idx, screenW: screenW)
+                    detailImageSlide(uiImage: uiImage, idx: idx, screenW: availableWidth)
                         .onAppear {
-                            let h = screenW * uiImage.size.height / uiImage.size.width
+                            let h = availableWidth * uiImage.size.height / uiImage.size.width
                             if imageHeights[idx] != h { imageHeights[idx] = h }
                         }
                 } placeholder: {
                     Color(.systemGray5).overlay(ProgressView())
-                        .frame(width: screenW, height: screenW)
+                        .frame(width: availableWidth, height: availableWidth)
                 }
                 .tag(idx)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: imageURLs.count > 1 ? .always : .never))
-        .frame(width: screenW, height: carouselH)
-        .animation(.easeInOut(duration: 0.2), value: carouselH)
+        .frame(width: availableWidth, height: carH)
+        .animation(.easeInOut(duration: 0.2), value: carH)
     }
 
     // =============================================================================
@@ -121,6 +120,7 @@ struct PostDetailView: View {
     // =============================================================================
     var body: some View {
         NavigationView {
+            GeometryReader { geo in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     // ロード中または投稿データがない場合
@@ -161,7 +161,7 @@ struct PostDetailView: View {
                                         .foregroundColor(.secondary.opacity(0.4))
                                 )
                         } else {
-                            imageCarousel
+                            imageCarousel(availableWidth: geo.size.width)
                         }
 
                         VStack(alignment: .leading, spacing: 20) {
@@ -244,6 +244,7 @@ struct PostDetailView: View {
                     }
                 }
             }
+            } // GeometryReader
             .task { 
                 await fetchPostIfNeeded()
                 await loadItems()

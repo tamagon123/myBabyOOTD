@@ -6,6 +6,7 @@
 //   「新着/おすすめ/フォロー中」の3タブを持ち、選択に応じた投稿リストを
 //   LazyVStackで表示します。Pull-to-refresh（下に引っ張って更新）と
 //   無限スクロール（最後の要素までスクロールで次ページ取得）をサポートしています。
+//   iPad対応: リスト表示を2列グリッド、グリッド表示を4列に。投稿詳細はfullScreenCover。
 // =============================================================================
 
 import SwiftUI
@@ -27,6 +28,8 @@ struct HomeView: View {
     // 表示モード: リスト表示 / グリッド表示
     @State private var isGridMode: Bool = false
     @State private var selectedPost: Post? = nil  // グリッド表示時の詳細画面用
+
+    private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     // 検索結果表示中かどうかで表示データを切り替え
     private var displayPosts: [Post] {
@@ -123,6 +126,8 @@ struct HomeView: View {
                     // 投稿表示（リスト or グリッド）
                     if isGridMode {
                         gridPostsView
+                    } else if isIPad {
+                        iPadListFeedView
                     } else {
                         listPostsView
                     }
@@ -142,8 +147,8 @@ struct HomeView: View {
                     await postsViewModel.fetchPosts(user: authViewModel.currentUser)
                 }
             }
-            // 投稿詳細シート（グリッド表示時）
-            .sheet(item: $selectedPost) { post in
+            // 投稿詳細（リスト・グリッド共通）
+            .fullScreenCover(item: $selectedPost) { post in
                 PostDetailView(
                     post: post,
                     postId: post.id ?? post.post_id,
@@ -213,15 +218,58 @@ struct HomeView: View {
         }
     }
     
-    // MARK: - Grid View (3 columns)
+    // MARK: - iPad List Feed (2列グリッド・全画面詳細表示あり)
+
+    private var iPadListFeedView: some View {
+        let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+        return ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id("homeTop")
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(Array(displayPosts.enumerated()), id: \.element.post_id) { idx, post in
+                            PostCardView(
+                                post: post,
+                                isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
+                                onLike: { Task { await postsViewModel.toggleLike(post: post) } },
+                                onReport: { Task { await postsViewModel.report(post: post) } }
+                            )
+                            .onAppear {
+                                if !postsViewModel.isSearchActive,
+                                   post.post_id == postsViewModel.posts.last?.post_id {
+                                    Task { await postsViewModel.fetchMorePosts(user: authViewModel.currentUser) }
+                                }
+                            }
+                            if !subscriptionManager.isAdsRemoved && (idx + 1) % affiliateInsertInterval == 0 {
+                                AffiliateTimelineCard(keyword: post.posterDisplayName ?? "子供服")
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    if postsViewModel.hasMorePosts {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                            .padding(.vertical, 12)
+                    }
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            }
+            .refreshable {
+                await BlockService.shared.fetchBlockedUsers()
+                await postsViewModel.fetchPosts(user: authViewModel.currentUser)
+                await postsViewModel.fetchLikedPosts()
+            }
+            .onChange(of: scrollToTopFlag) { _ in
+                withAnimation { proxy.scrollTo("homeTop") }
+            }
+        }
+    }
+
+    // MARK: - Grid View (4 columns on iPad / 3 columns on iPhone)
     
     private var gridPostsView: some View {
-        let cellSize = (UIScreen.main.bounds.width - 32 - 16) / 3 // 左右16px padding + 間隔8px
-        let columns = [
-            GridItem(.fixed(cellSize), spacing: 8),
-            GridItem(.fixed(cellSize), spacing: 8),
-            GridItem(.fixed(cellSize), spacing: 8)
-        ]
+        let columnCount = isIPad ? 4 : 3
+        let columns = (0..<columnCount).map { _ in GridItem(.flexible(), spacing: 8) }
         
         return ScrollViewReader { proxy in
             ScrollView {
@@ -241,7 +289,7 @@ struct HomeView: View {
                                     selectedPost = post
                                 }
                             )
-                            .frame(width: cellSize, height: cellSize * 1.3)
+                            .aspectRatio(1.0 / 1.3, contentMode: .fit)
                             // 最後の要素が表示されたら次ページを取得（無限スクロール）
                             .onAppear {
                                 if !postsViewModel.isSearchActive,

@@ -2,9 +2,10 @@
 // ファイル名: MainTabView.swift
 // 役割: アプリのメイン画面構成（タブ切り替え＋新規投稿シート＋下部ナビゲーション）
 // 説明:
-//   ログイン後のメイン画面を構成するViewです。3つのタブ（ホーム・検索・マイページ）を
+//   ログイン後のメイン画面を構成するViewです。4つのタブ（ホーム・カレンダー・買い物・マイページ）を
 //   ZStackで切り替え、下部にカスタムナビゲーションバーと広告バナー領域を配置します。
 //   中央の+ボタンで新規投稿シート（NewPostView）を表示します。
+//   iPad対応: 常時固定サイドバー（80px幅・濃い生成り色背景）+ コンテンツエリアの2ペイン構成。
 //   また、ViewModel（PostsViewModel, DraftManager）を生成・保持し、
 //   各子ViewにenvironmentObjectとして配布します。
 // =============================================================================
@@ -30,56 +31,23 @@ struct MainTabView: View {
     @State private var showProfile = false                      // プロフィール画面表示
     @State private var targetUserId: String? = nil             // 表示対象のユーザーID
 
+    private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     // =============================================================================
     // 【Viewサマリー】body
     // 目的: メイン画面の全体レイアウト（コンテンツ + 広告 + ナビ + シート）を定義
     // 構成:
-    //   1. ZStackでタブに応じた画面切り替え（HomeView / SearchView / ProfileView）
-    //   2. AdBannerView（広告バナー領域・現在はプレースホルダー）
-    //   3. BottomNavBar（カスタム下部ナビゲーション、中央に投稿ボタン）
-    //   4. .sheetでNewPostViewをモーダル表示
-    // 備考: .id(profileRefreshId)により、投稿シートを閉じた時にProfileViewを強制リフレッシュする。
+    //   iPhone: ZStack切り替え + BottomNavBar
+    //   iPad:   NavigationSplitView でサイドバー + コンテンツ
     // =============================================================================
     var body: some View {
-        VStack(spacing: 0) {
-            // タブに応じたメインコンテンツ領域
-            ZStack {
-                switch selectedTab {
-                case 0:
-                    HomeView()
-                        .environmentObject(postsViewModel)
-                        .environmentObject(authViewModel)
-                case 1:
-                    CalendarView()
-                        .environmentObject(authViewModel)
-                        .environmentObject(calendarViewModel)
-                        .environmentObject(postsViewModel)
-                case 2:
-                    ShoppingView()
-                        .environmentObject(authViewModel)
-                case 3:
-                    ProfileView(userId: Auth.currentUID)
-                        .environmentObject(authViewModel)
-                        .environmentObject(postsViewModel)
-                        .environmentObject(draftManager)
-                        .id(profileRefreshId)
-                default:
-                    EmptyView()
-                }
+        Group {
+            if isIPad {
+                iPadLayout
+            } else {
+                iPhoneLayout
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // 広告バナー表示領域（現在はプレースホルダー）
-            AdBannerView()
-
-            // 下部カスタムナビゲーションバー
-            BottomNavBar(
-                selectedTab: $selectedTab,
-                unreadCount: unreadCount,
-                onPostTap: { showNewPost = true }
-            )
         }
-        .ignoresSafeArea(edges: .bottom)
         // 新規投稿画面（+ボタンまたは下書き選択時にフルスクリーン表示）
         .fullScreenCover(isPresented: $showNewPost, onDismiss: {
             // 閉じたらプロフィールViewを再描画（投稿件数更新のため）
@@ -184,6 +152,157 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NotificationsDeleted"))) { _ in
             refreshUnreadCount()
         }
+    }
+
+    // MARK: - iPhone Layout（従来のBottomNavBar構成）
+    private var iPhoneLayout: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                switch selectedTab {
+                case 0:
+                    HomeView()
+                        .environmentObject(postsViewModel)
+                        .environmentObject(authViewModel)
+                case 1:
+                    CalendarView()
+                        .environmentObject(authViewModel)
+                        .environmentObject(calendarViewModel)
+                        .environmentObject(postsViewModel)
+                case 2:
+                    ShoppingView()
+                        .environmentObject(authViewModel)
+                case 3:
+                    ProfileView(userId: Auth.currentUID)
+                        .environmentObject(authViewModel)
+                        .environmentObject(postsViewModel)
+                        .environmentObject(draftManager)
+                        .id(profileRefreshId)
+                default:
+                    EmptyView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            AdBannerView()
+
+            BottomNavBar(
+                selectedTab: $selectedTab,
+                unreadCount: unreadCount,
+                onPostTap: { showNewPost = true }
+            )
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    // MARK: - iPad Layout（常時固定サイドバー + コンテンツ）
+    private var iPadLayout: some View {
+        HStack(spacing: 0) {
+            iPadSidebar
+                .frame(width: 80)
+            Divider()
+            iPadDetailContent
+                .frame(maxWidth: .infinity)
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    private var iPadSidebar: some View {
+        VStack(spacing: 24) {
+            Spacer(minLength: 0)
+            iPadNavIconItem(icon: "house.fill",   tab: 0)
+            iPadNavIconItem(icon: "calendar",     tab: 1)
+            iPadNavIconItem(icon: "bag.fill",     tab: 2)
+            iPadNavIconItemWithBadge(icon: "person.fill", tab: 3, badge: unreadCount)
+            Divider().padding(.horizontal, 12)
+            Button(action: { showNewPost = true }) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.white)
+                    .frame(width: 52, height: 52)
+                    .background(Color.accentRed)
+                    .clipShape(Circle())
+                    .shadow(color: Color.accentRed.opacity(0.3), radius: 8, y: 4)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxHeight: .infinity)
+        .background(
+            Color(red: 0.91, green: 0.87, blue: 0.77)
+                .ignoresSafeArea(edges: .top)
+        )
+    }
+
+    private var iPadDetailContent: some View {
+        NavigationView {
+            ZStack {
+                switch selectedTab {
+                case 0:
+                    HomeView()
+                        .environmentObject(postsViewModel)
+                        .environmentObject(authViewModel)
+                case 1:
+                    CalendarView()
+                        .environmentObject(authViewModel)
+                        .environmentObject(calendarViewModel)
+                        .environmentObject(postsViewModel)
+                case 2:
+                    ShoppingView()
+                        .environmentObject(authViewModel)
+                case 3:
+                    ProfileView(userId: Auth.currentUID)
+                        .environmentObject(authViewModel)
+                        .environmentObject(postsViewModel)
+                        .environmentObject(draftManager)
+                        .id(profileRefreshId)
+                default:
+                    EmptyView()
+                }
+            }
+            .navigationBarHidden(true)
+        }
+        .navigationViewStyle(StackNavigationViewStyle())
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func iPadNavIconItem(icon: String, tab: Int) -> some View {
+        Button { selectedTab = tab } label: {
+            Image(systemName: icon)
+                .font(.system(size: 22))
+                .foregroundColor(selectedTab == tab ? .accentRed : Color(.secondaryLabel))
+                .frame(width: 52, height: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(selectedTab == tab ? Color.accentRed.opacity(0.1) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func iPadNavIconItemWithBadge(icon: String, tab: Int, badge: Int) -> some View {
+        Button { selectedTab = tab } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: icon)
+                    .font(.system(size: 22))
+                    .foregroundColor(selectedTab == tab ? .accentRed : Color(.secondaryLabel))
+                    .frame(width: 52, height: 52)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(selectedTab == tab ? Color.accentRed.opacity(0.1) : Color.clear)
+                    )
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.appFont(.regular, size: 9))
+                        .foregroundColor(.white)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(Color.accentRed)
+                        .clipShape(Capsule())
+                        .offset(x: 6, y: -2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func refreshUnreadCount() {

@@ -1,6 +1,9 @@
 // =============================================================================
 // ファイル名: CalendarView.swift
 // 役割: カレンダー画面（月次表示・日付タップ・日記閲覧・新規投稿）
+// 説明:
+//   月ごとのカレンダーグリッドを表示し、日付タップで日記・投稿を確認/作成できます。
+//   iPad対応: 左65%にカレンダー、右35%に選択日の詳細パネルを横並び表示。
 // =============================================================================
 
 import SwiftUI
@@ -437,6 +440,7 @@ private struct CalendarRootContent: View {
 
     private var uid: String { Auth.currentUID }
     private var isSubscribed: Bool { SubscriptionManager.shared.isSubscribed }
+    private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     var body: some View {
         NavigationView {
@@ -446,20 +450,11 @@ private struct CalendarRootContent: View {
     }
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            topStatusBar
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    monthHeader
-                    weekdayHeader
-                    calendarGrid
-                    Divider().padding(.top, 8)
-                    if let date = selectedDate {
-                        selectedDayPanel(date: date)
-                    }
-                }
-                .padding(.bottom, 32)
+        Group {
+            if isIPad {
+                iPadTwoPaneContent
+            } else {
+                iPhoneContent
             }
         }
         .background(Color.ecruBackground.ignoresSafeArea())
@@ -503,17 +498,88 @@ private struct CalendarRootContent: View {
             uid: uid
         ))
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CalendarEntryUpdated"))) { _ in
+            let currentUid = uid
+            guard !currentUid.isEmpty else { return }
             Task {
-                await vm.fetchEntries(uid: uid, around: displayedMonth)
-                await vm.fetchPosts(uid: uid, around: displayedMonth)
+                await vm.fetchEntries(uid: currentUid, around: displayedMonth)
+                await vm.fetchPosts(uid: currentUid, around: displayedMonth)
             }
         }
         .task {
+            let currentUid = uid
+            guard !currentUid.isEmpty else { return }
             vm.setRegionFromProfile(authViewModel.currentUser?.region_code)
-            await vm.fetchAllData(uid: uid, around: displayedMonth)
+            await vm.fetchAllData(uid: currentUid, around: displayedMonth)
         }
         .onChange(of: displayedMonth) { month in
-            Task { await vm.fetchAllData(uid: uid, around: month) }
+            let currentUid = uid
+            guard !currentUid.isEmpty else { return }
+            Task { await vm.fetchAllData(uid: currentUid, around: month) }
+        }
+    }
+
+    // MARK: - iPhone: 縦スタック（従来レイアウト）
+    private var iPhoneContent: some View {
+        VStack(spacing: 0) {
+            topStatusBar
+            ScrollView {
+                VStack(spacing: 0) {
+                    monthHeader
+                    weekdayHeader
+                    calendarGrid
+                    Divider().padding(.top, 8)
+                    if let date = selectedDate {
+                        selectedDayPanel(date: date)
+                    }
+                }
+                .padding(.bottom, 32)
+            }
+        }
+    }
+
+    // MARK: - iPad: 左ペイン（カレンダー 65%） + 右ペイン（選択日詳細 35%）
+    // 説明: GeometryReaderで全幅を65:35に分割。カレンダーを広く、詳細をコンパクトに。
+    private var iPadTwoPaneContent: some View {
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                // 左ペイン: カレンダー本体 (65%)
+                VStack(spacing: 0) {
+                    topStatusBar
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            monthHeader
+                            weekdayHeader
+                            calendarGrid
+                        }
+                        .padding(.bottom, 16)
+                    }
+                }
+                .frame(width: geo.size.width * 0.65)
+
+                Divider()
+
+                // 右ペイン: 選択日の詳細 (35%)
+                Group {
+                    if let date = selectedDate {
+                        ScrollView {
+                            selectedDayPanel(date: date)
+                                .padding(.top, 8)
+                        }
+                    } else {
+                        VStack(spacing: 16) {
+                            Image(systemName: "calendar.badge.clock")
+                                .font(.system(size: 48))
+                                .foregroundColor(.secondary.opacity(0.4))
+                            Text("日付を選択してください")
+                                .font(.appFont(.regular, size: 15))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(width: geo.size.width * 0.35, alignment: .top)
+                .background(Color(.systemBackground))
+            }
         }
     }
 
@@ -542,16 +608,20 @@ private struct CalendarRootContent: View {
     }
 
     private func onDismissRefetch() {
+        let currentUid = uid
+        guard !currentUid.isEmpty else { return }
         Task {
-            await vm.fetchEntries(uid: uid, around: displayedMonth)
-            await vm.fetchPosts(uid: uid, around: displayedMonth)
+            await vm.fetchEntries(uid: currentUid, around: displayedMonth)
+            await vm.fetchPosts(uid: currentUid, around: displayedMonth)
         }
     }
 
     private func onDismissRefetchNewPost() {
+        let currentUid = uid
+        guard !currentUid.isEmpty else { return }
         Task {
-            await vm.fetchEntries(uid: uid, around: displayedMonth)
-            await vm.fetchPosts(uid: uid, around: displayedMonth)
+            await vm.fetchEntries(uid: currentUid, around: displayedMonth)
+            await vm.fetchPosts(uid: currentUid, around: displayedMonth)
         }
     }
 

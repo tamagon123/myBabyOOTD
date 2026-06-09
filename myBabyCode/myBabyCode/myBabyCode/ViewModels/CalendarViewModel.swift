@@ -96,6 +96,7 @@ class CalendarViewModel: ObservableObject {
     
     // 指定月（前後1ヶ月含む）の全データを一括取得（ローディング管理付き）
     func fetchAllData(uid: String, around month: Date) async {
+        guard !uid.isEmpty else { return }
         isLoading = true
         defer { isLoading = false }
         
@@ -124,6 +125,7 @@ class CalendarViewModel: ObservableObject {
     
     // 指定月（前後1ヶ月含む）のエントリーをFirestoreから取得
     private func fetchEntriesInternal(uid: String, around month: Date) async {
+        guard !uid.isEmpty else { return }
         let cal = Calendar.current
         guard let start = cal.date(byAdding: .month, value: -1, to: cal.startOfMonth(for: month)),
               let end = cal.date(byAdding: .month, value: 2, to: cal.startOfMonth(for: month)) else { return }
@@ -157,6 +159,7 @@ class CalendarViewModel: ObservableObject {
 
     // 指定月の投稿を取得し、日付ごとにグループ化
     private func fetchPostsInternal(uid: String, around month: Date) async {
+        guard !uid.isEmpty else { return }
         let cal = Calendar.current
         guard let start = cal.date(byAdding: .month, value: -1, to: cal.startOfMonth(for: month)),
               let end = cal.date(byAdding: .month, value: 2, to: cal.startOfMonth(for: month)) else { return }
@@ -186,6 +189,7 @@ class CalendarViewModel: ObservableObject {
 
     // カレンダー公開設定を取得（NewPostViewからも呼ばれるためinternal）
     func fetchCalendarPublicSetting(uid: String) async {
+        guard !uid.isEmpty else { return }
         do {
             let doc = try await db.collection("users").document(uid).getDocument()
             calendarIsPublic = doc.data()?["calendar_is_public"] as? Bool ?? false

@@ -17,6 +17,8 @@ struct ShoppingView: View {
     // === 状態 ===
     @State private var selectedCategory: ShoppingCategory = .all
 
+    private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     // =============================================================================
     // 【Viewサマリー】body
     // 目的: 買い物画面の全体レイアウトを定義
@@ -29,29 +31,67 @@ struct ShoppingView: View {
 
                 // アフィリエイトリンク一覧
                 ScrollView {
-                    LazyVStack(spacing: 12) {
-                        if brandService.isLoading && brandService.shoppingPortals.isEmpty {
-                            ProgressView()
-                                .padding(.top, 40)
-                        } else if filteredPortals.isEmpty {
-                            Text("リンクがありません")
-                                .font(.appFont(.regular, size: 14))
-                                .foregroundColor(.secondary)
-                                .padding(.top, 40)
-                        } else {
-                            ForEach(filteredPortals) { portal in
-                                PortalLinkCard(portal: portal)
-                            }
-                        }
+                    if isIPad {
+                        iPadTwoColumnPortals
+                    } else {
+                        iPhonePortalList
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
                 }
             }
             .navigationTitle("買い物")
             .navigationBarTitleDisplayMode(.large)
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    // MARK: - iPhone: 縦リスト
+    private var iPhonePortalList: some View {
+        LazyVStack(spacing: 12) {
+            if brandService.isLoading && brandService.shoppingPortals.isEmpty {
+                ProgressView()
+                    .padding(.top, 40)
+            } else if filteredPortals.isEmpty {
+                Text("リンクがありません")
+                    .font(.appFont(.regular, size: 14))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 40)
+            } else {
+                ForEach(filteredPortals) { portal in
+                    PortalLinkCard(portal: portal)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - iPad: 2列グリッド
+    private var iPadTwoColumnPortals: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 16),
+            GridItem(.flexible(), spacing: 16)
+        ]
+        return Group {
+            if brandService.isLoading && brandService.shoppingPortals.isEmpty {
+                ProgressView()
+                    .padding(.top, 40)
+                    .frame(maxWidth: .infinity)
+            } else if filteredPortals.isEmpty {
+                Text("リンクがありません")
+                    .font(.appFont(.regular, size: 14))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 40)
+                    .frame(maxWidth: .infinity)
+            } else {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(filteredPortals) { portal in
+                        PortalLinkCard(portal: portal)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+        }
     }
 
     // =============================================================================

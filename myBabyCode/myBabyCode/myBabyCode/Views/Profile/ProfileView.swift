@@ -54,6 +54,8 @@ struct ProfileView: View {
     private let db = Firestore.firestore()
     // 計算プロパティ: 自分のプロフィールかどうか
     private var isOwnProfile: Bool { userId == FirebaseAuth.Auth.auth().currentUser?.uid }
+    // iPad判定: グリッド列数とレイアウト切り替えに使用
+    private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     // =============================================================================
     // 【Viewサマリー】body
@@ -187,7 +189,7 @@ struct ProfileView: View {
                 ? "ブロックを解除するとこのユーザーの投稿が表示されるようになります。"
                 : "ブロックするとこのユーザーの投稿がフィードに表示されなくなります。")
         }
-        .sheet(item: $selectedPost) { post in
+        .fullScreenCover(item: $selectedPost) { post in
             PostDetailView(
                 post: post,
                 postId: post.id ?? post.post_id,
@@ -706,13 +708,11 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - Profile Mini Grid
+    // 説明: プロフィール画面の投稿グリッド。iPadでは4列、iPhoneでは3列表示。
     private func profileMiniGrid(posts: [Post]) -> some View {
-        let cellSize = (UIScreen.main.bounds.width - 32 - 16) / 3
-        let columns = [
-            GridItem(.fixed(cellSize), spacing: 8),
-            GridItem(.fixed(cellSize), spacing: 8),
-            GridItem(.fixed(cellSize), spacing: 8)
-        ]
+        let columnCount = isIPad ? 4 : 3
+        let columns = (0..<columnCount).map { _ in GridItem(.flexible(), spacing: 8) }
         return LazyVGrid(columns: columns, spacing: 8) {
             ForEach(posts, id: \.post_id) { post in
                 MiniPostCardView(
@@ -726,7 +726,7 @@ struct ProfileView: View {
                     },
                     showInfo: false
                 )
-                .frame(width: cellSize, height: cellSize * 1.3)
+                .aspectRatio(1.0 / 1.3, contentMode: .fit)
             }
         }
         .padding(.horizontal, 16)
@@ -1016,7 +1016,7 @@ struct UserPostsSheet: View {
                     }
                 }
             }
-            .sheet(item: $selectedPost) { post in
+            .fullScreenCover(item: $selectedPost) { post in
                 PostDetailView(
                     post: post,
                     postId: post.id ?? post.post_id,

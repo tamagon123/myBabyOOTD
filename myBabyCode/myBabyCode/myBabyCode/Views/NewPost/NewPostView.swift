@@ -50,6 +50,8 @@ struct NewPostView: View {
     @State private var editorReadyImage: UIImage?        // 編集完了後の画像
     @State private var showEditConfirm = false           // 編集確認ダイアログ
     @State private var showPhotoActionSheet = false      // 写真再選択/編集アクションシート
+    @State private var showFrontPhotoPopover = false     // フロント写真選択ポップオーバー
+    @State private var showBackPhotoPopover = false      // バック写真選択ポップオーバー
 
     // === アイテムタグ関連 ===
     @State private var taggingItemIndex: Int? = nil      // タグ付け中のアイテムインデックス
@@ -96,6 +98,8 @@ struct NewPostView: View {
     // 計算プロパティ: ログイン中ユーザーの子供リスト（プロフィール設定時に登録）
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
     
+    private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     // 変更があるかどうか（閉じる時の確認用）
     private var hasChanges: Bool {
         frontImage != nil || backImage != nil || !items.isEmpty || !description.isEmpty
@@ -121,9 +125,361 @@ struct NewPostView: View {
     // =============================================================================
     var body: some View {
         NavigationView {
-            scrollContent
+            if isIPad {
+                iPadContent
+            } else {
+                scrollContent
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    // MARK: - iPad Layout (redesigned)
+    //
+    // 説明:
+    //   iPadでは2カラムレイアウトを採用。
+    //   左ペインに正方形の写真プレビューカード（Popoverで編集/再選択）、
+    //   右ペインにカード化されたフォーム（子供・天気・ポイント・アイテム）を配置。
+    //   アクションボタンは各ペイン下部に配置し、ナビバーには「閉じる」のみ残す。
+    // =============================================================================
+
+    // MARK: - iPad Left Pane (写真選択エリア)
+
+    private var iPadLeftPane: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                iPadPhotoCard(title: "フロント", image: frontImage, target: .front)
+                iPadPhotoCard(title: "バック", image: backImage, target: .back)
+                Text("どちらか1枚以上必須")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(24)
+        }
+        .background(Color(.secondarySystemBackground))
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - iPad Photo Card (正方形・Popover付き)
+    // 説明: フロント/バックの写真プレビューを表示する正方形カード。
+    //       タップでPopover（ライブラリ/カメラ/スタンプ編集）を表示。
+    //       未選択時は赤枠プレースホルダー、選択済みはscaledToFitで全体表示。
+    @ViewBuilder
+    private func iPadPhotoCard(title: String, image: UIImage?, target: PhotoTarget) -> some View {
+        let showPopover = target == .front ? $showFrontPhotoPopover : $showBackPhotoPopover
+        Button {
+            photoSourceTarget = target
+            if target == .front { showFrontPhotoPopover = true } else { showBackPhotoPopover = true }
+        } label: {
+            ZStack {
+                if let img = image {
+                    Color.black
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Text(title)
+                                .font(.appFont(.bold, size: 14))
+                                .foregroundColor(.white)
+                            Spacer()
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.55)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    }
+                } else {
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color(.systemBackground))
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.accentRed.opacity(0.25), lineWidth: 1.5)
+                    VStack(spacing: 14) {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 42, weight: .light))
+                            .foregroundColor(Color.accentRed.opacity(0.85))
+                        Text(title)
+                            .font(.appFont(.bold, size: 17))
+                            .foregroundColor(.primary)
+                        Text("タップして追加")
+                            .font(.appFont(.regular, size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .cornerRadius(20)
+            .shadow(color: .black.opacity(image != nil ? 0.15 : 0.06), radius: 12, y: 4)
+            .clipped()
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: showPopover, arrowEdge: .trailing) {
+            iPadPhotoPopoverContent(image: image, target: target)
+                .frame(minWidth: 220, minHeight: image != nil ? 160 : 110)
+        }
+    }
+
+    // MARK: - iPad Photo Popover Content
+    // 説明: 写真カードタップ時に表示するPopoverの内容。
+    //       写真あり→「ライブラリ」「カメラ」「スタンプ編集」、なし→前2つ。
+    @ViewBuilder
+    private func iPadPhotoPopoverContent(image: UIImage?, target: PhotoTarget) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if image != nil {
+                photoPopoverButton(label: "ライブラリから選択", icon: "photo") {
+                    imagePickerSourceType = .photoLibrary; showImagePicker = true
+                    if target == .front { showFrontPhotoPopover = false } else { showBackPhotoPopover = false }
+                }
+                Divider()
+                photoPopoverButton(label: "カメラで撮影", icon: "camera") {
+                    imagePickerSourceType = .camera; showImagePicker = true
+                    if target == .front { showFrontPhotoPopover = false } else { showBackPhotoPopover = false }
+                }
+                Divider()
+                photoPopoverButton(label: "スタンプを編集", icon: "pencil") {
+                    editorReadyImage = target == .front ? originalFrontImage : originalBackImage
+                    showImageEditor = true
+                    if target == .front { showFrontPhotoPopover = false } else { showBackPhotoPopover = false }
+                }
+            } else {
+                photoPopoverButton(label: "ライブラリから選択", icon: "photo") {
+                    imagePickerSourceType = .photoLibrary; showImagePicker = true
+                    if target == .front { showFrontPhotoPopover = false } else { showBackPhotoPopover = false }
+                }
+                Divider()
+                photoPopoverButton(label: "カメラで撮影", icon: "camera") {
+                    imagePickerSourceType = .camera; showImagePicker = true
+                    if target == .front { showFrontPhotoPopover = false } else { showBackPhotoPopover = false }
+                }
+            }
+        }
+        .frame(width: 220)
+    }
+
+    // MARK: - iPad Photo Popover Button Helper
+    @ViewBuilder
+    private func photoPopoverButton(label: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: icon)
+                .font(.appFont(.regular, size: 15))
+                .foregroundColor(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - iPad Right Pane (フォーム入力エリア)
+
+    private var iPadRightPane: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                iPadFormCard {
+                    childSection
+                }
+                iPadFormCard {
+                    itemsSection
+                }
+                iPadFormCard {
+                    descriptionSection
+                }
+                iPadFormCard {
+                    weatherSection
+                }
+                iPadActionButtons
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
+
+    // MARK: - iPad Form Card (角丸・ドロップシャドウのカードラッパー)
+    @ViewBuilder
+    private func iPadFormCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+        }
+        .padding(20)
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+    }
+
+    // MARK: - iPad Action Buttons (投稿・下書き保存)
+    // 説明: 右ペイン下部に配置するアクションボタン群。
+    //       「投稿する」は赤背景でフルワイド、「下書きとして保存」はサブトーン。
+    private var iPadActionButtons: some View {
+        VStack(spacing: 12) {
+            Button {
+                Task { await submitPost() }
+            } label: {
+                HStack {
+                    if isSubmitting {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.85)
+                    }
+                    Text(isSubmitting ? "投稿中..." : "投稿する")
+                        .font(.appFont(.bold, size: 17))
+                        .foregroundColor(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .background(canPost && !isSubmitting ? Color.accentRed : Color.gray)
+                .cornerRadius(16)
+            }
+            .disabled(!canPost || isSubmitting || postsViewModel.isLoading)
+
+            Button {
+                saveDraft()
+                showDraftCloseAlert = true
+            } label: {
+                Label("下書きとして保存", systemImage: "square.and.arrow.down")
+                    .font(.appFont(.medium, size: 15))
+                    .foregroundColor(canSaveDraft ? Color.accentRed : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(canSaveDraft ? Color.accentRed.opacity(0.07) : Color(.systemGray5))
+                    .cornerRadius(14)
+            }
+            .disabled(!canSaveDraft)
+        }
+    }
+
+    // MARK: - iPad Layout Body (HStackコンテナ)
+
+    private var iPadLayoutBody: some View {
+        HStack(spacing: 0) {
+            iPadLeftPane
+            Divider()
+            iPadRightPane
+        }
+        .background(Color(.systemBackground))
+    }
+
+    // MARK: - iPad Content (Body＋ツールバー＋アラート)
+
+    private var iPadContent: some View {
+        iPadLayoutBody
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完了") { dismissKeyboard() }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") {
+                        if canSaveDraft { showDiscardAlert = true } else { dismiss() }
+                    }
+                }
+            }
+            .overlay(alignment: .top) {
+                if showDraftSavedBanner {
+                    Text("下書きを保存しました")
+                        .font(.appFont(.medium, size: 14))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.black.opacity(0.82))
+                        .cornerRadius(20)
+                        .padding(.top, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(), value: showDraftSavedBanner)
+            .navigationTitle(navigationTitleText)
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { applyProfileDefaults() }
+            .onChange(of: frontImage) { _ in draftSaved = false }
+            .onChange(of: backImage) { _ in draftSaved = false }
+            .onChange(of: description) { _ in draftSaved = false }
+            .onChange(of: items) { _ in draftSaved = false }
+            .alert("下書きを保存しますか？", isPresented: $showDiscardAlert) {
+                Button("保存する") { saveDraft(); dismiss() }
+                Button("保存しない", role: .destructive) { dismiss() }
+                Button("キャンセル", role: .cancel) {}
+            } message: { Text("編集内容を下書きとして保存できます。") }
+            .alert("このまま閉じますか？", isPresented: $showDraftCloseAlert) {
+                Button("閉じる") { dismiss() }
+                Button("続ける", role: .cancel) { draftSaved = false }
+            } message: { Text("下書きを保存しました。投稿画面を閉じますか？") }
+            .alert("投稿完了！", isPresented: $showSuccess) {
+                Button("OK") {
+                    Task {
+                        await postsViewModel.fetchPosts(user: authViewModel.currentUser)
+                        await postsViewModel.fetchLikedPosts()
+                    }
+                    dismiss()
+                }
+            } message: { Text("コーディネートを共有しました") }
+            .alert("エラー", isPresented: $showError) {
+                Button("OK") {}
+            } message: { Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。") }
+            .alert("写真を選択してください", isPresented: $showNoPhotoAlert) {
+                Button("OK") {}
+            } message: { Text("タグ付けを行う前に、コーディネートの写真を撮影または選択してください。") }
+            .confirmationDialog("写真を選択", isPresented: $showPhotoSourceSheet, titleVisibility: .visible) {
+                Button("カメラで撮影") { imagePickerSourceType = .camera; showImagePicker = true }
+                Button("ライブラリから選択") { imagePickerSourceType = .photoLibrary; showImagePicker = true }
+                Button("キャンセル", role: .cancel) {}
+            }
+            .sheet(isPresented: $showImagePicker, onDismiss: {
+                if editingImage != nil { showEditConfirm = true }
+            }) {
+                ImagePickerView(sourceType: imagePickerSourceType) { img in editingImage = img }
+            }
+            .confirmationDialog("この写真を編集しますか？", isPresented: $showEditConfirm, titleVisibility: .visible) {
+                Button("編集する（スタンプ）") {
+                    if photoSourceTarget == .front { originalFrontImage = editingImage } else { originalBackImage = editingImage }
+                    editorReadyImage = editingImage; editingImage = nil; showImageEditor = true
+                }
+                Button("そのまま使う") {
+                    if photoSourceTarget == .front { originalFrontImage = editingImage; frontImage = editingImage }
+                    else { originalBackImage = editingImage; backImage = editingImage }
+                    editingImage = nil
+                }
+                Button("キャンセル", role: .cancel) { editingImage = nil }
+            }
+            .sheet(isPresented: $showImageEditor, onDismiss: { editorReadyImage = nil }) {
+                if let img = editorReadyImage {
+                    let side = photoSourceTarget == .front ? "front" : "back"
+                    let existing = postsViewModel.pendingStamps.filter { $0.image_side == side }
+                    PhotoEditorView(
+                        image: img, imageSide: side,
+                        onDone: { edited in
+                            if photoSourceTarget == .front { frontImage = edited } else { backImage = edited }
+                        },
+                        onSaveStamps: { stamps in
+                            postsViewModel.pendingStamps.removeAll { $0.image_side == side }
+                            postsViewModel.pendingStamps.append(contentsOf: stamps)
+                        },
+                        existingStamps: existing
+                    )
+                }
+            }
+            .fullScreenCover(isPresented: Binding(
+                get: { taggingItemIndex != nil },
+                set: { if !$0 { taggingItemIndex = nil } }
+            )) {
+                if let idx = taggingItemIndex {
+                    TagPlacementView(items: $items, itemIndex: idx, taggingSide: $taggingSide, frontImage: frontImage, backImage: backImage)
+                }
+            }
     }
 
     private var scrollContent: some View {
@@ -207,7 +563,7 @@ struct NewPostView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("閉じる") {
-                    if hasChanges { showDiscardAlert = true } else { dismiss() }
+                    if canSaveDraft { showDiscardAlert = true } else { dismiss() }
                 }
             }
         }
@@ -387,31 +743,10 @@ struct NewPostView: View {
 
     @ViewBuilder
     private func photoTile(title: String, image: UIImage?, target: PhotoTarget) -> some View {
-        Menu {
-            if image != nil {
-                Button {
-                    photoSourceTarget = target
-                    // 合成済み(image)ではなくオリジナル画像をエディタに渡す
-                    editorReadyImage = target == .front ? originalFrontImage : originalBackImage
-                    showImageEditor = true
-                } label: {
-                    Label("スタンプを編集", systemImage: "pencil")
-                }
-            }
-            Button {
-                photoSourceTarget = target
-                imagePickerSourceType = .photoLibrary
-                showImagePicker = true
-            } label: {
-                Label("ライブラリから選択", systemImage: "photo")
-            }
-            Button {
-                photoSourceTarget = target
-                imagePickerSourceType = .camera
-                showImagePicker = true
-            } label: {
-                Label("カメラで撮影", systemImage: "camera")
-            }
+        let showDialog = target == .front ? $showFrontPhotoPopover : $showBackPhotoPopover
+        Button {
+            photoSourceTarget = target
+            if target == .front { showFrontPhotoPopover = true } else { showBackPhotoPopover = true }
         } label: {
             ZStack {
                 if let img = image {
@@ -448,6 +783,23 @@ struct NewPostView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 1))
         }
         .buttonStyle(.plain)
+        .confirmationDialog(title, isPresented: showDialog, titleVisibility: .visible) {
+            if image != nil {
+                Button("スタンプを編集") {
+                    editorReadyImage = target == .front ? originalFrontImage : originalBackImage
+                    showImageEditor = true
+                }
+            }
+            Button("ライブラリから選択") {
+                imagePickerSourceType = .photoLibrary
+                showImagePicker = true
+            }
+            Button("カメラで撮影") {
+                imagePickerSourceType = .camera
+                showImagePicker = true
+            }
+            Button("キャンセル", role: .cancel) {}
+        }
     }
 
     // MARK: - Child Section

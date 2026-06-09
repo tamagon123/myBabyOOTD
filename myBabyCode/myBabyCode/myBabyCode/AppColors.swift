@@ -51,3 +51,21 @@ extension Color {
         self.init(red: r, green: g, blue: b, opacity: a)
     }
 }
+
+import SwiftUI
+
+// =============================================================================
+// 【ViewModifier】LargeSheetModifier
+// 目的: iOS 16以上で.sheetに.presentationDetents([.large])を適用しiPadで全画面表示
+//       iOS 16未満では何もしない（後方互換性のため）
+// 使用箇所: HomeView, PostCardView, ProfileView の PostDetailView 表示時
+// =============================================================================
+struct LargeSheetModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content.presentationDetents([.large])
+        } else {
+            content
+        }
+    }
+}
