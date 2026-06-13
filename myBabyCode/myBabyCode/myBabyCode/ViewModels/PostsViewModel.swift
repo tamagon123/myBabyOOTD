@@ -371,7 +371,7 @@ class PostsViewModel: ObservableObject {
                 group.addTask {
                     guard let snap = try? await Firestore.firestore().collection("users").document(uid).getDocument(),
                           let data = snap.data() else { return nil }
-                    let avatarId = data["avatar_id"] as? String ?? "bear"
+                    let avatarId = data["avatar_id"] as? String ?? "zou"
                     let avatarBgColor = data["avatar_bg_color"] as? String
                     let displayName = (data["display_name"] as? String) ?? (data["unique_user_id"] as? String)
                     let uniqueUserId = data["unique_user_id"] as? String

@@ -123,11 +123,12 @@
 				};
 			};
 			buildConfigurationList = BFBD2BF42FC0968800ECDEDB /* Build configuration list for PBXProject "myBabyCode" */;
-			developmentRegion = en;
+			developmentRegion = ja;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
+				ja,
 			);
 			mainGroup = BFBD2BF02FC0968800ECDEDB;
 			minimizedProjectReferenceProxies = 1;
@@ -297,13 +298,14 @@
 				CODE_SIGN_ENTITLEMENTS = myBabyCode/myBabyCode.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = G75W83BT8C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = myBabyCode/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Nanikiru;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "コーディネートの写真を撮影するためにカメラを使用します。";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "コーディネートの写真を選択するためにフォトライブラリへのアクセスが必要です。";
 				INFOPLIST_KEY_NSUserTrackingUsageDescription = "広告をパーソナライズするために使用します。許可しない場合も広告は表示されますが、関連性が低くなる場合があります。";
@@ -317,7 +319,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tamaki.myBabyCode;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -339,13 +341,14 @@
 				CODE_SIGN_ENTITLEMENTS = myBabyCode/myBabyCode.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = G75W83BT8C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = myBabyCode/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Nanikiru;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "コーディネートの写真を撮影するためにカメラを使用します。";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "コーディネートの写真を選択するためにフォトライブラリへのアクセスが必要です。";
 				INFOPLIST_KEY_NSUserTrackingUsageDescription = "広告をパーソナライズするために使用します。許可しない場合も広告は表示されますが、関連性が低くなる場合があります。";
@@ -359,7 +362,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tamaki.myBabyCode;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

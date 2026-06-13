@@ -219,7 +219,7 @@ struct ProfileView: View {
                 ZStack(alignment: .topTrailing) {
                     VStack(spacing: 12) {
                         // Avatar (大きく、枠線・影付き)
-                        let avatarId = profileUser?.avatar_id ?? "bear"
+                        let avatarId = profileUser?.avatar_id ?? "zou"
                         let bgColor = Color(hex: profileUser?.avatar_bg_color ?? "#FFEEBA")
                         Group {
                             if avatarId.hasPrefix("https://") {
@@ -624,7 +624,7 @@ struct ProfileView: View {
             if let userData = try? await db.collection("users").document(userId).getDocument(),
                let data = userData.data() {
                 let displayName = (data["display_name"] as? String) ?? (data["unique_user_id"] as? String)
-                let avatarId = data["avatar_id"] as? String ?? "bear"
+                let avatarId = data["avatar_id"] as? String ?? "zou"
                 let avatarBgColor = data["avatar_bg_color"] as? String
                 let children = data["children"] as? [[String: Any]]
                 let childName = children?.first?["name"] as? String

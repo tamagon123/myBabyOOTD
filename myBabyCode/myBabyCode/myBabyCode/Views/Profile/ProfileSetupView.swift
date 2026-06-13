@@ -22,7 +22,7 @@ struct ProfileSetupView: View {
     @State private var regionIndex: Int = -1       // 都道府県インデックス（-1=非公表、デフォルト）
 
     // === アバター設定 ===
-    @State private var avatarId: String = "bear"          // アバター識別子（画像名/URL/絵文字）
+    @State private var avatarId: String = "zou"          // アバター識別子（画像名/URL/絵文字）
     @State private var avatarBgColor: String = "#FFEEBA"  // アバター背景色（HEX）
     @State private var selectedAvatarImage: UIImage? = nil  // ライブラリから選択した画像
     @State private var showImagePicker: Bool = false      // 画像ピッカー表示フラグ
@@ -234,7 +234,6 @@ struct ProfileSetupView: View {
                         onComplete: {
                             UserDefaults.standard.set(true, forKey: "hasSeenAppGuide")
                             showAppGuide = false
-                            dismiss()
                         }
                     )
                     .toolbar {

@@ -130,7 +130,7 @@ class AuthViewModel: ObservableObject {
                         user_id: uid,
                         unique_user_id: nil,
                         display_name: nil,
-                        avatar_id: "bear",
+                        avatar_id: "zou",
                         avatar_bg_color: nil,
                         region_code: "13",
                         child_birthday: Date(),
@@ -176,7 +176,7 @@ class AuthViewModel: ObservableObject {
                     user_id: uid,
                     unique_user_id: nil,
                     display_name: nil,
-                    avatar_id: "bear",
+                    avatar_id: "zou",
                     avatar_bg_color: nil,
                     region_code: "13",
                     child_birthday: Date(),
@@ -394,7 +394,7 @@ class AuthViewModel: ObservableObject {
                 "unique_user_id": uniqueUserId,
                 "display_name": displayName,
                 "region_code": regionCode,
-                "avatar_id": avatarId ?? "bear",
+                "avatar_id": avatarId ?? "zou",
                 "avatar_bg_color": avatarBgColor as Any,
                 "is_profile_complete": true
             ]
@@ -413,7 +413,7 @@ class AuthViewModel: ObservableObject {
             currentUser?.unique_user_id = uniqueUserId
             currentUser?.display_name = displayName
             currentUser?.region_code = regionCode
-            currentUser?.avatar_id = avatarId ?? "bear"
+            currentUser?.avatar_id = avatarId ?? "zou"
             currentUser?.avatar_bg_color = avatarBgColor
             currentUser?.is_profile_complete = true
             currentUser?.children = children
@@ -570,7 +570,7 @@ class AuthViewModel: ObservableObject {
                         user_id: uid,
                         unique_user_id: nil,
                         display_name: nil,
-                        avatar_id: "bear",
+                        avatar_id: "zou",
                         avatar_bg_color: nil,
                         region_code: "13",
                         child_birthday: Date(),
@@ -669,7 +669,7 @@ class AuthViewModel: ObservableObject {
                             user_id: uid,
                             unique_user_id: nil,
                             display_name: nil,
-                            avatar_id: "bear",
+                            avatar_id: "zou",
                             avatar_bg_color: nil,
                             region_code: "13",
                             child_birthday: Date(),

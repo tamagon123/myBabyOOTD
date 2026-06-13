@@ -83,7 +83,7 @@ struct MiniPostCardView: View {
             HStack(spacing: 8) {
                 if showInfo {
                 // アバター
-                let avatarId = post.posterAvatarId ?? "bear"
+                let avatarId = post.posterAvatarId ?? "zou"
                 let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
                 Group {
                     if avatarId.hasPrefix("https://") {

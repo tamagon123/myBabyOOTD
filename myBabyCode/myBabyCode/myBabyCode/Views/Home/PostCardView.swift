@@ -91,7 +91,7 @@ struct PostCardView: View {
                 } label: {
                     HStack(spacing: 10) {
                         // Avatar
-                        let avatarId = post.posterAvatarId ?? "bear"
+                        let avatarId = post.posterAvatarId ?? "zou"
                         let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
                         Group {
                             if avatarId.hasPrefix("https://") {

@@ -82,7 +82,6 @@ struct AppGuideView: View {
                 if isFirstLaunch {
                     Button {
                         onComplete?()
-                        dismiss()
                     } label: {
                         Text("はじめる")
                             .font(.appFont(.medium, size: 16))

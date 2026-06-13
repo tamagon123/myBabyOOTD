@@ -32,7 +32,7 @@ struct CompactPostCardView: View {
             // ヘッダー: 投稿者情報
             HStack(spacing: 10) {
                 // アバター
-                let avatarId = post.posterAvatarId ?? "bear"
+                let avatarId = post.posterAvatarId ?? "zou"
                 let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
                 Group {
                     if avatarId.hasPrefix("https://") {

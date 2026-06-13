@@ -48,9 +48,13 @@ struct AdBannerView: View {
     private var adContent: some View {
         #if canImport(GoogleMobileAds)
         //--- AdMob 実装（SDK導入済みの場合のみ表示） ---
-        GADBannerViewRepresentable(adUnitId: AdConfig.bannerAdUnitId)
-            .frame(maxWidth: .infinity)
-            .frame(height: AdConfig.bannerHeight)
+        // GeometryReaderで実際の表示幅を取得し、iPadサイドバー分を除いた正確な幅でバナーを生成
+        GeometryReader { geo in
+            GADBannerViewRepresentable(adUnitId: AdConfig.bannerAdUnitId, width: geo.size.width)
+                .frame(width: geo.size.width, height: AdConfig.bannerHeight)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: AdConfig.bannerHeight)
         #else
         // AdMob SDK が未導入の場合は何も表示しない
         EmptyView()
@@ -70,11 +74,11 @@ import UIKit
 
 struct GADBannerViewRepresentable: UIViewRepresentable {
     let adUnitId: String
+    let width: CGFloat
 
     func makeUIView(context: Context) -> GADBannerView {
-        // Calculate an adaptive banner size for the current width
-        let screenWidth = UIScreen.main.bounds.width
-        let adSize = GADCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth(screenWidth)
+        // GeometryReaderから渡された実際の表示幅でアダプティブバナーサイズを計算
+        let adSize = GADCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth(width)
 
         let banner = GADBannerView(adSize: adSize)
         banner.adUnitID = adUnitId
@@ -98,10 +102,7 @@ struct GADBannerViewRepresentable: UIViewRepresentable {
         return banner
     }
 
-    func updateUIView(_ uiView: GADBannerView, context: Context) {
-        // If the size class or width changes significantly, you could recalc the adaptive size.
-        // For simplicity, no dynamic updates are performed here.
-    }
+    func updateUIView(_ uiView: GADBannerView, context: Context) {}
 }
 
 private extension GADBannerViewRepresentable {

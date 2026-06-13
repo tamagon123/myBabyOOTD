@@ -35,7 +35,7 @@ struct BlockListView: View {
                 List {
                     ForEach(blockedUsers, id: \.user_id) { user in
                         HStack(spacing: 12) {
-                            let avatarId = user.avatar_id ?? "bear"
+                            let avatarId = user.avatar_id ?? "zou"
                             let bgColor = Color(hex: user.avatar_bg_color ?? "#FFEEBA")
                             Group {
                                 if avatarId.hasPrefix("https://") {

@@ -20,6 +20,7 @@ struct myBabyCodeApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     // 認証状態を管理するViewModel。アプリ全体で共有される。
     @StateObject private var authViewModel = AuthViewModel()
+    private let updateChecker = AppUpdateChecker.shared
     @Environment(\.scenePhase) var scenePhase
 
     // =============================================================================
@@ -88,6 +89,10 @@ struct myBabyCodeApp: App {
                 // （iOS 15以降では即時呼び出しだとシステムに無視される場合があるため遅延）
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     appDelegate.requestATT()
+                }
+                // アップデートチェック（毎回アクティブになるたびに実行）
+                Task {
+                    await updateChecker.checkForUpdate()
                 }
             }
         }

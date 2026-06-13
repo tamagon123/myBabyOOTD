@@ -31,6 +31,7 @@ struct MainTabView: View {
     @State private var showProfile = false                      // プロフィール画面表示
     @State private var targetUserId: String? = nil             // 表示対象のユーザーID
 
+    @StateObject private var updateChecker = AppUpdateChecker.shared
     private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     // =============================================================================
@@ -152,6 +153,15 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NotificationsDeleted"))) { _ in
             refreshUnreadCount()
         }
+        // アップデート通知アラート（新バージョンがある間は毎回起動時に表示）
+        .alert("アップデートのお知らせ", isPresented: $updateChecker.isUpdateAvailable) {
+            Button("今すぐ更新") {
+                updateChecker.openAppStore()
+            }
+            Button("後で", role: .cancel) {}
+        } message: {
+            Text("新しいバージョン（\(updateChecker.latestVersion)）が公開されました。\nアップデートすると最新の機能や修正をご利用いただけます。")
+        }
     }
 
     // MARK: - iPhone Layout（従来のBottomNavBar構成）
@@ -233,35 +243,39 @@ struct MainTabView: View {
     }
 
     private var iPadDetailContent: some View {
-        NavigationView {
-            ZStack {
-                switch selectedTab {
-                case 0:
-                    HomeView()
-                        .environmentObject(postsViewModel)
-                        .environmentObject(authViewModel)
-                case 1:
-                    CalendarView()
-                        .environmentObject(authViewModel)
-                        .environmentObject(calendarViewModel)
-                        .environmentObject(postsViewModel)
-                case 2:
-                    ShoppingView()
-                        .environmentObject(authViewModel)
-                case 3:
-                    ProfileView(userId: Auth.currentUID)
-                        .environmentObject(authViewModel)
-                        .environmentObject(postsViewModel)
-                        .environmentObject(draftManager)
-                        .id(profileRefreshId)
-                default:
-                    EmptyView()
+        VStack(spacing: 0) {
+            NavigationView {
+                ZStack {
+                    switch selectedTab {
+                    case 0:
+                        HomeView()
+                            .environmentObject(postsViewModel)
+                            .environmentObject(authViewModel)
+                    case 1:
+                        CalendarView()
+                            .environmentObject(authViewModel)
+                            .environmentObject(calendarViewModel)
+                            .environmentObject(postsViewModel)
+                    case 2:
+                        ShoppingView()
+                            .environmentObject(authViewModel)
+                    case 3:
+                        ProfileView(userId: Auth.currentUID)
+                            .environmentObject(authViewModel)
+                            .environmentObject(postsViewModel)
+                            .environmentObject(draftManager)
+                            .id(profileRefreshId)
+                    default:
+                        EmptyView()
+                    }
                 }
+                .navigationBarHidden(true)
             }
-            .navigationBarHidden(true)
+            .navigationViewStyle(StackNavigationViewStyle())
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            AdBannerView()
         }
-        .navigationViewStyle(StackNavigationViewStyle())
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder

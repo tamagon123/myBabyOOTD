@@ -17,7 +17,7 @@ struct EditProfileView: View {
     // === 編集項目 ===
     @State private var displayName: String = ""           // 表示名
     @State private var uniqueUserId: String = ""        // 一意のユーザーID
-    @State private var selectedAvatarId: String = "bear"  // アバター識別子
+    @State private var selectedAvatarId: String = "zou"  // アバター識別子
     @State private var selectedBgColorHex: String = "#FFEEBA"  // アバター背景色
     @State private var showAvatarImagePicker = false      // 画像ピッカー表示フラグ
     @State private var pickedAvatarImage: UIImage? = nil  // 選択したアバター画像
@@ -160,7 +160,7 @@ struct EditProfileView: View {
                             if isUploadingAvatar { ProgressView().scaleEffect(0.8) }
                             Button {
                                 pickedAvatarImage = nil
-                                selectedAvatarId = "bear"
+                                selectedAvatarId = "zou"
                             } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                             }

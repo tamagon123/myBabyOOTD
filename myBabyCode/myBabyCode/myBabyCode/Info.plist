@@ -32,8 +32,6 @@
 			</dict>
 		</dict>
 	</dict>
-	<key>NSUserTrackingUsageDescription</key>
-	<string>広告をパーソナライズするために使用します。許可しない場合も広告は表示されますが、関連性が低くなる場合があります。</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

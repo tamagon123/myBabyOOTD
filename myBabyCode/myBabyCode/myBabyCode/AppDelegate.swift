@@ -50,9 +50,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
 
-        // AdMob SDK 初期化（ATT許可要求はscenePhaseがactiveになってから行う）
-        startAdMob()
-
         return true
     }
 
@@ -70,7 +67,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     // =============================================================================
     func requestATT() {
         if #available(iOS 14, *) {
-            guard ATTrackingManager.trackingAuthorizationStatus == .notDetermined else { return }
+            // ATTが既に決定済みの場合はダイアログを表示せず、即座にAdMobを初期化
+            guard ATTrackingManager.trackingAuthorizationStatus == .notDetermined else {
+                startAdMob()
+                return
+            }
             ATTrackingManager.requestTrackingAuthorization { status in
                 DispatchQueue.main.async {
                     switch status {
@@ -85,8 +86,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
                     @unknown default:
                         break
                     }
+                    // ATT許可の結果に関わらずAdMobを初期化（許可・拒否どちらでも広告は表示される）
+                    self.startAdMob()
                 }
             }
+        } else {
+            // iOS 14未満はATT不要。直接AdMobを初期化。
+            startAdMob()
         }
     }
 
