@@ -145,7 +145,8 @@ struct PostStamp: Identifiable, Codable {
     var scale: Double        // スタンプのスケール（1.0がデフォルト）
     var rotation: Double     // 回転角度（ラジアン）
     var image_side: String   // "front"=正面 "back"=背面
-    
+    var color_hex: String?   // スタンプの色（HEX文字列、例: "#FF0000"）
+
     // StampKindへの変換ヘルパー
     var stampKind: StampKind? {
         if kind_type == "symbol" {

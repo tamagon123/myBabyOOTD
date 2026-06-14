@@ -1786,6 +1786,7 @@ struct PlacedStamp: Identifiable {
     var position: CGPoint
     var scale: CGFloat = 2.5
     var rotation: Angle = .zero
+    var color: Color = .white
 }
 
 enum StampSymbol: String, CaseIterable, Identifiable {
@@ -1802,22 +1803,7 @@ enum StampSymbol: String, CaseIterable, Identifiable {
     case sun          = "sun.max.fill"
     case bolt         = "bolt.fill"
     var id: String { rawValue }
-    var color: Color {
-        switch self {
-        case .circle:   return .accentRed
-        case .square:   return .orange
-        case .triangle: return .green
-        case .star:     return .yellow
-        case .heart:    return .pink
-        case .diamond:  return .cyan
-        case .pentagon: return .purple
-        case .hexagon:  return .mint
-        case .cloud:    return .blue
-        case .moon:     return Color(.systemGray)
-        case .sun:      return .orange
-        case .bolt:     return .yellow
-        }
-    }
+    var defaultColor: Color { .white }
 }
 
 // Undo操作タイプ
@@ -1843,11 +1829,24 @@ struct PhotoEditorView: View {
     @State private var canvasOffset: CGPoint = .zero
     @State private var activeStampId: UUID? = nil
 
+    private let pickerColors: [Color] = [
+        .black, .white, .red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink
+    ]
+
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
                 stampPalette
-                canvas
+                ZStack(alignment: .bottom) {
+                    canvas
+                    if let activeId = activeStampId {
+                        VStack(spacing: 8) {
+                            colorPickerRow(activeId: activeId)
+                            trashButton(activeId: activeId)
+                        }
+                        .padding(.bottom, 12)
+                    }
+                }
                 hintText
             }
             .navigationTitle("スタンプを追加")
@@ -1880,6 +1879,65 @@ struct PhotoEditorView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    // MARK: - Color Picker Row
+    private func colorPickerRow(activeId: UUID) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(pickerColors.indices, id: \.self) { i in
+                    let col = pickerColors[i]
+                    let isSelected: Bool = {
+                        if let idx = stampItems.firstIndex(where: { $0.id == activeId }) {
+                            return stampItems[idx].color == col
+                        }
+                        return false
+                    }()
+                    Button {
+                        if let idx = stampItems.firstIndex(where: { $0.id == activeId }) {
+                            if isSelected {
+                                stampItems[idx].color = .white
+                            } else {
+                                stampItems[idx].color = col
+                            }
+                        }
+                    } label: {
+                        Circle()
+                            .fill(col)
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                Circle().stroke(Color.white.opacity(0.9), lineWidth: isSelected ? 3 : 1)
+                            )
+                            .shadow(radius: 2)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.45))
+        .cornerRadius(16)
+        .padding(.horizontal, 32)
+    }
+
+    // MARK: - Trash Button
+    private func trashButton(activeId: UUID) -> some View {
+        Button {
+            if let idx = stampItems.firstIndex(where: { $0.id == activeId }) {
+                history.append(.removeStamp(stampItems[idx]))
+                stampItems.remove(at: idx)
+            }
+            activeStampId = nil
+        } label: {
+            Image(systemName: "trash.fill")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.white)
+                .padding(14)
+                .background(Color.red.opacity(0.85))
+                .clipShape(Circle())
+                .shadow(radius: 4)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Stamp Palette
@@ -1922,7 +1980,7 @@ struct PhotoEditorView: View {
                     } label: {
                         Image(systemName: sym.rawValue)
                             .font(.appFont(.regular, size: 24))
-                            .foregroundColor(sym.color)
+                            .foregroundColor(.white)
                             .frame(width: 44, height: 44)
                             .background(selectedKind == kind ? Color(UIColor.systemGray4).opacity(0.6) : Color(.systemGray6))
                             .cornerRadius(10)
@@ -1969,7 +2027,7 @@ struct PhotoEditorView: View {
                                     x: max(0, min(val.location.x, displaySize.width)),
                                     y: max(0, min(val.location.y, displaySize.height))
                                 )
-                                let stamp = PlacedStamp(kind: kind, position: position)
+                                let stamp = PlacedStamp(kind: kind, position: position, color: .white)
                                 stampItems.append(stamp)
                                 history.append(.addStamp(stamp))
                                 activeStampId = stamp.id
@@ -1980,13 +2038,9 @@ struct PhotoEditorView: View {
                 // スタンプ編集レイヤー（画像と完全に同じ枠になる）
                 ForEach($stampItems) { $stamp in
                     StampView(stamp: $stamp,
-                              canvasOffset: .zero, // offsetは不要（常に0）
+                              canvasOffset: .zero,
                               isActive: activeStampId == stamp.id,
-                              onTap: { activeStampId = stamp.id },
-                              onRemove: {
-                                history.append(.removeStamp(stamp))
-                                stampItems.removeAll { $0.id == stamp.id }
-                              })
+                              onTap: { activeStampId = stamp.id })
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
@@ -2014,7 +2068,7 @@ struct PhotoEditorView: View {
     // 戻り値: some View
     // =============================================================================
     private var hintText: some View {
-        Text(selectedKind != nil ? "タップで配置" : "スタンプを選択 • ハンドル上下ドラッグで拡縮 • ダブルタップで削除")
+        Text(selectedKind != nil ? "タップで配置" : (activeStampId != nil ? "ゴミ箱で削除 • カラーで色変更 • ドラッグで移動" : "スタンプを選択 • タップで選択 • ドラッグで移動"))
             .font(.caption)
             .foregroundColor(selectedKind != nil ? .accentRed : .secondary)
             .padding(.vertical, 6)
@@ -2088,7 +2142,7 @@ struct PhotoEditorView: View {
                 case .symbol(let sym):
                     let config = UIImage.SymbolConfiguration(pointSize: stampImgPt, weight: .bold)
                     let baseImg = UIImage(systemName: sym.rawValue, withConfiguration: config)
-                    drawImage = baseImg?.withTintColor(UIColor(sym.color), renderingMode: .alwaysOriginal)
+                    drawImage = baseImg?.withTintColor(UIColor(stamp.color), renderingMode: .alwaysOriginal)
                 case .image(let name):
                     drawImage = UIImage(named: name)
                 }
@@ -2130,11 +2184,13 @@ struct PhotoEditorView: View {
                 x: CGFloat(postStamp.x_ratio) * canvasSize.width,
                 y: CGFloat(postStamp.y_ratio) * canvasSize.height
             )
+            let restoredColor: Color = postStamp.color_hex.flatMap { Color(hex: $0) } ?? .white
             return PlacedStamp(
                 kind: stampKind,
                 position: position,
                 scale: CGFloat(postStamp.scale),
-                rotation: Angle(radians: postStamp.rotation)
+                rotation: Angle(radians: postStamp.rotation),
+                color: restoredColor
             )
         }
         stampItems = restored
@@ -2168,7 +2224,8 @@ struct PhotoEditorView: View {
                 y_ratio: Double(max(0, min(1, yRatio))),
                 scale: Double(stamp.scale),
                 rotation: Double(stamp.rotation.radians),
-                image_side: imageSide
+                image_side: imageSide,
+                color_hex: stamp.color.toHex()
             )
         }
     }
@@ -2181,7 +2238,6 @@ struct StampView: View {
     let canvasOffset: CGPoint
     let isActive: Bool
     let onTap: () -> Void
-    let onRemove: () -> Void
 
     private let baseSize: CGFloat = 44
 
@@ -2195,7 +2251,7 @@ struct StampView: View {
             case .symbol(let sym):
                 Image(systemName: sym.rawValue)
                     .font(.appFont(.regular, size: baseSize))
-                    .foregroundColor(sym.color)
+                    .foregroundColor(stamp.color)
             case .image(let name):
                 Image(name)
                     .resizable()
@@ -2237,20 +2293,6 @@ struct StampView: View {
                             )
                     }
                     Spacer()
-                    HStack {
-                        Spacer()
-                        // 削除ボタン（ゴミ箱アイコン、右下）
-                        Button(action: onRemove) {
-                            Image(systemName: "trash.fill")
-                                .font(.appFont(.bold, size: 11))
-                                .foregroundColor(.white)
-                                .padding(5)
-                                .background(Color.red.opacity(0.8))
-                                .clipShape(Circle())
-                        }
-                        .offset(x: 4, y: 4)
-                        .buttonStyle(.plain)
-                    }
                 }
                 .frame(width: baseSize * stamp.scale * liveScaleFactor + 12,
                        height: baseSize * stamp.scale * liveScaleFactor + 12)
@@ -2275,9 +2317,6 @@ struct StampView: View {
                         stamp.rotation += val
                     }
             )
-        )
-        .highPriorityGesture(
-            TapGesture(count: 2).onEnded { onRemove() }
         )
         .highPriorityGesture(
             TapGesture().onEnded { onTap() }
