@@ -25,6 +25,17 @@ class AuthViewModel: ObservableObject {
     // === UI状態通知用プロパティ ===
     // @Publishedを付けると値が変わるたびにSwiftUIのViewが自動で再描画される
     @Published var isSignedIn: Bool = false         // ログインしているか
+    @Published var isGuest: Bool = false {
+        didSet {
+            // ゲストモード解除時（ログイン画面へ戻る）: 匿名セッションを削除してからサインアウト
+            if !isGuest, let user = FirebaseAuth.Auth.auth().currentUser, user.isAnonymous {
+                Task {
+                    try? await user.delete()
+                    try? FirebaseAuth.Auth.auth().signOut()
+                }
+            }
+        }
+    }                                               // ゲストモード（未ログイン閲覧）
     @Published var currentUser: AppUser?            // 現在のユーザーデータ
     @Published var errorMessage: String?            // エラーメッセージ（アラート表示用）
     @Published var successMessage: String?          // 成功メッセージ（トースト等）
@@ -84,12 +95,16 @@ class AuthViewModel: ObservableObject {
                 continuation.resume()
             }
         }
-        let hasSession = FirebaseAuth.Auth.auth().currentUser != nil
-        if hasSession && autoLogin {
+        let currentFirebaseUser = FirebaseAuth.Auth.auth().currentUser
+        if let user = currentFirebaseUser, user.isAnonymous {
+            // 前回ゲストのまま残った匿名セッションはサインアウトして未ログイン扱い
+            try? FirebaseAuth.Auth.auth().signOut()
+            isSignedIn = false
+        } else if currentFirebaseUser != nil && autoLogin {
             await loadCurrentUser()
             isSignedIn = true
         } else {
-            if hasSession {
+            if currentFirebaseUser != nil {
                 try? FirebaseAuth.Auth.auth().signOut()
             }
             isSignedIn = false
@@ -723,7 +738,22 @@ class AuthViewModel: ObservableObject {
     func signOut() {
         try? FirebaseAuth.Auth.auth().signOut()
         isSignedIn = false
+        isGuest = false
         currentUser = nil
+    }
+
+    func signInAsGuest() async {
+        isInitializing = true
+        do {
+            let result = try await FirebaseAuth.Auth.auth().signInAnonymously()
+            print("[Guest] signInAnonymously succeeded, uid=\(result.user.uid), isAnonymous=\(result.user.isAnonymous)")
+        } catch {
+            print("[Guest] signInAnonymously failed: \(error)")
+        }
+        print("[Guest] currentUser after signIn: \(String(describing: FirebaseAuth.Auth.auth().currentUser?.uid))")
+        isGuest = true
+        isInitializing = false
+        print("[Guest] isInitializing=false, MainTabView should now appear")
     }
 
     // MARK: - Load user

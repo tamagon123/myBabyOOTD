@@ -77,6 +77,10 @@ struct myBabyCodeApp: App {
                     MainTabView()
                         .environmentObject(authViewModel)
                 }
+            } else if authViewModel.isGuest {
+                // ゲストモード: ホーム・買い物のみ利用可能
+                MainTabView()
+                    .environmentObject(authViewModel)
             } else {
                 // 未ログイン: 認証画面を表示
                 AuthView()

@@ -6,6 +6,7 @@
 import Foundation
 import Combine
 import FirebaseFirestore
+import FirebaseAuth
 
 /// Firestore管理のアフィリエイトリンク設定（ブランド別カスタムURL）
 struct AffiliateLinkConfig: Codable {
@@ -70,6 +71,10 @@ final class BrandService: ObservableObject {
 
     // MARK: - 一括取得
     func fetchAll() async {
+        guard FirebaseAuth.Auth.auth().currentUser != nil else {
+            print("[BrandService] fetchAll skipped: not authenticated")
+            return
+        }
         await MainActor.run { self.isLoading = true }
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.fetchBrands() }

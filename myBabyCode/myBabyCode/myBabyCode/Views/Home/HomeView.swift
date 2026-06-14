@@ -28,6 +28,7 @@ struct HomeView: View {
     // 表示モード: リスト表示 / グリッド表示
     @State private var isGridMode: Bool = false
     @State private var selectedPost: Post? = nil  // グリッド表示時の詳細画面用
+    @State private var showGuestAlert = false     // ゲスト制限アラート
 
     private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
@@ -57,7 +58,9 @@ struct HomeView: View {
                 AppHeaderView(
                     onLogoTap: { scrollToTopFlag.toggle() },
                     showSearchButton: true,
-                    isSearchActive: postsViewModel.isSearchActive
+                    isSearchActive: postsViewModel.isSearchActive,
+                    isGuest: authViewModel.isGuest,
+                    onGuestSearchTap: { showGuestAlert = true }
                 )
 
                 // 検索結果表示中バナー
@@ -84,7 +87,11 @@ struct HomeView: View {
 
                 // タブセレクター: 新着 / おすすめ / フォロー中 + 表示モード切り替え
                 HStack(spacing: 12) {
-                    TimelineTabBar(selected: $postsViewModel.currentTab)
+                    TimelineTabBar(
+                        selected: $postsViewModel.currentTab,
+                        isGuest: authViewModel.isGuest,
+                        onGuestTap: { showGuestAlert = true }
+                    )
                     
                     // 表示モード切り替えボタン
                     Button {
@@ -139,7 +146,15 @@ struct HomeView: View {
             .task {
                 await BlockService.shared.fetchBlockedUsers()
                 await postsViewModel.fetchPosts(user: authViewModel.currentUser)
-                await postsViewModel.fetchLikedPosts()
+                if !authViewModel.isGuest {
+                    await postsViewModel.fetchLikedPosts()
+                }
+            }
+            .alert("ログインが必要です", isPresented: $showGuestAlert) {
+                Button("ログイン / 新規登録") { authViewModel.isGuest = false }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("この機能を利用するにはログインまたは新規登録が必要です。")
             }
             // タブ切り替え時に投稿を再取得
             .onChange(of: postsViewModel.currentTab) { _ in
@@ -333,6 +348,8 @@ struct AppHeaderView: View {
     var onLogoTap: (() -> Void)? = nil   // ロゴタップ時のコールバック（オプション）
     var showSearchButton: Bool = true     // 検索アイコンの表示フラグ
     var isSearchActive: Bool = false      // 検索絞り込み中フラグ（アイコン変更用）
+    var isGuest: Bool = false             // ゲストモードフラグ
+    var onGuestSearchTap: (() -> Void)? = nil  // ゲスト時の検索タップコールバック
 
     var body: some View {
         ZStack {
@@ -352,10 +369,18 @@ struct AppHeaderView: View {
             if showSearchButton {
                 HStack {
                     Spacer()
-                    NavigationLink(destination: SearchView()) {
-                        Image(systemName: isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
-                            .font(.appFont(.regular, size: 20))
-                            .foregroundColor(.accentRed)
+                    if isGuest {
+                        Button { onGuestSearchTap?() } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.appFont(.regular, size: 20))
+                                .foregroundColor(Color(.systemGray3))
+                        }
+                    } else {
+                        NavigationLink(destination: SearchView()) {
+                            Image(systemName: isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
+                                .font(.appFont(.regular, size: 20))
+                                .foregroundColor(.accentRed)
+                        }
                     }
                 }
             }
@@ -376,21 +401,30 @@ struct AppHeaderView: View {
 
 struct TimelineTabBar: View {
     @Binding var selected: TimelineTab   // 選択中のタブ（PostsViewModelと双方向バインディング）
+    var isGuest: Bool = false
+    var onGuestTap: (() -> Void)? = nil
+
+    // ゲストが利用できないタブ
+    private let guestRestrictedTabs: Set<TimelineTab> = [.recommend, .following]
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(TimelineTab.allCases) { tab in
+                let restricted = isGuest && guestRestrictedTabs.contains(tab)
                 Button {
-                    selected = tab
+                    if restricted {
+                        onGuestTap?()
+                    } else {
+                        selected = tab
+                    }
                 } label: {
                     VStack(spacing: 4) {
                         Text(tab.rawValue)
                             .font(.appFont(selected == tab ? .bold : .regular, size: 13))
-                            .foregroundColor(selected == tab ? .accentRed : .gray)
+                            .foregroundColor(restricted ? Color(.systemGray3) : (selected == tab ? .accentRed : .gray))
                             .padding(.vertical, 8)
-                        // 選択中のタブのみ下線（朱色）を表示
                         Rectangle()
-                            .fill(selected == tab ? Color.accentRed : Color.clear)
+                            .fill(selected == tab && !restricted ? Color.accentRed : Color.clear)
                             .frame(height: 2)
                             .cornerRadius(1)
                     }

@@ -24,6 +24,7 @@ struct MainTabView: View {
     @State private var showNewPost = false                     // 新規投稿シートの表示状態
     @State private var profileRefreshId = UUID()               // プロフィールViewの強制再描画用ID
     @State private var unreadCount: Int = 0                    // 未読通知数
+    @State private var showGuestAlert: Bool = false             // ゲスト制限アラート表示
     
     // === 通知タップによる詳細画面表示用 ===
     @State private var showPostDetail = false                  // 投稿詳細画面表示
@@ -154,6 +155,14 @@ struct MainTabView: View {
             refreshUnreadCount()
         }
         // アップデート通知アラート（新バージョンがある間は毎回起動時に表示）
+        .alert("ログインが必要です", isPresented: $showGuestAlert) {
+            Button("ログイン / 新規登録") {
+                authViewModel.isGuest = false
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("この機能を利用するにはログインまたは新規登録が必要です。")
+        }
         .alert("アップデートのお知らせ", isPresented: $updateChecker.isUpdateAvailable) {
             Button("今すぐ更新") {
                 updateChecker.openAppStore()
@@ -174,19 +183,27 @@ struct MainTabView: View {
                         .environmentObject(postsViewModel)
                         .environmentObject(authViewModel)
                 case 1:
-                    CalendarView()
-                        .environmentObject(authViewModel)
-                        .environmentObject(calendarViewModel)
-                        .environmentObject(postsViewModel)
+                    if authViewModel.isGuest {
+                        guestBlockedView
+                    } else {
+                        CalendarView()
+                            .environmentObject(authViewModel)
+                            .environmentObject(calendarViewModel)
+                            .environmentObject(postsViewModel)
+                    }
                 case 2:
                     ShoppingView()
                         .environmentObject(authViewModel)
                 case 3:
-                    ProfileView(userId: Auth.currentUID)
-                        .environmentObject(authViewModel)
-                        .environmentObject(postsViewModel)
-                        .environmentObject(draftManager)
-                        .id(profileRefreshId)
+                    if authViewModel.isGuest {
+                        guestBlockedView
+                    } else {
+                        ProfileView(userId: Auth.currentUID)
+                            .environmentObject(authViewModel)
+                            .environmentObject(postsViewModel)
+                            .environmentObject(draftManager)
+                            .id(profileRefreshId)
+                    }
                 default:
                     EmptyView()
                 }
@@ -198,10 +215,42 @@ struct MainTabView: View {
             BottomNavBar(
                 selectedTab: $selectedTab,
                 unreadCount: unreadCount,
-                onPostTap: { showNewPost = true }
+                isGuest: authViewModel.isGuest,
+                onPostTap: {
+                    if authViewModel.isGuest {
+                        showGuestAlert = true
+                    } else {
+                        showNewPost = true
+                    }
+                },
+                onGuestTabTap: { showGuestAlert = true }
             )
         }
         .ignoresSafeArea(edges: .bottom)
+    }
+
+    private var guestBlockedView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+            Text("この機能はログインが必要です")
+                .font(.appFont(.medium, size: 16))
+                .foregroundColor(.secondary)
+            Button {
+                showGuestAlert = true
+            } label: {
+                Text("ログイン / 新規登録")
+                    .font(.appFont(.bold, size: 15))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 12)
+                    .background(Color.accentRed)
+                    .cornerRadius(14)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.ecruBackground)
     }
 
     // MARK: - iPad Layout（常時固定サイドバー + コンテンツ）
@@ -343,7 +392,9 @@ struct MainTabView: View {
 struct BottomNavBar: View {
     @Binding var selectedTab: Int   // 双方向バインディング: MainTabViewとタブ状態を同期
     var unreadCount: Int = 0        // 未読通知数（マイページタブのバッジ用）
+    var isGuest: Bool = false       // ゲストモードフラグ
     var onPostTap: () -> Void       // +ボタンタップ時のコールバック
+    var onGuestTabTap: () -> Void = {}  // ゲスト制限タブタップ時のコールバック
 
     var body: some View {
         HStack {
@@ -351,7 +402,7 @@ struct BottomNavBar: View {
             navItem(icon: "house.fill",   label: "ホーム",  tab: 0)
             Spacer()
             // カレンダーボタン（タブ1）
-            navItem(icon: "calendar", label: "カレンダー", tab: 1)
+            guestItem(icon: "calendar", label: "カレンダー", tab: 1)
             Spacer()
             // 中央: 新規投稿ボタン（赤い浮き出し円）
             Button(action: onPostTap) {
@@ -371,7 +422,7 @@ struct BottomNavBar: View {
             navItem(icon: "bag.fill", label: "買い物", tab: 2)
             Spacer()
             // マイページボタン（タブ3）
-            navItemWithBadge(icon: "person.fill", label: "マイページ", tab: 3, badge: unreadCount)
+            guestItemWithBadge(icon: "person.fill", label: "マイページ", tab: 3, badge: unreadCount)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -402,8 +453,48 @@ struct BottomNavBar: View {
                 Text(label)
                     .font(.appFont(.regular, size: 10))
             }
-            // 選択中のタブは朱色、未選択はグレー
             .foregroundColor(selectedTab == tab ? .accentRed : Color(.systemGray3))
+        }
+    }
+
+    @ViewBuilder
+    private func guestItem(icon: String, label: String, tab: Int) -> some View {
+        Button {
+            if isGuest { onGuestTabTap() } else { selectedTab = tab }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.appFont(.regular, size: 22))
+                Text(label)
+                    .font(.appFont(.regular, size: 10))
+            }
+            .foregroundColor(isGuest ? Color(.systemGray4) : (selectedTab == tab ? .accentRed : Color(.systemGray3)))
+        }
+    }
+
+    @ViewBuilder
+    private func guestItemWithBadge(icon: String, label: String, tab: Int, badge: Int) -> some View {
+        Button {
+            if isGuest { onGuestTabTap() } else { selectedTab = tab }
+        } label: {
+            ZStack {
+                VStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.appFont(.bold, size: 22))
+                    Text(label)
+                        .font(.appFont(.regular, size: 10))
+                }
+                .foregroundColor(isGuest ? Color(.systemGray4) : (selectedTab == tab ? .accentRed : Color(.systemGray3)))
+                if !isGuest && badge > 0 {
+                    Text("\(badge)")
+                        .font(.appFont(.regular, size: 10))
+                        .foregroundColor(.white)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Color.accentRed)
+                        .clipShape(Capsule())
+                        .offset(x: 14, y: -10)
+                }
+            }
         }
     }
 

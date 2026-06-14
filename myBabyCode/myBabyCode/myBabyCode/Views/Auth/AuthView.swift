@@ -57,80 +57,43 @@ struct AuthView: View {
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 32) {
+                VStack(spacing: 24) {
                     Spacer().frame(height: 20)
 
                     // App logo
-                    VStack(spacing: 14) {
-                        Image("logo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 160)
+                    Image("logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 140)
 
-                        if authMode == .signUp {
-                            Text("新規アカウントを作成")
-                                .font(.appFont(.regular, size: 14))
-                                .foregroundColor(.secondary)
-                        }
+                    // ─── ログイン / 新規登録 タブ ───
+                    HStack(spacing: 0) {
+                        tabButton(title: "ログイン", mode: .login)
+                        tabButton(title: "新規登録", mode: .signUp)
                     }
+                    .background(Color(.systemGray5))
+                    .cornerRadius(12)
+                    .padding(.horizontal, 4)
 
-                    // Input fields
+                    // Input fields + action
                     VStack(spacing: 14) {
                         inputField(placeholder: "メールアドレス", text: $email,
                                    contentType: .emailAddress, keyboard: .emailAddress)
                         inputField(placeholder: "パスワード", text: $password,
                                    contentType: .password, isSecure: true)
 
-                        // Action button
-                        Button(action: handleAuthAction) {
-                            Group {
-                                if authViewModel.isLoading {
-                                    ProgressView().tint(.white)
-                                } else {
-                                    Text(authMode == .login ? "ログイン" : "アカウントを作成")
-                                        .font(.appFont(.bold, size: 17))
+                        if authMode == .login {
+                            HStack {
+                                Spacer()
+                                Button(action: { showResetPassword = true }) {
+                                    Text("パスワードを忘れた場合")
+                                        .font(.appFont(.regular, size: 13))
+                                        .foregroundColor(.secondary)
                                 }
                             }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 54)
-                            .background(canSubmit ? Color.accentRed : Color.secondary.opacity(0.4))
-                            .cornerRadius(16)
-                        }
-                        .disabled(!canSubmit || authViewModel.isLoading)
-
-                        if let error = authViewModel.errorMessage {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                                .multilineTextAlignment(.center)
-                        }
-                        if let success = authViewModel.successMessage {
-                            Text(success)
-                                .font(.caption)
-                                .foregroundColor(.green)
-                                .multilineTextAlignment(.center)
                         }
 
-                        // Toggle auth mode
-                        Button(action: {
-                            authMode = authMode == .login ? .signUp : .login
-                            authViewModel.errorMessage = nil
-                            authViewModel.successMessage = nil
-                        }) {
-                            Text(authMode == .login ? "アカウントを作成する" : "既存アカウントでログイン")
-                                .font(.appFont(.medium, size: 14))
-                                .foregroundColor(.accentRed)
-                        }
-
-                        if authMode == .login {
-                            Button(action: { showResetPassword = true }) {
-                                Text("パスワードを忘れた場合")
-                                    .font(.appFont(.regular, size: 13))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
+                        // 利用規約チェック（新規登録時・ボタン上部）
                         if authMode == .signUp {
                             HStack(alignment: .top, spacing: 10) {
                                 Button {
@@ -171,6 +134,37 @@ struct AuthView: View {
                                 }
                             }
                             .padding(.vertical, 4)
+                        }
+
+                        // Action button
+                        Button(action: handleAuthAction) {
+                            Group {
+                                if authViewModel.isLoading {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Text(authMode == .login ? "ログイン" : "アカウントを作成")
+                                        .font(.appFont(.bold, size: 17))
+                                }
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(canSubmit ? Color.accentRed : Color.secondary.opacity(0.4))
+                            .cornerRadius(16)
+                        }
+                        .disabled(!canSubmit || authViewModel.isLoading)
+
+                        if let error = authViewModel.errorMessage {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .multilineTextAlignment(.center)
+                        }
+                        if let success = authViewModel.successMessage {
+                            Text(success)
+                                .font(.caption)
+                                .foregroundColor(.green)
+                                .multilineTextAlignment(.center)
                         }
                     }
 
@@ -218,6 +212,17 @@ struct AuthView: View {
                         )
                     }
                     .disabled(authViewModel.isLoading)
+
+                    // Guest login
+                    Button(action: { Task { await authViewModel.signInAsGuest() } }) {
+                        Text("ゲストとして利用する（登録不要）")
+                            .font(.appFont(.medium, size: 14))
+                            .foregroundColor(Color(.label))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(Color(.systemGray5))
+                            .cornerRadius(14)
+                    }
 
                     Toggle(isOn: $authViewModel.autoLogin) {
                         Text("次回から自動ログイン")
@@ -291,6 +296,29 @@ struct AuthView: View {
     //   2. authModeに応じてViewModelのsignInWithEmail()またはsignUpWithEmail()を呼び出し
     // 呼び出し元: body内の「ログイン」/「アカウントを作成」ボタン
     // =============================================================================
+    @ViewBuilder
+    private func tabButton(title: String, mode: AuthMode) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                authMode = mode
+                authViewModel.errorMessage = nil
+                authViewModel.successMessage = nil
+            }
+        } label: {
+            Text(title)
+                .font(.appFont(.bold, size: 15))
+                .foregroundColor(authMode == mode ? .white : .secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .background(
+                    authMode == mode ? Color.accentRed : Color.clear
+                )
+                .cornerRadius(10)
+                .padding(3)
+        }
+        .buttonStyle(.plain)
+    }
+
     private func handleAuthAction() {
         authViewModel.errorMessage = nil
         authViewModel.successMessage = nil

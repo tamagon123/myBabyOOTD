@@ -151,7 +151,11 @@ class PostsViewModel: ObservableObject {
             print("[DEBUG] fetchPosts skipped: already loading")
             return
         }
-        print("[DEBUG] fetchPosts started, current posts count: \(posts.count)")
+        guard FirebaseAuth.Auth.auth().currentUser != nil else {
+            print("[DEBUG] fetchPosts skipped: not authenticated")
+            return
+        }
+        print("[DEBUG] fetchPosts started, uid=\(FirebaseAuth.Auth.auth().currentUser?.uid ?? "nil"), isAnonymous=\(FirebaseAuth.Auth.auth().currentUser?.isAnonymous ?? false), posts count: \(posts.count)")
         isLoading = true
         do {
             lastDocument = nil

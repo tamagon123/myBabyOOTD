@@ -31,6 +31,7 @@ struct PostCardView: View {
     @State private var itemsLoaded = false            // アイテムがロード済みか
     @State private var currentImageHeight: CGFloat = UIScreen.main.bounds.width  // 写真の可変高さ（初期値は画面幅でぺちゃんこ防止）
     @State private var isFirstImageLoaded: Bool = false  // 初回画像読み込み済みフラグ
+    @State private var showGuestAlert = false         // ゲスト制限アラート
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
     @ObservedObject private var blockService = BlockService.shared
@@ -87,7 +88,11 @@ struct PostCardView: View {
             }
             HStack(spacing: 12) {
                 Button {
-                    navigateToProfile = true
+                    if authViewModel.isGuest {
+                        showGuestAlert = true
+                    } else {
+                        navigateToProfile = true
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         // Avatar
@@ -95,9 +100,7 @@ struct PostCardView: View {
                         let avatarBg = Color(hex: post.posterAvatarBgColor ?? "#FFEEBA")
                         Group {
                             if avatarId.hasPrefix("https://") {
-                                AsyncImage(url: URL(string: avatarId)) { img in
-                                    img.resizable().scaledToFill()
-                                } placeholder: { Color.ecruBackground }
+                                CachedAvatarImage(url: avatarId)
                             } else if avatarImageNames.contains(avatarId) {
                                 Image(avatarId)
                                     .resizable()
@@ -189,7 +192,9 @@ struct PostCardView: View {
                 VStack {
                     Spacer()
                     HStack(spacing: 8) {
-                        Button(action: onLike) {
+                        Button {
+                            if authViewModel.isGuest { showGuestAlert = true } else { onLike() }
+                        } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: effectiveIsLiked ? "heart.fill" : "heart")
                                     .foregroundColor(effectiveIsLiked ? .pink : .white)
@@ -226,7 +231,7 @@ struct PostCardView: View {
                         Spacer()
 
                         Button {
-                            showReportSheet = true
+                            if authViewModel.isGuest { showGuestAlert = true } else { showReportSheet = true }
                         } label: {
                             Label("通報", systemImage: "exclamationmark.triangle")
                                 .font(.appFont(.regular, size: 11))
@@ -273,6 +278,12 @@ struct PostCardView: View {
         .shadow(color: .black.opacity(0.04), radius: 12, y: 4)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+        .alert("ログインが必要です", isPresented: $showGuestAlert) {
+            Button("ログイン / 新規登録") { authViewModel.isGuest = false }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("この機能を利用するにはログインまたは新規登録が必要です。")
+        }
         .sheet(isPresented: $showReportSheet) {
             ReportSheetView(
                 targetType: .post,
