@@ -323,13 +323,16 @@ struct EditProfileView: View {
         // ユーザーIDは変更不可のため保存時は既存値を維持
         user.display_name = displayName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : displayName.trimmingCharacters(in: .whitespaces)
         if let img = pickedAvatarImage {
+            isUploadingAvatar = true
             do {
-                isUploadingAvatar = true
                 let url = try await authViewModel.uploadAvatarImage(img)
                 user.avatar_id = url
                 isUploadingAvatar = false
             } catch {
                 isUploadingAvatar = false
+                isSaving = false
+                print("[EditProfile] Avatar upload failed: \(error)")
+                return
             }
         } else {
             user.avatar_id = selectedAvatarId
