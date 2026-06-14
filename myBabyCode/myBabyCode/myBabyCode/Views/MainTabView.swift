@@ -25,6 +25,7 @@ struct MainTabView: View {
     @State private var profileRefreshId = UUID()               // プロフィールViewの強制再描画用ID
     @State private var unreadCount: Int = 0                    // 未読通知数
     @State private var showGuestAlert: Bool = false             // ゲスト制限アラート表示
+    @StateObject private var guestAdManager = GuestInterstitialManager.shared
     
     // === 通知タップによる詳細画面表示用 ===
     @State private var showPostDetail = false                  // 投稿詳細画面表示
@@ -77,6 +78,16 @@ struct MainTabView: View {
             UIApplication.shared.applicationIconBadgeNumber = 0
             Task {
                 await BrandService.shared.fetchAll()
+            }
+            if authViewModel.isGuest {
+                guestAdManager.start()
+            }
+        }
+        .onChange(of: authViewModel.isGuest) { isGuest in
+            if isGuest {
+                guestAdManager.start()
+            } else {
+                guestAdManager.stop()
             }
         }
         // マイページタブ選択時に未読数を更新
@@ -162,6 +173,23 @@ struct MainTabView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("この機能を利用するにはログインまたは新規登録が必要です。")
+        }
+        .alert("ゲストモードのご利用について", isPresented: $guestAdManager.showPrompt) {
+            Button("広告を見てこのまま続ける") {
+                let vc = UIApplication.shared
+                    .connectedScenes
+                    .compactMap { $0 as? UIWindowScene }
+                    .flatMap { $0.windows }
+                    .first { $0.isKeyWindow }?
+                    .rootViewController
+                guestAdManager.watchAdAndContinue(from: vc)
+            }
+            Button("ログイン / 新規登録") {
+                guestAdManager.stop()
+                authViewModel.isGuest = false
+            }
+        } message: {
+            Text("ゲストモードで引き続きご利用いただくには、短い広告をご視聴ください。\n次の広告は60秒後に表示されます。")
         }
         .alert("アップデートのお知らせ", isPresented: $updateChecker.isUpdateAvailable) {
             Button("今すぐ更新") {

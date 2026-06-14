@@ -2189,9 +2189,12 @@ struct PhotoEditorView: View {
         GeometryReader { geo in
             // 1. 画面全体のサイズに画像がどう収まるか（実際の表示サイズ）を計算
             let displaySize = calculateFitSize(canvasSize: geo.size, imageSize: image.size)
+            // 2. 画像が縦中央になるよう上下のオフセットを計算
+            let yPad = (geo.size.height - displaySize.height) / 2
+            let xPad = (geo.size.width  - displaySize.width)  / 2
 
-            // 2. 画面の中央に、画像と「全く同じサイズ」のスタンプ配置エリアを作る
-            // alignment: .topLeading で左上を原点とする座標系に統一
+            // 3. ZStackをdisplaySizeぴったりで配置し、オフセット分だけずらす
+            //    → スタンプの座標系が「画像左上 = (0,0)」と完全に一致する
             ZStack(alignment: .topLeading) {
                 // 背景画像（余白なしのジャストサイズで配置）
                 Image(uiImage: image)
@@ -2201,7 +2204,6 @@ struct PhotoEditorView: View {
                         DragGesture(minimumDistance: 0)
                             .onEnded { val in
                                 guard let kind = selectedKind else { return }
-                                // ZStack(alignment: .topLeading) なので座標をそのまま使う
                                 let position = CGPoint(
                                     x: max(0, min(val.location.x, displaySize.width)),
                                     y: max(0, min(val.location.y, displaySize.height))
@@ -2214,7 +2216,7 @@ struct PhotoEditorView: View {
                             }
                     )
 
-                // スタンプ編集レイヤー（画像と完全に同じ枠になる）
+                // スタンプ編集レイヤー（画像と完全に同じ枠）
                 ForEach($stampItems) { $stamp in
                     StampView(stamp: $stamp,
                               canvasOffset: .zero,
@@ -2222,12 +2224,15 @@ struct PhotoEditorView: View {
                               onTap: { activeStampId = stamp.id })
                 }
             }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
+            .frame(width: displaySize.width, height: displaySize.height)
+            .offset(x: xPad, y: yPad)
             .onAppear {
-                // canvasSizeをこの「画像表示サイズ」で上書き（offsetなし）
                 canvasSize = displaySize
                 canvasOffset = .zero
                 loadExistingStamps()
+            }
+            .onChange(of: geo.size) { newSize in
+                canvasSize = calculateFitSize(canvasSize: newSize, imageSize: image.size)
             }
         }
     }
@@ -2295,9 +2300,10 @@ struct PhotoEditorView: View {
         let imgW = image.size.width
         let imgH = image.size.height
 
-        // canvasSizeが画像ぴったりサイズなので、単純に拡大率を計算
-        let fitScale = currentCanvasSize.width / imgW
-
+        // canvasSize は displaySize（画像をfit表示した実寸）なので縦横両方を考慮してfitScaleを計算
+        let fitScaleW = currentCanvasSize.width / imgW
+        let fitScaleH = currentCanvasSize.height / imgH
+        let fitScale = min(fitScaleW, fitScaleH)
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = image.scale
@@ -2307,10 +2313,8 @@ struct PhotoEditorView: View {
             image.draw(in: CGRect(origin: .zero, size: CGSize(width: imgW, height: imgH)))
 
             for stamp in stampItems {
-                // canvasSizeが画像ぴったりサイズなので、単に拡大率で割るだけで完璧に一致
                 let imgX = stamp.position.x / fitScale
                 let imgY = stamp.position.y / fitScale
-
 
                 // スタンプサイズも元画像サイズに合わせて拡大
                 let uiSize: CGFloat = 44 * stamp.scale
@@ -2392,7 +2396,6 @@ struct PhotoEditorView: View {
                 kindType = "image"
                 kindValue = name
             }
-            // 余白を引く処理が不要：canvasSizeが画像ぴったりサイズ
             let xRatio = stamp.position.x / canvasSize.width
             let yRatio = stamp.position.y / canvasSize.height
             return PostStamp(
