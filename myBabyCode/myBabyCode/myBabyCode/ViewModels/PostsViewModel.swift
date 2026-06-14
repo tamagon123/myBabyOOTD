@@ -780,6 +780,104 @@ class PostsViewModel: ObservableObject {
     //   4. ローカルのposts配列とlikedPostIdsからも該当投稿を削除
     // 呼び出し元: PostDetailView（ゴミ箱ボタン→削除確認後）
     // =============================================================================
+    // =============================================================================
+    // 【関数サマリー】updatePost
+    // 目的: 既存投稿の内容（写真・説明文・天気・アイテムなど）をすべて更新する
+    // 処理の流れ:
+    //   1. 新しい写真が指定された場合のみStorageにアップロードし新URLを取得
+    //   2. Firestoreの投稿ドキュメントを更新
+    //   3. サブコレクション items を一旦削除して再作成
+    //   4. item_tags・stampsを更新
+    // 呼び出し元: NewPostView（編集モード）
+    // =============================================================================
+    func updatePost(
+        existingPost: Post,
+        newFrontImage: UIImage?,
+        newBackImage: UIImage?,
+        description: String,
+        regionCode: String,
+        genderId: Int,
+        weatherType: String,
+        tempMax: Double,
+        tempMin: Double,
+        items: [PostItem],
+        overrideAgeMonths: Int? = nil
+    ) async -> Bool {
+        let postId = existingPost.id ?? existingPost.post_id
+        let itemTags = pendingItemTags
+        let stamps = pendingStamps
+        pendingItemTags = []
+        pendingStamps = []
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            var frontURL: String? = existingPost.image_url_front
+            var backURL: String? = existingPost.image_url_back
+
+            if let front = newFrontImage, let data = stripEXIF(from: front) {
+                let ref = storage.reference().child("posts/\(postId)/front.jpg")
+                _ = try await ref.putDataAsync(data)
+                frontURL = try await ref.downloadURL().absoluteString
+            }
+            if let back = newBackImage, let data = stripEXIF(from: back) {
+                let ref = storage.reference().child("posts/\(postId)/back.jpg")
+                _ = try await ref.putDataAsync(data)
+                backURL = try await ref.downloadURL().absoluteString
+            }
+
+            let tempCat = tempCategoryKey(max: tempMax, min: tempMin)
+            let ageMonths = overrideAgeMonths ?? existingPost.child_age_months
+
+            let postRef = db.collection("posts").document(postId)
+            try await postRef.updateData([
+                "image_url_front": frontURL as Any,
+                "image_url_back": backURL as Any,
+                "description": description,
+                "region_code": regionCode,
+                "gender_id": genderId,
+                "weather_type": weatherType,
+                "temp_max": tempMax,
+                "temp_min": tempMin,
+                "temp_category": tempCat,
+                "child_age_months": ageMonths
+            ])
+
+            let itemsSnap = try await postRef.collection("items").getDocuments()
+            for doc in itemsSnap.documents { try await doc.reference.delete() }
+            for item in items {
+                let itemRef = postRef.collection("items").document(item.item_id)
+                try itemRef.setData(from: item)
+            }
+
+            if !itemTags.isEmpty {
+                let tagData = itemTags.map { tag -> [String: Any] in [
+                    "id": tag.id, "item_index": tag.item_index,
+                    "x_ratio": tag.x_ratio, "y_ratio": tag.y_ratio, "image_side": tag.image_side
+                ]}
+                try await postRef.updateData(["item_tags": tagData])
+            } else {
+                try await postRef.updateData(["item_tags": []])
+            }
+
+            if !stamps.isEmpty {
+                let stampData = stamps.map { stamp -> [String: Any] in [
+                    "id": stamp.id, "kind_type": stamp.kind_type, "kind_value": stamp.kind_value,
+                    "x_ratio": stamp.x_ratio, "y_ratio": stamp.y_ratio,
+                    "scale": stamp.scale, "rotation": stamp.rotation, "image_side": stamp.image_side,
+                    "color_hex": stamp.color_hex as Any
+                ]}
+                try await postRef.updateData(["stamps": stampData])
+            }
+
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func deletePost(_ post: Post) async -> Bool {
         let postId = post.id ?? post.post_id
         isLoading = true

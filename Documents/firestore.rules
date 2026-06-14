@@ -11,9 +11,14 @@ service cloud.firestore {
     }
 
     // users: 読み取りは全員可、書き込みは自分のみ
+    // followers_count のみの更新は誰でも可（フォロー/アンフォロー時）
     match /users/{userId} {
       allow read: if isAuth();
-      allow create, update, delete: if isOwner(userId);
+      allow create, delete: if isOwner(userId);
+      allow update: if isOwner(userId)
+        || (isAuth()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['followers_count']));
     }
 
     // posts: 非表示でないものを全員に公開。自分の投稿は常に読める。作成/更新/削除は投稿者のみ。
@@ -47,6 +52,15 @@ service cloud.firestore {
       allow read: if isAuth();
       allow create: if isAuth() && request.auth.uid == request.resource.data.follower_id;
       allow delete: if isAuth() && resource.data.follower_id == request.auth.uid;
+    }
+
+    // blocks: 自分がブロックしたユーザーの管理
+    // read: 認証済み全員可（クエリでblocker_id==自分でフィルタするため）
+    // create/delete: blocker_idが自分のドキュメントのみ
+    match /blocks/{blockId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.blocker_id == request.auth.uid;
+      allow delete: if isAuth() && resource.data.blocker_id == request.auth.uid;
     }
 
     // reports: 1人1回のみ作成。読み取りは禁止（運営管理画面時に修正）

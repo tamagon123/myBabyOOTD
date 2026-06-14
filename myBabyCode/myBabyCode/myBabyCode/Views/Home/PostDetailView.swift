@@ -41,8 +41,9 @@ struct PostDetailView: View {
     // 通報関連
     @State private var showReportSheet = false      // 投稿通報シート表示フラグ
 
-    // スタンプ編集関連
-    @State private var showStampEditor = false      // スタンプ編集画面表示フラグ
+    // 投稿編集関連
+    @State private var showPostEditor = false       // 投稿編集画面（NewPostView）表示フラグ
+    @State private var showStampEditor = false      // スタンプ編集画面表示フラグ（旧、互換用）
     @State private var editingImage: UIImage? = nil // 編集中の画像
     @State private var editingImageSide: String = "front" // 編集中の画像面
     @State private var isLoadingImage = false       // 画像読み込み中フラグ
@@ -259,9 +260,9 @@ struct PostDetailView: View {
                     Menu {
                         if isMyPost {
                             Button {
-                                Task { await openStampEditor() }
+                                showPostEditor = true
                             } label: {
-                                Label("スタンプを編集", systemImage: "pencil")
+                                Label("投稿を編集", systemImage: "pencil")
                             }
                             Button(role: .destructive) {
                                 showDeleteConfirm = true
@@ -278,26 +279,12 @@ struct PostDetailView: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
-                    .disabled(isDeleting || isLoadingImage)
+                    .disabled(isDeleting)
                 }
             }
-            .sheet(isPresented: $showStampEditor, onDismiss: {
-                editingImage = nil
-            }) {
-                if let img = editingImage, let p = displayPost {
-                    PhotoEditorView(
-                        image: img,
-                        imageSide: editingImageSide,
-                        onDone: { _ in
-                            // 画像は既に合成済みなので更新不要
-                        },
-                        onSaveStamps: { stamps in
-                            Task {
-                                await updateStamps(stamps: stamps)
-                            }
-                        },
-                        existingStamps: p.stamps?.filter { $0.image_side == editingImageSide } ?? []
-                    )
+            .sheet(isPresented: $showPostEditor) {
+                if let p = displayPost {
+                    NewPostView(editingPost: p)
                 }
             }
             .sheet(isPresented: $showReportSheet) {

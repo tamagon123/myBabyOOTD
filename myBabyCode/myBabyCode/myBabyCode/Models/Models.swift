@@ -37,7 +37,7 @@ struct AppUser: Identifiable, Codable {
     var region_code: String            // 都道府県コード（2桁文字列。例: "13"=東京都）
     var child_birthday: Date           // 【旧仕様】単一子供用の生年月日。children配列が優先される。
     var child_gender: Int              // 【旧仕様】単一子供用の性別。children配列が優先される。
-    var followers_count: Int           // フォロワー数（他ユーザーからのフォロー総数）
+    var followers_count: Int = 0       // フォロワー数（他ユーザーからのフォロー総数）
     var children: [ChildProfile]?      // 【新仕様】複数の子供プロファイルを配列で保持
     var is_profile_complete: Bool? = false  // 初回プロフィール設定が完了したかのフラグ
     var diary_reminder_enabled: Bool? = false  // 日記リマインダー通知のON/OFF

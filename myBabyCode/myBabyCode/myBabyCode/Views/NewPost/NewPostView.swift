@@ -36,6 +36,10 @@ struct NewPostView: View {
     var calendarDate: Date? = nil          // カレンダーから開いた場合の指定日付
     var isFromCalendar: Bool { calendarDate != nil }  // カレンダーからの投稿かどうか
 
+    // === 編集モード ===
+    var editingPost: Post? = nil           // 編集対象の投稿（nilなら新規投稿）
+    var isEditMode: Bool { editingPost != nil }
+
     // === 写真関連 ===
     @State private var frontImage: UIImage?              // 正面写真（スタンプ合成済み）
     @State private var backImage: UIImage?               // 背面写真（スタンプ合成済み）
@@ -95,6 +99,10 @@ struct NewPostView: View {
     @State private var editingDraftId: String? = nil      // 現在編集中の下書きID（上書き保存用）
     @State private var showDraftCloseAlert = false        // 下書き保存後「閉じますか？」アラート
 
+    // === 編集モード用: 既存写真の削除フラグ ===
+    @State private var removedFrontImage = false          // 既存フロント画像を削除したか
+    @State private var removedBackImage = false           // 既存バック画像を削除したか
+
     // 計算プロパティ: ログイン中ユーザーの子供リスト（プロフィール設定時に登録）
     private var children: [ChildProfile] { authViewModel.currentUser?.children ?? [] }
     
@@ -104,6 +112,10 @@ struct NewPostView: View {
     private var hasChanges: Bool {
         frontImage != nil || backImage != nil || !items.isEmpty || !description.isEmpty
     }
+
+    // 編集モード用: 新しく選択された写真（既存URLと区別するため）
+    @State private var newFrontImage: UIImage? = nil
+    @State private var newBackImage: UIImage? = nil
 
     // 下書き保存ボタンを活性にする条件: 入力あり かつ 未保存
     private var canSaveDraft: Bool {
@@ -225,7 +237,26 @@ struct NewPostView: View {
         .buttonStyle(.plain)
         .popover(isPresented: showPopover, arrowEdge: .trailing) {
             iPadPhotoPopoverContent(image: image, target: target)
-                .frame(minWidth: 220, minHeight: image != nil ? 160 : 110)
+                .frame(minWidth: 220, minHeight: image != nil ? 210 : 110)
+        }
+        .overlay(alignment: .topTrailing) {
+            if image != nil {
+                Button {
+                    if target == .front {
+                        frontImage = nil; originalFrontImage = nil; newFrontImage = nil
+                        postsViewModel.pendingStamps.removeAll { $0.image_side == "front" }
+                    } else {
+                        backImage = nil; originalBackImage = nil; newBackImage = nil
+                        postsViewModel.pendingStamps.removeAll { $0.image_side == "back" }
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 2)
+                }
+                .padding(10)
+            }
         }
     }
 
@@ -249,6 +280,17 @@ struct NewPostView: View {
                 photoPopoverButton(label: "スタンプを編集", icon: "pencil") {
                     editorReadyImage = target == .front ? originalFrontImage : originalBackImage
                     showImageEditor = true
+                    if target == .front { showFrontPhotoPopover = false } else { showBackPhotoPopover = false }
+                }
+                Divider()
+                photoPopoverButton(label: "写真を削除", icon: "trash") {
+                    if target == .front {
+                        frontImage = nil; originalFrontImage = nil; newFrontImage = nil
+                        postsViewModel.pendingStamps.removeAll { $0.image_side == "front" }
+                    } else {
+                        backImage = nil; originalBackImage = nil; newBackImage = nil
+                        postsViewModel.pendingStamps.removeAll { $0.image_side == "back" }
+                    }
                     if target == .front { showFrontPhotoPopover = false } else { showBackPhotoPopover = false }
                 }
             } else {
@@ -344,19 +386,21 @@ struct NewPostView: View {
             }
             .disabled(!canPost || isSubmitting || postsViewModel.isLoading)
 
-            Button {
-                saveDraft()
-                showDraftCloseAlert = true
-            } label: {
-                Label("下書きとして保存", systemImage: "square.and.arrow.down")
-                    .font(.appFont(.medium, size: 15))
-                    .foregroundColor(canSaveDraft ? Color.accentRed : .secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(canSaveDraft ? Color.accentRed.opacity(0.07) : Color(.systemGray5))
-                    .cornerRadius(14)
+            if !isEditMode {
+                Button {
+                    saveDraft()
+                    showDraftCloseAlert = true
+                } label: {
+                    Label("下書きとして保存", systemImage: "square.and.arrow.down")
+                        .font(.appFont(.medium, size: 15))
+                        .foregroundColor(canSaveDraft ? Color.accentRed : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(canSaveDraft ? Color.accentRed.opacity(0.07) : Color(.systemGray5))
+                        .cornerRadius(14)
+                }
+                .disabled(!canSaveDraft)
             }
-            .disabled(!canSaveDraft)
         }
     }
 
@@ -384,7 +428,13 @@ struct NewPostView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("閉じる") {
-                        if canSaveDraft { showDiscardAlert = true } else { dismiss() }
+                        if isEditMode {
+                            showDiscardAlert = true
+                        } else if canSaveDraft {
+                            showDiscardAlert = true
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -409,16 +459,21 @@ struct NewPostView: View {
             .onChange(of: backImage) { _ in draftSaved = false }
             .onChange(of: description) { _ in draftSaved = false }
             .onChange(of: items) { _ in draftSaved = false }
-            .alert("下書きを保存しますか？", isPresented: $showDiscardAlert) {
-                Button("保存する") { saveDraft(); dismiss() }
-                Button("保存しない", role: .destructive) { dismiss() }
-                Button("キャンセル", role: .cancel) {}
-            } message: { Text("編集内容を下書きとして保存できます。") }
+            .alert(isEditMode ? "変更を破棄しますか？" : "下書きを保存しますか？", isPresented: $showDiscardAlert) {
+                if isEditMode {
+                    Button("変更せずに閉じる", role: .destructive) { dismiss() }
+                    Button("キャンセル", role: .cancel) {}
+                } else {
+                    Button("保存する") { saveDraft(); dismiss() }
+                    Button("保存しない", role: .destructive) { dismiss() }
+                    Button("キャンセル", role: .cancel) {}
+                }
+            } message: { Text(isEditMode ? "編集内容は保存されません。" : "編集内容を下書きとして保存できます。") }
             .alert("このまま閉じますか？", isPresented: $showDraftCloseAlert) {
                 Button("閉じる") { dismiss() }
                 Button("続ける", role: .cancel) { draftSaved = false }
             } message: { Text("下書きを保存しました。投稿画面を閉じますか？") }
-            .alert("投稿完了！", isPresented: $showSuccess) {
+            .alert(isEditMode ? "更新完了！" : "投稿完了！", isPresented: $showSuccess) {
                 Button("OK") {
                     Task {
                         await postsViewModel.fetchPosts(user: authViewModel.currentUser)
@@ -426,7 +481,7 @@ struct NewPostView: View {
                     }
                     dismiss()
                 }
-            } message: { Text("コーディネートを共有しました") }
+            } message: { Text(isEditMode ? "投稿内容を更新しました" : "コーディネートを共有しました") }
             .alert("エラー", isPresented: $showError) {
                 Button("OK") {}
             } message: { Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。") }
@@ -449,8 +504,13 @@ struct NewPostView: View {
                     editorReadyImage = editingImage; editingImage = nil; showImageEditor = true
                 }
                 Button("そのまま使う") {
-                    if photoSourceTarget == .front { originalFrontImage = editingImage; frontImage = editingImage }
-                    else { originalBackImage = editingImage; backImage = editingImage }
+                    if photoSourceTarget == .front {
+                        originalFrontImage = editingImage; frontImage = editingImage
+                        if isEditMode { newFrontImage = editingImage }
+                    } else {
+                        originalBackImage = editingImage; backImage = editingImage
+                        if isEditMode { newBackImage = editingImage }
+                    }
                     editingImage = nil
                 }
                 Button("キャンセル", role: .cancel) { editingImage = nil }
@@ -462,7 +522,13 @@ struct NewPostView: View {
                     PhotoEditorView(
                         image: img, imageSide: side,
                         onDone: { edited in
-                            if photoSourceTarget == .front { frontImage = edited } else { backImage = edited }
+                            if photoSourceTarget == .front {
+                                frontImage = edited
+                                if isEditMode { newFrontImage = edited }
+                            } else {
+                                backImage = edited
+                                if isEditMode { newBackImage = edited }
+                            }
                         },
                         onSaveStamps: { stamps in
                             postsViewModel.pendingStamps.removeAll { $0.image_side == side }
@@ -500,8 +566,13 @@ struct NewPostView: View {
                     editorReadyImage = editingImage; editingImage = nil; showImageEditor = true
                 }
                 Button("そのまま使う") {
-                    if photoSourceTarget == .front { originalFrontImage = editingImage; frontImage = editingImage }
-                    else { originalBackImage = editingImage; backImage = editingImage }
+                    if photoSourceTarget == .front {
+                        originalFrontImage = editingImage; frontImage = editingImage
+                        if isEditMode { newFrontImage = editingImage }
+                    } else {
+                        originalBackImage = editingImage; backImage = editingImage
+                        if isEditMode { newBackImage = editingImage }
+                    }
                     editingImage = nil
                 }
                 Button("キャンセル", role: .cancel) { editingImage = nil }
@@ -513,7 +584,13 @@ struct NewPostView: View {
                     PhotoEditorView(
                         image: img, imageSide: side,
                         onDone: { edited in
-                            if photoSourceTarget == .front { frontImage = edited } else { backImage = edited }
+                            if photoSourceTarget == .front {
+                                frontImage = edited
+                                if isEditMode { newFrontImage = edited }
+                            } else {
+                                backImage = edited
+                                if isEditMode { newBackImage = edited }
+                            }
                         },
                         onSaveStamps: { stamps in
                             postsViewModel.pendingStamps.removeAll { $0.image_side == side }
@@ -523,7 +600,7 @@ struct NewPostView: View {
                     )
                 }
             }
-            .alert("投稿完了！", isPresented: $showSuccess) {
+            .alert(isEditMode ? "更新完了！" : "投稿完了！", isPresented: $showSuccess) {
                 Button("OK") {
                     Task {
                         await postsViewModel.fetchPosts(user: authViewModel.currentUser)
@@ -531,13 +608,13 @@ struct NewPostView: View {
                     }
                     dismiss()
                 }
-            } message: { Text("コーディネートを共有しました") }
+            } message: { Text(isEditMode ? "投稿内容を更新しました" : "コーディネートを共有しました") }
             .alert("エラー", isPresented: $showError) {
                 Button("OK") {}
             } message: { Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。") }
             .alert("写真を選択してください", isPresented: $showNoPhotoAlert) {
                 Button("OK") {}
-            } message: { Text("タグ付けを行う前に、コーディネートの写真を撮影または選択してください。") }
+            } message: { Text("タグ付けを行う前に、コーディネートの写真を撑影または選択してください。") }
             .fullScreenCover(isPresented: Binding(
                 get: { taggingItemIndex != nil },
                 set: { if !$0 { taggingItemIndex = nil } }
@@ -563,7 +640,13 @@ struct NewPostView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("閉じる") {
-                    if canSaveDraft { showDiscardAlert = true } else { dismiss() }
+                    if isEditMode {
+                        showDiscardAlert = true
+                    } else if canSaveDraft {
+                        showDiscardAlert = true
+                    } else {
+                        dismiss()
+                    }
                 }
             }
         }
@@ -588,11 +671,16 @@ struct NewPostView: View {
         .onChange(of: backImage) { _ in draftSaved = false }
         .onChange(of: description) { _ in draftSaved = false }
         .onChange(of: items) { _ in draftSaved = false }
-        .alert("下書きを保存しますか？", isPresented: $showDiscardAlert) {
-            Button("保存する") { saveDraft(); dismiss() }
-            Button("保存しない", role: .destructive) { dismiss() }
-            Button("キャンセル", role: .cancel) {}
-        } message: { Text("編集内容を下書きとして保存できます。") }
+        .alert(isEditMode ? "変更を破棄しますか？" : "下書きを保存しますか？", isPresented: $showDiscardAlert) {
+            if isEditMode {
+                Button("変更せずに閉じる", role: .destructive) { dismiss() }
+                Button("キャンセル", role: .cancel) {}
+            } else {
+                Button("保存する") { saveDraft(); dismiss() }
+                Button("保存しない", role: .destructive) { dismiss() }
+                Button("キャンセル", role: .cancel) {}
+            }
+        } message: { Text(isEditMode ? "編集内容は保存されません。" : "編集内容を下書きとして保存できます。") }
         .alert("このまま閉じますか？", isPresented: $showDraftCloseAlert) {
             Button("閉じる") { dismiss() }
             Button("続ける", role: .cancel) { draftSaved = false }
@@ -678,19 +766,23 @@ struct NewPostView: View {
     // 戻り値: some View
     // =============================================================================
     private var draftSaveButton: some View {
-        Button {
-            saveDraft()
-            showDraftCloseAlert = true
-        } label: {
-            Label("下書きとして保存", systemImage: "square.and.arrow.down")
-                .font(.appFont(.medium, size: 15))
-                .foregroundColor(canSaveDraft ? Color.accentGreen : .secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(canSaveDraft ? Color.accentGreen.opacity(0.1) : Color(.systemGray5))
-                .cornerRadius(14)
+        Group {
+            if !isEditMode {
+                Button {
+                    saveDraft()
+                    showDraftCloseAlert = true
+                } label: {
+                    Label("下書きとして保存", systemImage: "square.and.arrow.down")
+                        .font(.appFont(.medium, size: 15))
+                        .foregroundColor(canSaveDraft ? Color.accentGreen : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(canSaveDraft ? Color.accentGreen.opacity(0.1) : Color(.systemGray5))
+                        .cornerRadius(14)
+                }
+                .disabled(!canSaveDraft)
+            }
         }
-        .disabled(!canSaveDraft)
     }
 
     // =============================================================================
@@ -703,7 +795,7 @@ struct NewPostView: View {
         Button {
             Task { await submitPost() }
         } label: {
-            Text(isSubmitting ? "投稿中..." : "投稿する")
+            Text(isSubmitting ? (isEditMode ? "更新中..." : "投稿中...") : (isEditMode ? "更新する" : "投稿する"))
                 .font(.appFont(.bold, size: 16))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
@@ -744,61 +836,90 @@ struct NewPostView: View {
     @ViewBuilder
     private func photoTile(title: String, image: UIImage?, target: PhotoTarget) -> some View {
         let showDialog = target == .front ? $showFrontPhotoPopover : $showBackPhotoPopover
-        Button {
-            photoSourceTarget = target
-            if target == .front { showFrontPhotoPopover = true } else { showBackPhotoPopover = true }
-        } label: {
-            ZStack {
-                if let img = image {
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFill()
-                        .clipped()
-                    VStack {
-                        Spacer()
-                        HStack {
+        ZStack(alignment: .topTrailing) {
+            Button {
+                photoSourceTarget = target
+                if target == .front { showFrontPhotoPopover = true } else { showBackPhotoPopover = true }
+            } label: {
+                ZStack {
+                    if let img = image {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .clipped()
+                        VStack {
                             Spacer()
-                            Image(systemName: "pencil.circle.fill")
-                                .font(.appFont(.regular, size: 22))
-                                .foregroundColor(.white)
-                                .shadow(radius: 2)
-                                .padding(6)
+                            HStack {
+                                Spacer()
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.appFont(.regular, size: 22))
+                                    .foregroundColor(.white)
+                                    .shadow(radius: 2)
+                                    .padding(6)
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 8) {
+                            Image(systemName: "camera.fill")
+                                .font(.appFont(.regular, size: 28))
+                                .foregroundColor(.secondary)
+                            Text(title)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
-                } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "camera.fill")
-                            .font(.appFont(.regular, size: 28))
-                            .foregroundColor(.secondary)
-                        Text(title)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 140)
+                .background(Color.ecruBackground)
+                .cornerRadius(16)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .confirmationDialog(title, isPresented: showDialog, titleVisibility: .visible) {
+                if image != nil {
+                    Button("スタンプを編集") {
+                        editorReadyImage = target == .front ? originalFrontImage : originalBackImage
+                        showImageEditor = true
+                    }
+                    Button("写真を削除", role: .destructive) {
+                        if target == .front {
+                            frontImage = nil; originalFrontImage = nil; newFrontImage = nil
+                            postsViewModel.pendingStamps.removeAll { $0.image_side == "front" }
+                        } else {
+                            backImage = nil; originalBackImage = nil; newBackImage = nil
+                            postsViewModel.pendingStamps.removeAll { $0.image_side == "back" }
+                        }
                     }
                 }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 140)
-            .background(Color.ecruBackground)
-            .cornerRadius(16)
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .confirmationDialog(title, isPresented: showDialog, titleVisibility: .visible) {
-            if image != nil {
-                Button("スタンプを編集") {
-                    editorReadyImage = target == .front ? originalFrontImage : originalBackImage
-                    showImageEditor = true
+                Button("ライブラリから選択") {
+                    imagePickerSourceType = .photoLibrary
+                    showImagePicker = true
                 }
+                Button("カメラで撑影") {
+                    imagePickerSourceType = .camera
+                    showImagePicker = true
+                }
+                Button("キャンセル", role: .cancel) {}
             }
-            Button("ライブラリから選択") {
-                imagePickerSourceType = .photoLibrary
-                showImagePicker = true
+
+            if image != nil {
+                Button {
+                    if target == .front {
+                        frontImage = nil; originalFrontImage = nil; newFrontImage = nil
+                        postsViewModel.pendingStamps.removeAll { $0.image_side == "front" }
+                    } else {
+                        backImage = nil; originalBackImage = nil; newBackImage = nil
+                        postsViewModel.pendingStamps.removeAll { $0.image_side == "back" }
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 2)
+                }
+                .padding(6)
             }
-            Button("カメラで撮影") {
-                imagePickerSourceType = .camera
-                showImagePicker = true
-            }
-            Button("キャンセル", role: .cancel) {}
         }
     }
 
@@ -1212,6 +1333,7 @@ struct NewPostView: View {
 
     // MARK: - Navigation Title
     private var navigationTitleText: String {
+        if isEditMode { return "投稿を編集" }
         if let date = calendarDate {
             let fmt = DateFormatter()
             fmt.dateFormat = "M月d日（E）"
@@ -1246,11 +1368,51 @@ struct NewPostView: View {
             selectedRegionIndex = idx - 1
         }
         selectedGender = ChildGender(rawValue: user.child_gender) ?? .unselected
-        if let draft = draftManager.pendingDraft {
+        if isEditMode, let post = editingPost {
+            applyEditingPost(post)
+        } else if let draft = draftManager.pendingDraft {
             applyDraft(draft)
             draftManager.clearPendingDraft()
         } else {
             fetchWeather()
+        }
+    }
+
+    private func applyEditingPost(_ post: Post) {
+        description = post.description
+        weatherType = WeatherType(rawValue: post.weather_type) ?? .sunny
+        tempMax = String(format: "%.0f", post.temp_max)
+        tempMin = String(format: "%.0f", post.temp_min)
+        if let idx = Int(post.region_code), idx >= 1, idx <= 47 {
+            selectedRegionIndex = idx - 1
+        }
+        useCustomAge = true
+        let y = post.child_age_months / 12
+        let m = post.child_age_months % 12
+        customAgeYears = y
+        customAgeMonths = m
+        // 既存スタンプをpendingStampsに復元
+        if let stamps = post.stamps {
+            postsViewModel.pendingStamps = stamps
+        }
+        // 写真はURLからダウンロードして表示（非同期）
+        Task {
+            if let urlStr = post.image_url_front, let url = URL(string: urlStr),
+               let (data, _) = try? await URLSession.shared.data(from: url),
+               let img = UIImage(data: data) {
+                await MainActor.run {
+                    frontImage = img
+                    originalFrontImage = img
+                }
+            }
+            if let urlStr = post.image_url_back, let url = URL(string: urlStr),
+               let (data, _) = try? await URLSession.shared.data(from: url),
+               let img = UIImage(data: data) {
+                await MainActor.run {
+                    backImage = img
+                    originalBackImage = img
+                }
+            }
         }
     }
 
@@ -1446,21 +1608,38 @@ struct NewPostView: View {
             shouldBePublic = calVm.calendarIsPublic
         }
 
-        let success = await postsViewModel.uploadPost(
-            frontImage: frontImage,
-            backImage: backImage,
-            description: description,
-            regionCode: regionCode,
-            genderId: effectiveGender,
-            weatherType: weatherType.rawValue,
-            tempMax: tMax,
-            tempMin: tMin,
-            items: postItems,
-            user: modUser,
-            isPublic: shouldBePublic,
-            isCalendarPost: isCalendarPost,
-            overrideAgeMonths: useCustomAge ? effectiveAgeMonths : nil
-        )
+        let success: Bool
+        if isEditMode, let post = editingPost {
+            success = await postsViewModel.updatePost(
+                existingPost: post,
+                newFrontImage: newFrontImage,
+                newBackImage: newBackImage,
+                description: description,
+                regionCode: regionCode,
+                genderId: effectiveGender,
+                weatherType: weatherType.rawValue,
+                tempMax: tMax,
+                tempMin: tMin,
+                items: postItems,
+                overrideAgeMonths: useCustomAge ? effectiveAgeMonths : nil
+            )
+        } else {
+            success = await postsViewModel.uploadPost(
+                frontImage: frontImage,
+                backImage: backImage,
+                description: description,
+                regionCode: regionCode,
+                genderId: effectiveGender,
+                weatherType: weatherType.rawValue,
+                tempMax: tMax,
+                tempMin: tMin,
+                items: postItems,
+                user: modUser,
+                isPublic: shouldBePublic,
+                isCalendarPost: isCalendarPost,
+                overrideAgeMonths: useCustomAge ? effectiveAgeMonths : nil
+            )
+        }
 
         if success {
             UserDefaults.standard.removeObject(forKey: "postDraft")
@@ -1982,11 +2161,11 @@ struct PhotoEditorView: View {
                             .font(.appFont(.regular, size: 24))
                             .foregroundColor(.white)
                             .frame(width: 44, height: 44)
-                            .background(selectedKind == kind ? Color(UIColor.systemGray4).opacity(0.6) : Color(.systemGray6))
+                            .background(selectedKind == kind ? Color(UIColor.systemGray) : Color(UIColor.systemGray2))
                             .cornerRadius(10)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .stroke(selectedKind == kind ? Color.primary.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                                    .stroke(selectedKind == kind ? Color.white.opacity(0.8) : Color.clear, lineWidth: 2)
                             )
                     }
                 }

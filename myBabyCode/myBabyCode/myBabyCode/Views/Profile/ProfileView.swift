@@ -36,6 +36,7 @@ struct ProfileView: View {
     @State private var showFollowingList = false       // フォロー一覧表示フラグ
     @State private var followingUsers: [AppUser] = [] // フォロー中のユーザーリスト
     @State private var followingCount: Int = 0         // フォロー中の件数
+    @State private var followersCount: Int = 0          // フォロワー数（followsコレクションから取得）
     @State private var isGridMode: Bool = true         // グリッド/リスト表示モード（デフォルトはグリッド）
     @State private var calendarIsPublic: Bool = false   // カレンダー公開設定
     @State private var showPublicCalendar: Bool = false  // 公開カレンダー表示フラグ
@@ -119,8 +120,13 @@ struct ProfileView: View {
         .refreshable {
             await loadProfile()
             await loadUserPosts()
-            if isOwnProfile { await loadLikedPosts() }
-            if !isOwnProfile { await checkFollowing() }
+            if isOwnProfile {
+                await loadLikedPosts()
+                await loadFollowingUsers()
+            } else {
+                await checkFollowing()
+                await loadFollowingCount()
+            }
             await blockService.fetchBlockedUsers()
         }
         // 画面表示時にデータ取得
@@ -130,8 +136,10 @@ struct ProfileView: View {
             if isOwnProfile {
                 await loadLikedPosts()
                 await loadFollowingUsers()
+            } else {
+                await checkFollowing()
+                await loadFollowingCount()
             }
-            if !isOwnProfile { await checkFollowing() }
             await blockService.fetchBlockedUsers()
         }
         .sheet(isPresented: $showEditProfile) {
@@ -157,6 +165,7 @@ struct ProfileView: View {
             FollowingListView()
                 .environmentObject(authViewModel)
                 .environmentObject(postsViewModel)
+                .environmentObject(draftManager)
         }
         .sheet(isPresented: $showPublicCalendar) {
             if let targetUid = publicCalendarUserId {
@@ -368,7 +377,7 @@ struct ProfileView: View {
             HStack(spacing: 0) {
                 statCard(count: userPosts.count, label: "投稿", icon: "photo.on.rectangle")
                 Divider().frame(height: 40)
-                statCard(count: profileUser?.followers_count ?? 0, label: "フォロワー", icon: "person.2")
+                statCard(count: followersCount, label: "フォロワー", icon: "person.2")
                 if isOwnProfile {
                     Divider().frame(height: 40)
                     Button {
@@ -610,6 +619,21 @@ struct ProfileView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+        // followsコレクションから正確なフォロワー数を取得
+        await loadFollowersCount()
+    }
+
+    private func loadFollowersCount() async {
+        let snap = try? await db.collection("follows")
+            .whereField("following_id", isEqualTo: userId)
+            .getDocuments()
+        let count = snap?.documents.count ?? 0
+        followersCount = count
+        // profileUserのfollowers_countと差異があればFirestoreを修正
+        if let stored = profileUser?.followers_count, stored != count {
+            try? await db.collection("users").document(userId)
+                .updateData(["followers_count": count])
+        }
     }
 
     private func loadUserPosts() async {
@@ -751,7 +775,8 @@ struct ProfileView: View {
         if isFollowing {
             try? await ref.delete()
             try? await userRef.updateData(["followers_count": FieldValue.increment(Int64(-1))])
-            profileUser?.followers_count = max(0, (profileUser?.followers_count ?? 0) - 1)
+            followersCount = max(0, followersCount - 1)
+            profileUser?.followers_count = followersCount
         } else {
             let follow = Follow(
                 follow_id: followId,
@@ -759,9 +784,10 @@ struct ProfileView: View {
                 following_id: userId,
                 created_at: Timestamp(date: Date())
             )
-            try? ref.setData(from: follow)
+            try? await ref.setData(from: follow)
             try? await userRef.updateData(["followers_count": FieldValue.increment(Int64(1))])
-            profileUser?.followers_count = (profileUser?.followers_count ?? 0) + 1
+            followersCount += 1
+            profileUser?.followers_count = followersCount
         }
         isFollowing.toggle()
     }
@@ -790,6 +816,13 @@ struct ProfileView: View {
             errorMessage = error.localizedDescription
         }
     }
+
+    private func loadFollowingCount() async {
+        let snap = try? await db.collection("follows")
+            .whereField("follower_id", isEqualTo: userId)
+            .getDocuments()
+        followingCount = snap?.documents.count ?? 0
+    }
 }
 
 // MARK: - Following List View
@@ -797,13 +830,12 @@ struct ProfileView: View {
 struct FollowingListView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var postsViewModel: PostsViewModel
+    @EnvironmentObject var draftManager: DraftManager
     @Environment(\.dismiss) private var dismiss
     @State private var users: [AppUser] = []
     @State private var isLoading = true
     @State private var selectedUserId: String? = nil
-    @State private var selectedUserPosts: [Post] = []
-    @State private var showUserPosts = false
-    @State private var isLoadingPosts = false
+    @State private var showProfile = false
 
     var body: some View {
         NavigationView {
@@ -820,11 +852,8 @@ struct FollowingListView: View {
                 } else {
                     ForEach(users, id: \.user_id) { user in
                         Button {
-                            Task {
-                                await loadUserPosts(userId: user.user_id)
-                                selectedUserId = user.user_id
-                                showUserPosts = true
-                            }
+                            selectedUserId = user.user_id
+                            showProfile = true
                         } label: {
                             HStack(spacing: 12) {
                                 // Avatar
@@ -878,10 +907,16 @@ struct FollowingListView: View {
                     Button("閉じる") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showUserPosts) {
-                UserPostsSheet(userId: selectedUserId ?? "", posts: selectedUserPosts, isLoading: isLoadingPosts)
-                    .environmentObject(authViewModel)
-                    .environmentObject(postsViewModel)
+            .sheet(isPresented: $showProfile) {
+                if let uid = selectedUserId {
+                    NavigationView {
+                        ProfileView(userId: uid)
+                            .environmentObject(authViewModel)
+                            .environmentObject(postsViewModel)
+                            .environmentObject(draftManager)
+                    }
+                    .navigationViewStyle(StackNavigationViewStyle())
+                }
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -919,115 +954,5 @@ struct FollowingListView: View {
         isLoading = false
     }
 
-    private func loadUserPosts(userId: String) async {
-        isLoadingPosts = true
-        defer { isLoadingPosts = false }
-        do {
-            let snap = try await Firestore.firestore().collection("posts")
-                .whereField("user_id", isEqualTo: userId)
-                .whereField("is_hidden", isEqualTo: false)
-                .order(by: "created_at", descending: true)
-                .getDocuments()
-            selectedUserPosts = try snap.documents.map { try $0.data(as: Post.self) }
-        } catch {
-            selectedUserPosts = []
-        }
-    }
 }
 
-// MARK: - User Posts Sheet
-
-struct UserPostsSheet: View {
-    let userId: String
-    let posts: [Post]
-    let isLoading: Bool
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @EnvironmentObject var postsViewModel: PostsViewModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var selectedPost: Post? = nil
-    @State private var isGridMode: Bool = true
-
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                if isLoading {
-                    ProgressView()
-                        .padding(.top, 40)
-                } else if posts.isEmpty {
-                    Text("投稿がありません")
-                        .foregroundColor(.secondary)
-                        .padding(.top, 40)
-                } else if isGridMode {
-                    let cellSize = (UIScreen.main.bounds.width - 32 - 16) / 3
-                    let columns = [
-                        GridItem(.fixed(cellSize), spacing: 8),
-                        GridItem(.fixed(cellSize), spacing: 8),
-                        GridItem(.fixed(cellSize), spacing: 8)
-                    ]
-                    LazyVGrid(columns: columns, spacing: 8) {
-                        ForEach(posts, id: \.post_id) { post in
-                            MiniPostCardView(
-                                post: post,
-                                isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
-                                onLike: { Task { await postsViewModel.toggleLike(post: post) } },
-                                onTap: { selectedPost = post },
-                                showInfo: false
-                            )
-                            .frame(width: cellSize, height: cellSize * 1.3)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(posts, id: \.post_id) { post in
-                            CompactPostCardView(
-                                post: post,
-                                isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
-                                onLike: {
-                                    Task { await postsViewModel.toggleLike(post: post) }
-                                },
-                                onTap: {
-                                    selectedPost = post
-                                },
-                                onReport: {
-                                    Task { await postsViewModel.report(post: post) }
-                                }
-                            )
-                            .padding(.horizontal, 16)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-            }
-            .background(Color.ecruBackground.ignoresSafeArea())
-            .navigationTitle("投稿")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { isGridMode.toggle() }
-                    } label: {
-                        Image(systemName: isGridMode ? "list.bullet" : "square.grid.2x2")
-                            .foregroundColor(.accentRed)
-                    }
-                }
-            }
-            .fullScreenCover(item: $selectedPost) { post in
-                PostDetailView(
-                    post: post,
-                    postId: post.id ?? post.post_id,
-                    isLiked: postsViewModel.likedPostIds.contains(post.id ?? post.post_id),
-                    onLike: { Task { await postsViewModel.toggleLike(post: post) } },
-                    onDeleted: { _ in }
-                )
-                    .environmentObject(authViewModel)
-                    .environmentObject(postsViewModel)
-            }
-        }
-        .navigationViewStyle(StackNavigationViewStyle())
-    }
-}
