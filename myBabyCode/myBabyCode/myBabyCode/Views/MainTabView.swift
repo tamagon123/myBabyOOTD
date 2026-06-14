@@ -239,6 +239,7 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             AdBannerView()
+                .id(authViewModel.isGuest)
 
             BottomNavBar(
                 selectedTab: $selectedTab,
@@ -253,8 +254,8 @@ struct MainTabView: View {
                 },
                 onGuestTabTap: { showGuestAlert = true }
             )
+            .ignoresSafeArea(edges: .bottom)
         }
-        .ignoresSafeArea(edges: .bottom)
     }
 
     private var guestBlockedView: some View {
@@ -352,6 +353,7 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             AdBannerView()
+                .id(authViewModel.isGuest)
         }
     }
 

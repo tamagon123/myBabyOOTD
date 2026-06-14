@@ -76,21 +76,37 @@ struct GADBannerViewRepresentable: UIViewRepresentable {
     let adUnitId: String
     let width: CGFloat
 
-    func makeUIView(context: Context) -> GADBannerView {
-        // GeometryReaderから渡された実際の表示幅でアダプティブバナーサイズを計算
-        let adSize = GADCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth(width)
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
-        let banner = GADBannerView(adSize: adSize)
+    func makeUIView(context: Context) -> GADBannerView {
+        // 標準バナーサイズ（320×50pt）を使用
+        let banner = GADBannerView(adSize: GADAdSizeBanner)
         banner.adUnitID = adUnitId
         banner.rootViewController = Self.topViewController()
+        banner.delegate = context.coordinator
 
         // テストデバイス設定（シミュレーターは自動的にテストモード）
         #if DEBUG
         // デバッグビルド時のテストデバイスID（実機のIDを追加）
         GADMobileAds.sharedInstance().requestConfiguration.testDeviceIdentifiers = [
-            "f7671d9ea600506b12f1442247a1f6f8"  // iPhone実機
+            "0a6d9df5c600163ec2922fc6f235afeb"  // iPhone実機
         ]
         #endif
+
+        loadAd(on: banner)
+        return banner
+    }
+
+    func updateUIView(_ uiView: GADBannerView, context: Context) {
+        // rootViewControllerを常に最新に更新（ゲスト→ログイン遷移でnilになるケースに対応）
+        uiView.rootViewController = Self.topViewController()
+    }
+
+    private func loadAd(on banner: GADBannerView) {
+        // width が 0 の場合はロードしない（GeometryReader初回レンダリング時の0サイズ対策）
+        guard width > 0 else { return }
 
         // COPPA: child-directed treatment
         let request = GADRequest()
@@ -99,10 +115,19 @@ struct GADBannerViewRepresentable: UIViewRepresentable {
         request.register(extras)
 
         banner.load(request)
-        return banner
     }
 
-    func updateUIView(_ uiView: GADBannerView, context: Context) {}
+    class Coordinator: NSObject, GADBannerViewDelegate {
+        func bannerViewDidReceiveAd(_ bannerView: GADBannerView) {
+            print("[Banner] Ad loaded successfully")
+        }
+        func bannerView(_ bannerView: GADBannerView, didFailToReceiveAdWithError error: Error) {
+            print("[Banner] Failed to load ad: \(error.localizedDescription)")
+        }
+        func bannerViewDidRecordImpression(_ bannerView: GADBannerView) {
+            print("[Banner] Ad impression recorded")
+        }
+    }
 }
 
 private extension GADBannerViewRepresentable {

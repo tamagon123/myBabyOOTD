@@ -15,6 +15,13 @@ service firebase.storage {
       allow write: if request.auth != null && !request.auth.token.firebase.sign_in_provider.matches('anonymous');
     }
 
+    // calendar: 認証済みユーザーは自分のUID配下の画像のみ読み書き可。
+    match /calendar/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId
+        && !request.auth.token.firebase.sign_in_provider.matches('anonymous');
+    }
+
     // デフォルト: 禁止
     match /{allPaths=**} {
       allow read, write: if false;
