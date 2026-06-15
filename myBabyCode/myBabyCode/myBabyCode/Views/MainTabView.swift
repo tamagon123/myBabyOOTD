@@ -257,7 +257,6 @@ struct MainTabView: View {
                 },
                 onGuestTabTap: { showGuestAlert = true }
             )
-            .ignoresSafeArea(edges: .bottom)
         }
     }
 
@@ -457,12 +456,13 @@ struct BottomNavBar: View {
             // マイページボタン（タブ3）
             guestItemWithBadge(icon: "person.fill", label: "マイページ", tab: 3, badge: unreadCount)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 20)
+        .padding(.horizontal, 32)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
         .background(
             Color.white
                 .shadow(color: .black.opacity(0.08), radius: 8, y: -2)
+                .ignoresSafeArea(edges: .bottom)
         )
     }
 
@@ -480,7 +480,7 @@ struct BottomNavBar: View {
         Button {
             selectedTab = tab
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Image(systemName: icon)
                     .font(.appFont(.regular, size: 22))
                 Text(label)
@@ -495,7 +495,7 @@ struct BottomNavBar: View {
         Button {
             if isGuest { onGuestTabTap() } else { selectedTab = tab }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Image(systemName: icon)
                     .font(.appFont(.regular, size: 22))
                 Text(label)
@@ -511,7 +511,7 @@ struct BottomNavBar: View {
             if isGuest { onGuestTabTap() } else { selectedTab = tab }
         } label: {
             ZStack {
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     Image(systemName: icon)
                         .font(.appFont(.bold, size: 22))
                     Text(label)
@@ -537,7 +537,7 @@ struct BottomNavBar: View {
             selectedTab = tab
         } label: {
             ZStack {
-                VStack(spacing: 4) {
+                VStack(spacing: 2) {
                     Image(systemName: icon)
                         .font(.appFont(.bold, size: 22))
                     Text(label)
