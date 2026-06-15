@@ -79,6 +79,9 @@ struct MainTabView: View {
             Task {
                 await BrandService.shared.fetchAll()
             }
+            Task {
+                await updateChecker.checkForUpdate()
+            }
             if authViewModel.isGuest {
                 guestAdManager.start()
             }
