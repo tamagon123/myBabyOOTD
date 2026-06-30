@@ -34,6 +34,8 @@ service cloud.firestore {
       allow delete: if isAuth() && resource.data.user_id == request.auth.uid;
 
       match /items/{itemId} {
+        // 読み取り: 誰でも可（SNS共有機能でのブランド名表示のため）
+        // 書き込み: 投稿者のみ
         allow read: if true;
         allow write: if isAuth()
           && get(/databases/$(database)/documents/posts/$(postId)).data.user_id == request.auth.uid;
@@ -83,6 +85,13 @@ service cloud.firestore {
 
     // calendar_entries: 自分のエントリのみ読み書き可。is_publicがtrueのエントリは他ユーザーも読み取り可。
     match /calendar_entries/{userId}/entries/{entryId} {
+      allow read: if isOwner(userId) || (isAuth() && resource.data.is_public == true);
+      allow create, update: if isOwner(userId);
+      allow delete: if isOwner(userId);
+    }
+
+    // purchase_items: 自分の購入品のみ読み書き可。is_publicがtrueの購入品は他ユーザーも読み取り可。
+    match /users/{userId}/purchaseItems/{itemId} {
       allow read: if isOwner(userId) || (isAuth() && resource.data.is_public == true);
       allow create, update: if isOwner(userId);
       allow delete: if isOwner(userId);

@@ -47,6 +47,9 @@ struct PostDetailView: View {
     @State private var editingImage: UIImage? = nil // 編集中の画像
     @State private var editingImageSide: String = "front" // 編集中の画像面
     @State private var isLoadingImage = false       // 画像読み込み中フラグ
+    
+    // SNS共有関連
+    @State private var showShareSheet = false       // SNS共有画面表示フラグ
 
     // 実際に表示する投稿データ
     private var displayPost: Post? {
@@ -258,6 +261,12 @@ struct PostDetailView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        Button {
+                            showShareSheet = true
+                        } label: {
+                            Label("共有する", systemImage: "square.and.arrow.up")
+                        }
+                        
                         if isMyPost {
                             Button {
                                 showPostEditor = true
@@ -293,6 +302,11 @@ struct PostDetailView: View {
                     targetId: effectivePostId
                 ) {
                     dismiss()
+                }
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let post = displayPost {
+                    SharePostView(post: post)
                 }
             }
             .alert("投稿を削除", isPresented: $showDeleteConfirm) {

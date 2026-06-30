@@ -26,6 +26,7 @@ struct CalendarView: View {
     @State private var selectedEntryForDetail: CalendarEntry? = nil  // 日記詳細表示用
     @State private var showSearchConfirm = false                     // 検索確認アラート表示フラグ
     @State private var confirmSearchDate: Date? = nil                // 確認中の検索日付
+    @State private var showPurchaseItemSheet = false                 // 購入品登録画面表示フラグ
 
     private var uid: String { Auth.currentUID }
     private var isSubscribed: Bool { SubscriptionManager.shared.isSubscribed }
@@ -40,11 +41,17 @@ struct CalendarView: View {
             selectedPostForDetail: $selectedPostForDetail,
             selectedEntryForDetail: $selectedEntryForDetail,
             showSearchConfirm: $showSearchConfirm,
-            confirmSearchDate: $confirmSearchDate
+            confirmSearchDate: $confirmSearchDate,
+            showPurchaseItemSheet: $showPurchaseItemSheet
         )
         .environmentObject(authViewModel)
         .environmentObject(vm)
         .environmentObject(postsViewModel)
+        .sheet(isPresented: $showPurchaseItemSheet) {
+            if let selectedDate = selectedDate {
+                PurchaseItemRegistrationView(selectedDate: selectedDate)
+            }
+        }
     }
 
     // MARK: - Top status bar (region + public toggle)
@@ -335,6 +342,29 @@ struct CalendarView: View {
                     .padding(.top, 4)
                 }
 
+                // 購入品登録ボタン（過去日のみ）
+                if let date = selectedDate, date <= Date() {
+                    Button {
+                        showPurchaseItemSheet = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "bag")
+                            Text("購入品を登録する")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.appFont(.regular, size: 12))
+                        }
+                        .font(.appFont(.regular, size: 14))
+                        .foregroundColor(.accentBlue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .padding(.horizontal, 12)
+                    }
+                    .padding(.top, 4)
+                }
+
                 // この日を検索するボタン（明日以降は非表示）
                 if let date = selectedDate, !Calendar.current.isDateInTomorrow(date) && date <= Date() {
                     Button {
@@ -437,6 +467,7 @@ private struct CalendarRootContent: View {
     @Binding var selectedEntryForDetail: CalendarEntry?
     @Binding var showSearchConfirm: Bool
     @Binding var confirmSearchDate: Date?
+    @Binding var showPurchaseItemSheet: Bool
 
     private var uid: String { Auth.currentUID }
     private var isSubscribed: Bool { SubscriptionManager.shared.isSubscribed }
@@ -1281,4 +1312,5 @@ struct CalendarNewPostBridge: View {
             .environmentObject(draftManager)
     }
 }
+
 

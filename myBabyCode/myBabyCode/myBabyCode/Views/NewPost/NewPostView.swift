@@ -419,25 +419,8 @@ struct NewPostView: View {
 
     private var iPadContent: some View {
         iPadLayoutBody
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("完了") { dismissKeyboard() }
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") {
-                        if isEditMode {
-                            showDiscardAlert = true
-                        } else if canSaveDraft {
-                            showDiscardAlert = true
-                        } else {
-                            dismiss()
-                        }
-                    }
-                }
-            }
+            .toolbar(content: iPadKeyboardToolbar)
+            .toolbar(content: iPadCancellationToolbar)
             .overlay(alignment: .top) {
                 if showDraftSavedBanner {
                     Text("下書きを保存しました")
@@ -546,6 +529,29 @@ struct NewPostView: View {
                     TagPlacementView(items: $items, itemIndex: idx, taggingSide: $taggingSide, frontImage: frontImage, backImage: backImage)
                 }
             }
+    }
+    
+    @ToolbarContentBuilder
+    private func iPadKeyboardToolbar() -> some ToolbarContent {
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("完了") { dismissKeyboard() }
+        }
+    }
+    
+    @ToolbarContentBuilder
+    private func iPadCancellationToolbar() -> some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button("閉じる") {
+                if isEditMode {
+                    showDiscardAlert = true
+                } else if canSaveDraft {
+                    showDiscardAlert = true
+                } else {
+                    dismiss()
+                }
+            }
+        }
     }
 
     private var scrollContent: some View {
