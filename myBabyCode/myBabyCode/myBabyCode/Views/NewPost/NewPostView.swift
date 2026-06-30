@@ -614,7 +614,7 @@ struct NewPostView: View {
             } message: { Text(postsViewModel.errorMessage ?? "不明なエラーが発生しました。") }
             .alert("写真を選択してください", isPresented: $showNoPhotoAlert) {
                 Button("OK") {}
-            } message: { Text("タグ付けを行う前に、コーディネートの写真を撑影または選択してください。") }
+            } message: { Text("タグ付けを行う前に、コーディネートの写真を撮影または選択してください。") }
             .fullScreenCover(isPresented: Binding(
                 get: { taggingItemIndex != nil },
                 set: { if !$0 { taggingItemIndex = nil } }
@@ -896,7 +896,7 @@ struct NewPostView: View {
                     imagePickerSourceType = .photoLibrary
                     showImagePicker = true
                 }
-                Button("カメラで撑影") {
+                Button("カメラで撮影") {
                     imagePickerSourceType = .camera
                     showImagePicker = true
                 }
@@ -2323,7 +2323,11 @@ struct PhotoEditorView: View {
                 let drawImage: UIImage?
                 switch stamp.kind {
                 case .symbol(let sym):
-                    let config = UIImage.SymbolConfiguration(pointSize: stampImgPt, weight: .bold)
+                    // 雲のスタンプ形変わる問題調査用ログ
+                    if sym.rawValue == "cloud.fill" {
+                        print("🔍 Cloud stamp rendering - size: \(stampImgPt), color: \(stamp.color)")
+                    }
+                    let config = UIImage.SymbolConfiguration(pointSize: stampImgPt, weight: .regular)
                     let baseImg = UIImage(systemName: sym.rawValue, withConfiguration: config)
                     drawImage = baseImg?.withTintColor(UIColor(stamp.color), renderingMode: .alwaysOriginal)
                 case .image(let name):
