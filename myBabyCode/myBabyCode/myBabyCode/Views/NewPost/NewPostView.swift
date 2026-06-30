@@ -1977,7 +1977,7 @@ enum StampSymbol: String, CaseIterable, Identifiable {
     case diamond      = "diamond.fill"
     case pentagon     = "pentagon.fill"
     case hexagon      = "hexagon.fill"
-    case cloud        = "cloud.fill"
+    case snowflake    = "snowflake"  // 雲の代わりに安定した雪の結晶シンボル
     case moon         = "moon.fill"
     case sun          = "sun.max.fill"
     case bolt         = "bolt.fill"
@@ -2293,41 +2293,28 @@ struct PhotoEditorView: View {
     // =============================================================================
     // 【関数サマリー】renderFinalImage
     // 目的: スタンプを元の写真に合成して、編集後のUIImageを生成する
-    //        offsetなし：canvasSizeが画像ぴったりサイズなので単純計算
-    //        currentCanvasSize: 完了ボタン押下時点の正確なサイズを引数で受け取る
+    //        新しいアプローチ：canvasサイズでスタンプをレンダリングしてから元画像に合成
     // =============================================================================
     private func renderFinalImage(currentCanvasSize: CGSize) -> UIImage {
         let imgW = image.size.width
         let imgH = image.size.height
 
-        // canvasSize は displaySize（画像をfit表示した実寸）なので縦横両方を考慮してfitScaleを計算
-        let fitScaleW = currentCanvasSize.width / imgW
-        let fitScaleH = currentCanvasSize.height / imgH
-        let fitScale = min(fitScaleW, fitScaleH)
+        // まずcanvasサイズでスタンプ付き画像をレンダリング
+        let canvasFormat = UIGraphicsImageRendererFormat()
+        canvasFormat.scale = image.scale
+        let canvasRenderer = UIGraphicsImageRenderer(size: currentCanvasSize, format: canvasFormat)
 
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = image.scale
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: imgW, height: imgH), format: format)
+        let canvasWithStamps = canvasRenderer.image { ctx in
+            // canvasサイズに画像を描画
+            image.draw(in: CGRect(origin: .zero, size: currentCanvasSize))
 
-        return renderer.image { ctx in
-            image.draw(in: CGRect(origin: .zero, size: CGSize(width: imgW, height: imgH)))
-
+            // スタンプをcanvas座標系で描画（編集中と同じロジック）
             for stamp in stampItems {
-                let imgX = stamp.position.x / fitScale
-                let imgY = stamp.position.y / fitScale
-
-                // スタンプサイズも元画像サイズに合わせて拡大
-                let uiSize: CGFloat = 44 * stamp.scale
-                let stampImgPt = uiSize / fitScale
-
                 let drawImage: UIImage?
                 switch stamp.kind {
                 case .symbol(let sym):
-                    // 雲のスタンプ形変わる問題調査用ログ
-                    if sym.rawValue == "cloud.fill" {
-                        print("🔍 Cloud stamp rendering - size: \(stampImgPt), color: \(stamp.color)")
-                    }
-                    let config = UIImage.SymbolConfiguration(pointSize: stampImgPt, weight: .regular)
+                    let stampSize: CGFloat = 44 * stamp.scale
+                    let config = UIImage.SymbolConfiguration(pointSize: stampSize, weight: .regular)
                     let baseImg = UIImage(systemName: sym.rawValue, withConfiguration: config)
                     drawImage = baseImg?.withTintColor(UIColor(stamp.color), renderingMode: .alwaysOriginal)
                 case .image(let name):
@@ -2336,13 +2323,24 @@ struct PhotoEditorView: View {
 
                 if let img = drawImage {
                     ctx.cgContext.saveGState()
-                    ctx.cgContext.translateBy(x: imgX, y: imgY)
+                    ctx.cgContext.translateBy(x: stamp.position.x, y: stamp.position.y)
                     ctx.cgContext.rotate(by: CGFloat(stamp.rotation.radians))
-                    let rect = CGRect(x: -stampImgPt / 2, y: -stampImgPt / 2, width: stampImgPt, height: stampImgPt)
+                    
+                    let stampSize: CGFloat = 44 * stamp.scale
+                    let rect = CGRect(x: -stampSize / 2, y: -stampSize / 2, width: stampSize, height: stampSize)
                     img.draw(in: rect)
                     ctx.cgContext.restoreGState()
                 }
             }
+        }
+
+        // 次に元画像サイズに拡大
+        let finalFormat = UIGraphicsImageRendererFormat()
+        finalFormat.scale = image.scale
+        let finalRenderer = UIGraphicsImageRenderer(size: CGSize(width: imgW, height: imgH), format: finalFormat)
+
+        return finalRenderer.image { ctx in
+            canvasWithStamps.draw(in: CGRect(origin: .zero, size: CGSize(width: imgW, height: imgH)))
         }
     }
 
@@ -2436,7 +2434,7 @@ struct StampView: View {
             switch stamp.kind {
             case .symbol(let sym):
                 Image(systemName: sym.rawValue)
-                    .font(.appFont(.regular, size: baseSize))
+                    .font(.system(size: baseSize, weight: .regular))
                     .foregroundColor(stamp.color)
             case .image(let name):
                 Image(name)
